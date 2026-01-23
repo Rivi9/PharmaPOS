@@ -1,16 +1,29 @@
-import { resolve } from 'path'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import path from 'path'
 
 export default defineConfig({
-  main: {},
-  preload: {},
+  main: {
+    build: {
+      rollupOptions: {
+        external: ['better-sqlite3']
+      }
+    }
+  },
+  preload: {
+    build: {
+      rollupOptions: {
+        external: ['better-sqlite3']
+      }
+    }
+  },
   renderer: {
+    plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@renderer': resolve('src/renderer/src')
+        '@': path.resolve(__dirname, './src/renderer/src')
       }
-    },
-    plugins: [react()]
+    }
   }
 })
