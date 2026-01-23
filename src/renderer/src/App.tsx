@@ -1,25 +1,15 @@
-import { useState } from 'react'
+import { useAuthStore } from './stores/authStore'
 import { MainLayout } from './components/layout'
+import { LoginPage } from './pages/LoginPage'
 
 function App(): React.JSX.Element {
-  const [user, setUser] = useState<{ full_name: string; role: string } | null>({
-    full_name: 'Test User',
-    role: 'admin'
-  })
+  const { user, isAuthenticated, logout } = useAuthStore()
 
-  const handleLogout = (): void => {
-    setUser(null)
+  if (!isAuthenticated) {
+    return <LoginPage />
   }
 
-  if (!user) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-background">
-        <p className="text-muted-foreground">Please login</p>
-      </div>
-    )
-  }
-
-  return <MainLayout user={user} onLogout={handleLogout} />
+  return <MainLayout user={user} onLogout={logout} />
 }
 
 export default App
