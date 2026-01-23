@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@renderer/components/ui/button'
 import { Delete, CornerDownLeft } from 'lucide-react'
 
@@ -30,6 +30,35 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
       setPin('')
     }
   }
+
+  // Add keyboard support
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      // Handle number keys (0-9)
+      if (e.key >= '0' && e.key <= '9') {
+        e.preventDefault()
+        handleNumber(e.key)
+      }
+      // Handle backspace/delete
+      else if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault()
+        handleDelete()
+      }
+      // Handle enter to submit
+      else if (e.key === 'Enter') {
+        e.preventDefault()
+        handleSubmit()
+      }
+      // Handle escape to clear
+      else if (e.key === 'Escape') {
+        e.preventDefault()
+        handleClear()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [pin, maxLength, onSubmit])
 
   return (
     <div className="flex flex-col items-center gap-4">
