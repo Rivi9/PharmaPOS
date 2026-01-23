@@ -1,22 +1,27 @@
-import { contextBridge } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
+import { contextBridge, ipcRenderer } from 'electron'
+import { IPC_CHANNELS } from '../main/ipc/channels'
 
-// Custom APIs for renderer
-const api = {}
+const electronAPI = {
+  // Auth
+  getUsers: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_GET_USERS),
+  login: (data: { userId: string; pin?: string; password?: string }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGIN, data),
+  createUser: (data: { username: string; password: string; fullName: string; role: string; pin?: string }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.AUTH_CREATE_USER, data),
 
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
-if (process.contextIsolated) {
-  try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
-  } catch (error) {
-    console.error(error)
-  }
-} else {
-  // @ts-ignore (define in dts)
-  window.electron = electronAPI
-  // @ts-ignore (define in dts)
-  window.api = api
+  // Settings
+  getSetting: (key: string) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET, key),
+  setSetting: (key: string, value: string) => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SET, { key, value }),
+  getAllSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_ALL),
+
+  // Shift
+  startShift: (data: { userId: string; openingCash: number }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SHIFT_START, data),
+  endShift: (data: { shiftId: string; closingCash: number; notes?: string }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SHIFT_END, data),
+  getActiveShift: (userId: string) => ipcRenderer.invoke(IPC_CHANNELS.SHIFT_GET_ACTIVE, userId),
 }
+
+contextBridge.exposeInMainWorld('electron', electronAPI)
+
+export type ElectronAPI = typeof electronAPI
