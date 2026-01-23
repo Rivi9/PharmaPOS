@@ -1,8 +1,9 @@
 # PharmaPOS - System Design Document
 
 **Date:** 2025-01-22
-**Version:** 1.0
+**Version:** 1.1
 **Status:** Approved for Development
+**Dependencies Updated:** 2025-01-23 (via Context7)
 
 ---
 
@@ -53,21 +54,23 @@ PharmaPOS is a Windows desktop point-of-sale application designed for small phar
 
 ## Technology Stack
 
+> **Updated via Context7** - Latest stable versions as of January 2025
+
 ### Desktop Application
 
-| Layer | Technology |
-|-------|------------|
-| **Runtime** | Electron |
-| **Frontend** | React 18 + TypeScript |
-| **Styling** | Tailwind CSS |
-| **Components** | shadcn/ui (Radix UI primitives) |
-| **Data Tables** | @tanstack/react-table |
-| **Charts** | Recharts |
-| **Icons** | Lucide React |
-| **Forms** | React Hook Form + Zod |
-| **State** | Zustand |
-| **Database** | SQLite (better-sqlite3) |
-| **Build** | Vite + electron-builder |
+| Layer | Technology | Version |
+|-------|------------|---------|
+| **Runtime** | Electron | ^35.0.0 |
+| **Frontend** | React + TypeScript | ^19.0.0 |
+| **Styling** | Tailwind CSS | ^4.1.0 |
+| **Components** | shadcn/ui (Radix UI primitives) | Latest |
+| **Data Tables** | @tanstack/react-table | ^8.21.0 |
+| **Charts** | Recharts | ^2.15.0 |
+| **Icons** | Lucide React | ^0.469.0 |
+| **Forms** | React Hook Form + Zod | ^7.54.0 / ^3.24.2 |
+| **State** | Zustand | ^5.0.8 |
+| **Database** | SQLite (better-sqlite3) | ^12.4.1 |
+| **Build** | electron-vite + electron-builder | ^3.0.0 / ^25.1.0 |
 
 ### Hardware Integration
 
@@ -79,10 +82,15 @@ PharmaPOS is a Windows desktop point-of-sale application designed for small phar
 
 ### External Services
 
-| Service | Purpose |
-|---------|---------|
-| **Google Drive API** | Automatic database backup |
-| **Google Gemini API** | AI-powered analytics and recommendations |
+| Service | Package | Purpose |
+|---------|---------|---------|
+| **Google Drive API** | googleapis ^146.0.0 | Automatic database backup |
+| **Google Gemini API** | @google/genai ^1.0.0 | AI-powered analytics (new unified SDK) |
+
+### Requirements
+
+- **Node.js:** 20.19+ (required by Vite 6)
+- **TypeScript:** 5.5+ (required by Zod)
 
 ---
 
@@ -877,49 +885,183 @@ pharma-pos/
 
 ## Appendix: Key Dependencies
 
+> **Updated via Context7 (2025-01-22)** - Verified latest stable versions
+
+### Key Version Changes from Initial Design
+
+| Package | Old Version | New Version | Notes |
+|---------|-------------|-------------|-------|
+| `electron` | ^28.0.0 | ^35.0.0 | Latest stable |
+| `react` | ^18.2.0 | ^19.0.0 | React 19 stable with new features |
+| `vite` | ^5.0.0 | ^6.0.0 | Requires Node.js 20.19+ |
+| `tailwindcss` | ^3.4.0 | ^4.1.0 | Major rewrite, new CSS-first config |
+| `zustand` | ^4.4.7 | ^5.0.8 | Requires React 18+, stricter types |
+| `zod` | ^3.22.0 | ^3.24.2 | v4.0.1 available but v3 more stable |
+| `@google/generative-ai` | ^0.1.0 | **Replaced** | Use `@google/genai` instead |
+| `better-sqlite3` | ^9.2.0 | ^12.4.1 | Latest with Node 20+ support |
+| Build tool | vite + electron-builder | **electron-vite** | Better Electron + Vite integration |
+
+### Package.json (Updated)
+
 ```json
 {
+  "name": "pharma-pos",
+  "version": "1.0.0",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "package": "electron-vite build && electron-builder"
+  },
   "dependencies": {
-    "electron": "^28.0.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.21.0",
-    "@radix-ui/react-dialog": "^1.0.5",
-    "@radix-ui/react-dropdown-menu": "^2.0.6",
-    "@radix-ui/react-select": "^2.0.0",
-    "@tanstack/react-table": "^8.11.0",
-    "recharts": "^2.10.0",
-    "lucide-react": "^0.303.0",
-    "zustand": "^4.4.7",
-    "react-hook-form": "^7.49.0",
-    "zod": "^3.22.0",
-    "@hookform/resolvers": "^3.3.0",
-    "better-sqlite3": "^9.2.0",
+    // Core
+    "electron": "^35.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.0.0",
+
+    // UI Components (shadcn/ui dependencies)
+    "@radix-ui/react-dialog": "^1.1.0",
+    "@radix-ui/react-dropdown-menu": "^2.1.0",
+    "@radix-ui/react-select": "^2.1.0",
+    "@radix-ui/react-slot": "^1.1.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.0",
+    "tailwind-merge": "^2.6.0",
+
+    // Data & Charts
+    "@tanstack/react-table": "^8.21.0",
+    "recharts": "^2.15.0",
+    "lucide-react": "^0.469.0",
+
+    // State & Forms
+    "zustand": "^5.0.8",
+    "react-hook-form": "^7.54.0",
+    "zod": "^3.24.2",
+    "@hookform/resolvers": "^3.9.0",
+
+    // Database
+    "better-sqlite3": "^12.4.1",
+
+    // Hardware
     "escpos": "^3.0.0",
     "escpos-usb": "^3.0.0",
-    "googleapis": "^129.0.0",
-    "@google/generative-ai": "^0.1.0",
-    "date-fns": "^3.0.0",
-    "uuid": "^9.0.0",
-    "bcrypt": "^5.1.0",
-    "class-variance-authority": "^0.7.0",
-    "clsx": "^2.0.0",
-    "tailwind-merge": "^2.2.0"
+
+    // Google Services
+    "googleapis": "^146.0.0",
+    "@google/genai": "^1.0.0",
+
+    // Utilities
+    "date-fns": "^4.1.0",
+    "uuid": "^11.0.0",
+    "bcrypt": "^5.1.1"
   },
   "devDependencies": {
-    "vite": "^5.0.0",
-    "@vitejs/plugin-react": "^4.2.0",
-    "electron-builder": "^24.9.0",
-    "typescript": "^5.3.0",
-    "tailwindcss": "^3.4.0",
-    "postcss": "^8.4.0",
-    "autoprefixer": "^10.4.0",
-    "eslint": "^8.56.0",
-    "prettier": "^3.1.0"
+    // Build Tools
+    "electron-vite": "^3.0.0",
+    "electron-builder": "^25.1.0",
+    "@vitejs/plugin-react": "^4.3.0",
+
+    // TypeScript
+    "typescript": "^5.7.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/uuid": "^10.0.0",
+    "@types/bcrypt": "^5.0.2",
+
+    // Styling (Tailwind v4)
+    "tailwindcss": "^4.1.0",
+    "@tailwindcss/vite": "^4.1.0",
+
+    // Linting
+    "eslint": "^9.18.0",
+    "prettier": "^3.4.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0"
   }
 }
 ```
 
+### Tailwind CSS v4 Migration Notes
+
+Tailwind v4 introduces a new CSS-first configuration approach:
+
+```css
+/* src/styles/globals.css */
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #3b82f6;
+  --color-secondary: #6b7280;
+  --font-sans: "Inter", sans-serif;
+}
+```
+
+The `tailwind.config.js` file is **no longer required** in v4. Configuration happens in CSS.
+
+### Vite Configuration (electron-vite)
+
+```typescript
+// electron.vite.config.ts
+import { defineConfig } from 'electron-vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import path from 'path'
+
+export default defineConfig({
+  main: {
+    // Electron main process config
+  },
+  preload: {
+    // Preload script config
+  },
+  renderer: {
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src')
+      }
+    }
+  }
+})
+```
+
+### Google Gen AI SDK (New)
+
+The `@google/generative-ai` package is **deprecated**. Use the new unified SDK:
+
+```typescript
+// OLD (deprecated)
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+// NEW (use this)
+import { GoogleGenAI } from '@google/genai';
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+const response = await ai.models.generateContent({
+  model: 'gemini-2.5-flash',
+  contents: 'Your prompt here',
+});
+```
+
+### shadcn/ui Setup (Updated CLI)
+
+```bash
+# Initialize shadcn in Vite project
+npx shadcn@latest init
+
+# Add components as needed
+npx shadcn@latest add button input dialog table dropdown-menu
+```
+
+### Node.js Requirement
+
+**Minimum Node.js version: 20.19+** (required by Vite 6)
+
 ---
 
 *Document generated: 2025-01-22*
+*Dependencies updated via Context7: 2025-01-23*
