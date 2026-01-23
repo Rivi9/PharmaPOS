@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { getDatabase, generateId } from '../services/database'
 import { IPC_CHANNELS } from './channels'
-import bcrypt from 'bcrypt'
+import bcrypt from 'bcryptjs'
 
 export function registerIpcHandlers(): void {
   // Get all users (for login dropdown)
