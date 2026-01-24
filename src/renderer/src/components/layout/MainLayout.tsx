@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
-import { SettingsPage } from '@renderer/pages/SettingsPage'
+import { SettingsPage, POSPage } from '@renderer/pages'
 
 interface MainLayoutProps {
   user: { full_name: string; role: string } | null
@@ -16,11 +16,7 @@ export function MainLayout({ user, onLogout }: MainLayoutProps): React.JSX.Eleme
       case 'settings':
         return <SettingsPage />
       case 'pos':
-        return (
-          <div className="h-full flex items-center justify-center text-muted-foreground">
-            <p>POS Terminal - Coming in Phase 2</p>
-          </div>
-        )
+        return <POSPage />
       case 'inventory':
         return (
           <div className="h-full flex items-center justify-center text-muted-foreground">
@@ -59,7 +55,7 @@ export function MainLayout({ user, onLogout }: MainLayoutProps): React.JSX.Eleme
       <Header user={user} onLogout={onLogout} />
       <div className="flex-1 flex overflow-hidden">
         <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
-        <main className="flex-1 overflow-auto p-4">
+        <main className="flex-1 overflow-auto">
           {renderPage()}
         </main>
       </div>
