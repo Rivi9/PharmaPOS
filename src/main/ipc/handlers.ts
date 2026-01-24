@@ -2,8 +2,11 @@ import { ipcMain } from 'electron'
 import { getDatabase, generateId } from '../services/database'
 import { IPC_CHANNELS } from './channels'
 import bcrypt from 'bcryptjs'
+import { registerPOSHandlers } from './pos-handlers'
 
 export function registerIpcHandlers(): void {
+  // Register POS handlers
+  registerPOSHandlers()
   // Get all users (for login dropdown)
   ipcMain.handle(IPC_CHANNELS.AUTH_GET_USERS, () => {
     const db = getDatabase()
