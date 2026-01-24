@@ -5,12 +5,21 @@ import { Button } from '@renderer/components/ui/button'
 import { usePOSStore } from '@renderer/stores/posStore'
 import { SearchModal } from './SearchModal'
 
-export function ProductEntry(): React.JSX.Element {
+interface ProductEntryProps {
+  searchOpen?: boolean
+  onSearchOpenChange?: (open: boolean) => void
+}
+
+export function ProductEntry({ searchOpen: externalSearchOpen, onSearchOpenChange }: ProductEntryProps = {}): React.JSX.Element {
   const [barcode, setBarcode] = useState('')
-  const [searchOpen, setSearchOpen] = useState(false)
+  const [internalSearchOpen, setInternalSearchOpen] = useState(false)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const addItem = usePOSStore((state) => state.addItem)
+
+  // Use external control if provided, otherwise use internal state
+  const searchOpen = externalSearchOpen !== undefined ? externalSearchOpen : internalSearchOpen
+  const setSearchOpen = onSearchOpenChange || setInternalSearchOpen
 
   // Auto-focus on mount and after scan
   useEffect(() => {

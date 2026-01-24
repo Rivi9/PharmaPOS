@@ -4,11 +4,20 @@ import { QuickItems } from '@renderer/components/pos/QuickItems'
 import { ShoppingCart } from '@renderer/components/pos/ShoppingCart'
 import { PaymentModal } from '@renderer/components/pos/PaymentModal'
 import { ReceiptPreview } from '@renderer/components/pos/ReceiptPreview'
+import { usePOSStore } from '@renderer/stores/posStore'
+import { useKeyboardShortcuts } from '@renderer/hooks/useKeyboardShortcuts'
 
 export function POSPage(): React.JSX.Element {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false)
   const [completedSale, setCompletedSale] = useState<{ saleId: string; receiptNumber: string } | null>(null)
+  const [searchModalOpen, setSearchModalOpen] = useState(false)
+
+  const items = usePOSStore((state) => state.items)
+  const holdCurrentSale = usePOSStore((state) => state.holdCurrentSale)
+  const recallHeldSale = usePOSStore((state) => state.recallHeldSale)
+  const clearCart = usePOSStore((state) => state.clearCart)
+  const heldSale = usePOSStore((state) => state.heldSale)
 
   const handlePaymentComplete = (saleId: string, receiptNumber: string) => {
     setCompletedSale({ saleId, receiptNumber })
@@ -20,6 +29,26 @@ export function POSPage(): React.JSX.Element {
     setReceiptPreviewOpen(false)
     setCompletedSale(null)
   }
+
+  const handlePayment = () => {
+    if (items.length > 0) {
+      setPaymentModalOpen(true)
+    }
+  }
+
+  // Keyboard shortcuts
+  useKeyboardShortcuts({
+    onF2: () => setSearchModalOpen(true),
+    onF4: () => items.length > 0 && holdCurrentSale(),
+    onF5: () => heldSale !== null && recallHeldSale(),
+    onF8: () => items.length > 0 && clearCart(),
+    onF9: handlePayment,
+    onEscape: () => {
+      if (searchModalOpen) setSearchModalOpen(false)
+      if (paymentModalOpen) setPaymentModalOpen(false)
+      if (receiptPreviewOpen) handleReceiptClose()
+    },
+  })
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -46,7 +75,10 @@ export function POSPage(): React.JSX.Element {
           {/* Product Entry Section */}
           <div className="space-y-2">
             <h2 className="text-sm font-semibold">Product Entry</h2>
-            <ProductEntry />
+            <ProductEntry
+              searchOpen={searchModalOpen}
+              onSearchOpenChange={setSearchModalOpen}
+            />
           </div>
 
           {/* Quick Items Section */}
