@@ -2,9 +2,24 @@ import { useState } from 'react'
 import { ProductEntry } from '@renderer/components/pos/ProductEntry'
 import { QuickItems } from '@renderer/components/pos/QuickItems'
 import { ShoppingCart } from '@renderer/components/pos/ShoppingCart'
+import { PaymentModal } from '@renderer/components/pos/PaymentModal'
+import { ReceiptPreview } from '@renderer/components/pos/ReceiptPreview'
 
 export function POSPage(): React.JSX.Element {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
+  const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false)
+  const [completedSale, setCompletedSale] = useState<{ saleId: string; receiptNumber: string } | null>(null)
+
+  const handlePaymentComplete = (saleId: string, receiptNumber: string) => {
+    setCompletedSale({ saleId, receiptNumber })
+    setPaymentModalOpen(false)
+    setReceiptPreviewOpen(true)
+  }
+
+  const handleReceiptClose = () => {
+    setReceiptPreviewOpen(false)
+    setCompletedSale(null)
+  }
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -49,6 +64,23 @@ export function POSPage(): React.JSX.Element {
           <ShoppingCart onPayment={() => setPaymentModalOpen(true)} />
         </div>
       </div>
+
+      {/* Payment Modal */}
+      <PaymentModal
+        open={paymentModalOpen}
+        onClose={() => setPaymentModalOpen(false)}
+        onComplete={handlePaymentComplete}
+      />
+
+      {/* Receipt Preview */}
+      {completedSale && (
+        <ReceiptPreview
+          open={receiptPreviewOpen}
+          onClose={handleReceiptClose}
+          saleId={completedSale.saleId}
+          receiptNumber={completedSale.receiptNumber}
+        />
+      )}
     </div>
   )
 }
