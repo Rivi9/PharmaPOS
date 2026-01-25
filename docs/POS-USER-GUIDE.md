@@ -45,6 +45,7 @@ Before you can process sales, you must start a shift:
 3. Scanner clears and is ready for next item
 
 **Stock Warnings:**
+
 - "Product not found" - Check barcode or use search
 - "Only X available" - Insufficient stock
 - "No stock available" - Product out of stock
@@ -77,6 +78,7 @@ Use when barcode doesn't scan or customer doesn't know product name:
 ### Adjusting Quantities
 
 Each cart item shows:
+
 - Product name and generic name
 - Quantity controls (**-** / **+** buttons)
 - Manual quantity input (type directly)
@@ -84,6 +86,7 @@ Each cart item shows:
 - Remove button (**×**)
 
 **To change quantity:**
+
 1. Click **+** or **-** buttons
 2. Or type directly in the quantity box
 3. Line total updates automatically
@@ -95,6 +98,7 @@ Each cart item shows:
 ### Discounts
 
 **Coming in future update:**
+
 - Line-item discounts (click price to edit)
 - Sale-level discounts (apply to entire cart)
 
@@ -105,6 +109,7 @@ Each cart item shows:
 - **Clear (F8):** Empty cart (asks for confirmation)
 
 **Use cases:**
+
 - Customer needs to get their wallet → Hold sale
 - Phone rings, need to help someone → Hold sale
 - Customer changes their mind → Clear cart
@@ -120,6 +125,7 @@ Check that all items and quantities are correct
 ### 2. Click "Pay Now" (F9)
 
 Payment modal opens showing:
+
 - Total amount
 - Payment method options
 - Customer info (optional)
@@ -127,16 +133,19 @@ Payment modal opens showing:
 ### 3. Select Payment Method
 
 **Cash:**
+
 1. Enter amount received
 2. Change is calculated automatically
 3. Must be ≥ total
 
 **Card:**
+
 1. Amount auto-fills with total
 2. Process card payment externally
 3. Click "Complete Sale"
 
 **Mixed (Cash + Card):**
+
 1. Enter cash amount received
 2. Card amount auto-calculates (remaining)
 3. Ensure total matches
@@ -144,6 +153,7 @@ Payment modal opens showing:
 ### 4. Customer Info (Optional)
 
 For receipts or loyalty tracking:
+
 - Customer name
 - Phone number
 
@@ -157,6 +167,7 @@ For receipts or loyalty tracking:
 ### 6. Receipt
 
 The receipt shows:
+
 - Receipt number (R-YYYY-NNNNNN)
 - Date and time
 - All items with quantities and prices
@@ -164,6 +175,7 @@ The receipt shows:
 - Customer info (if provided)
 
 **Actions:**
+
 - **Copy to Clipboard:** For pasting into email/SMS
 - **New Sale:** Close receipt, start fresh
 
@@ -173,14 +185,14 @@ The receipt shows:
 
 ## Keyboard Shortcuts
 
-| Key | Action |
-|-----|--------|
-| **F2** | Open product search |
-| **F4** | Hold current sale |
-| **F5** | Recall held sale |
-| **F8** | Clear cart (with confirmation) |
-| **F9** | Open payment (if cart has items) |
-| **ESC** | Close any open modal |
+| Key     | Action                           |
+| ------- | -------------------------------- |
+| **F2**  | Open product search              |
+| **F4**  | Hold current sale                |
+| **F5**  | Recall held sale                 |
+| **F8**  | Clear cart (with confirmation)   |
+| **F9**  | Open payment (if cart has items) |
+| **ESC** | Close any open modal             |
 
 **Pro tip:** Memorize F4 (Hold) and F5 (Recall) for busy periods!
 
@@ -209,6 +221,7 @@ The receipt shows:
 ### Handling Low Stock Warnings
 
 When adding product with low stock:
+
 - Check stock indicator (Quick Items grid)
 - Note "Only X available" message
 - Inform customer of stock level
@@ -232,10 +245,12 @@ System calculates expected vs actual cash variance.
 ### Barcode Scanner Not Working
 
 **Symptoms:**
+
 - Nothing happens when scanning
 - Characters appear in wrong places
 
 **Solutions:**
+
 1. Check scanner cable connection
 2. Click on barcode input field (should auto-focus)
 3. Use Product Search (F2) as fallback
@@ -244,17 +259,20 @@ System calculates expected vs actual cash variance.
 ### "No active shift found"
 
 **Solution:**
+
 1. Go to Settings
 2. Start a shift before processing sales
 
 ### Product Not Found
 
 **Causes:**
+
 - Barcode not in database
 - Scanner misread barcode
 - Product not activated
 
 **Solutions:**
+
 1. Try scanning again
 2. Use Product Search (F2) to find by name
 3. Check if product exists in inventory
@@ -269,6 +287,7 @@ System calculates expected vs actual cash variance.
 ### Cart Won't Clear
 
 If cart items persist after sale:
+
 - Sale may have failed - check error message
 - Database issue - contact IT support
 - Don't process again - might duplicate sale
@@ -278,6 +297,7 @@ If cart items persist after sale:
 ## Best Practices
 
 ✅ **DO:**
+
 - Keep barcode input focused (auto-focused by design)
 - Use Quick Items for frequently sold products
 - Hold sales during busy periods (don't make customers wait)
@@ -285,6 +305,7 @@ If cart items persist after sale:
 - Verify change amount before handing to customer
 
 ❌ **DON'T:**
+
 - Leave POS terminal unattended while logged in
 - Process sales without active shift
 - Complete sales if stock warnings appear (inform customer first)
@@ -312,4 +333,4 @@ If cart items persist after sale:
 
 ---
 
-*This guide covers Phase 2 (Core POS). Additional features coming in future phases.*
+_This guide covers Phase 2 (Core POS). Additional features coming in future phases._

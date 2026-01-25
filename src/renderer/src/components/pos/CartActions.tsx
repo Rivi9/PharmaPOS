@@ -29,10 +29,10 @@ export function CartActions({
   onClear,
   onPayment,
 }: CartActionsProps): React.JSX.Element {
-  const [clearConfirmOpen, setCleared ConfirmOpen] = useState(false)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
 
   const handleClearClick = () => {
-    setCleared ConfirmOpen(true)
+    setClearConfirmOpen(true)
   }
 
   const handleClearConfirm = () => {

@@ -1,4 +1,4 @@
-import { getDatabase } from '../database'
+import { getDatabase } from './database'
 
 interface SaleItem {
   product_id: string

@@ -27,6 +27,7 @@ npm run dev  # Start development server
 ```
 
 **Verify:**
+
 - Application launches without errors
 - Login works
 - POS page loads
@@ -127,6 +128,7 @@ Run `npm run dev` to seed the database, then remove the line.
 ### Test 9: Keyboard Shortcuts
 
 Test each shortcut:
+
 - **F2:** Opens search ✓
 - **F4:** Holds sale (if cart has items) ✓
 - **F5:** Recalls sale (if sale held) ✓
@@ -162,15 +164,18 @@ Test each shortcut:
 Test these scenarios:
 
 **Insufficient stock:**
+
 1. Find product with low stock
 2. Try to add more than available
 3. **Expected:** Error: "Only X available"
 
 **Product not found:**
+
 1. Scan invalid barcode
 2. **Expected:** "Product not found"
 
 **Payment validation:**
+
 1. Try to pay with cash less than total
 2. **Expected:** "Insufficient cash" error
 
@@ -220,6 +225,7 @@ SELECT * FROM sale_items WHERE batch_id IS NULL; -- Should be empty
 ## Known Limitations (Phase 2)
 
 ✅ **Implemented:**
+
 - Barcode scanning (keyboard input)
 - Product search
 - Quick items (auto-populated)
@@ -232,6 +238,7 @@ SELECT * FROM sale_items WHERE batch_id IS NULL; -- Should be empty
 - Tax calculation (18%)
 
 ❌ **Not Yet Implemented:**
+
 - Line-item discounts (UI exists, not functional)
 - Sale-level discounts (UI exists, not functional)
 - Actual printer integration (receipt preview only)
@@ -267,4 +274,4 @@ SELECT * FROM sale_items WHERE batch_id IS NULL; -- Should be empty
 
 ---
 
-*Last updated: 2025-01-24*
+_Last updated: 2025-01-24_
