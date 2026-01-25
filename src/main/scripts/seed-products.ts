@@ -11,7 +11,7 @@ interface Product {
 interface StockBatch {
   product_id: string
   quantity: number
-  cost_per_unit: number
+  cost_price: number
   expiry_date: string | null
   received_date: string
 }
@@ -109,14 +109,14 @@ export function seedProducts(): void {
         {
           product_id: productId,
           quantity: Math.floor(Math.random() * 50) + 20, // 20-70 units
-          cost_per_unit: product.unit_price * 0.6, // 60% of selling price
+          cost_price: product.unit_price * 0.6, // 60% of selling price
           expiry_date: getRandomExpiryDate(6, 12), // 6-12 months from now
           received_date: getRandomReceivedDate(30) // Within last 30 days
         },
         {
           product_id: productId,
           quantity: Math.floor(Math.random() * 30) + 10, // 10-40 units
-          cost_per_unit: product.unit_price * 0.6,
+          cost_price: product.unit_price * 0.6,
           expiry_date: getRandomExpiryDate(12, 24), // 12-24 months from now
           received_date: getRandomReceivedDate(15) // Within last 15 days
         }
@@ -127,7 +127,7 @@ export function seedProducts(): void {
         db.prepare(
           `
           INSERT INTO stock_batches (
-            id, product_id, batch_number, quantity, cost_per_unit,
+            id, product_id, batch_number, quantity, cost_price,
             expiry_date, received_date
           ) VALUES (?, ?, ?, ?, ?, ?, ?)
         `
@@ -136,7 +136,7 @@ export function seedProducts(): void {
           batch.product_id,
           `BATCH-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           batch.quantity,
-          batch.cost_per_unit,
+          batch.cost_price,
           batch.expiry_date,
           batch.received_date
         )
