@@ -185,32 +185,43 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
 
       // Update product_sales_daily
       const today = new Date().toISOString().split('T')[0]
+
+      // Get product cost_price
+      const product = db
+        .prepare('SELECT cost_price FROM products WHERE id = ?')
+        .get(item.product_id) as { cost_price: number } | undefined
+
+      const cost = (product?.cost_price || 0) * item.quantity
+      const profit = item.line_total - cost
+
       const existing = db
         .prepare(
           `
         SELECT id FROM product_sales_daily
-        WHERE product_id = ? AND date = ?
+        WHERE date = ? AND product_id = ?
       `
         )
-        .get(item.product_id, today) as { id: string } | undefined
+        .get(today, item.product_id) as { id: string } | undefined
 
       if (existing) {
         db.prepare(
           `
           UPDATE product_sales_daily
           SET quantity_sold = quantity_sold + ?,
-              revenue = revenue + ?
-          WHERE product_id = ? AND date = ?
+              revenue = revenue + ?,
+              cost = cost + ?,
+              profit = profit + ?
+          WHERE date = ? AND product_id = ?
         `
-        ).run(item.quantity, item.line_total, item.product_id, today)
+        ).run(item.quantity, item.line_total, cost, profit, today, item.product_id)
       } else {
         db.prepare(
           `
           INSERT INTO product_sales_daily (
-            id, product_id, date, quantity_sold, revenue
-          ) VALUES (?, ?, ?, ?, ?)
+            id, date, product_id, quantity_sold, revenue, cost, profit
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
         `
-        ).run(crypto.randomUUID(), item.product_id, today, item.quantity, item.line_total)
+        ).run(crypto.randomUUID(), today, item.product_id, item.quantity, item.line_total, cost, profit)
       }
     }
 
