@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS products (
     category_id TEXT REFERENCES categories(id),
     supplier_id TEXT REFERENCES suppliers(id),
     cost_price REAL NOT NULL DEFAULT 0,
-    selling_price REAL NOT NULL,
+    unit_price REAL NOT NULL,
     tax_rate REAL DEFAULT 0,
     is_tax_inclusive INTEGER DEFAULT 1,
     reorder_level INTEGER DEFAULT 10,
