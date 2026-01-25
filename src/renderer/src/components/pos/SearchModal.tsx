@@ -1,12 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Search, Package } from 'lucide-react'
 import { Input } from '@renderer/components/ui/input'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@renderer/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import type { Product } from '@renderer/lib/types'
 
 interface SearchModalProps {
@@ -85,11 +80,7 @@ export function SearchModal({ open, onClose, onSelect }: SearchModalProps): Reac
 
           {/* Results */}
           <div className="min-h-[300px] max-h-[400px] overflow-auto border rounded-lg">
-            {loading && (
-              <div className="p-8 text-center text-muted-foreground">
-                Searching...
-              </div>
-            )}
+            {loading && <div className="p-8 text-center text-muted-foreground">Searching...</div>}
 
             {!loading && results.length === 0 && query && (
               <div className="p-8 text-center text-muted-foreground">
@@ -126,9 +117,7 @@ export function SearchModal({ open, onClose, onSelect }: SearchModalProps): Reac
                         </p>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="font-semibold">
-                          Rs. {product.unit_price.toFixed(2)}
-                        </p>
+                        <p className="font-semibold">Rs. {product.unit_price.toFixed(2)}</p>
                         <p className={`text-sm font-medium ${getStockColor(product.total_stock)}`}>
                           {product.total_stock || 0} in stock
                         </p>

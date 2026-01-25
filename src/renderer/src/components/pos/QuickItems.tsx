@@ -23,7 +23,7 @@ export function QuickItems(): React.JSX.Element {
     }
   }
 
-  const handleQuickAdd = (product: typeof quickItems[0]) => {
+  const handleQuickAdd = (product: (typeof quickItems)[0]) => {
     if (!product.total_stock || product.total_stock === 0) {
       return // Silently ignore out-of-stock items
     }
@@ -66,9 +66,7 @@ export function QuickItems(): React.JSX.Element {
 
           {/* Product info */}
           <div className="w-full text-left">
-            <p className="font-medium text-sm line-clamp-2 pr-4">
-              {product.name}
-            </p>
+            <p className="font-medium text-sm line-clamp-2 pr-4">{product.name}</p>
             {product.generic_name && (
               <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
                 {product.generic_name}
@@ -78,12 +76,8 @@ export function QuickItems(): React.JSX.Element {
 
           {/* Price */}
           <div className="w-full flex items-end justify-between">
-            <span className="text-base font-bold">
-              Rs. {product.unit_price.toFixed(2)}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {product.total_stock || 0}
-            </span>
+            <span className="text-base font-bold">Rs. {product.unit_price.toFixed(2)}</span>
+            <span className="text-xs text-muted-foreground">{product.total_stock || 0}</span>
           </div>
         </Button>
       ))}

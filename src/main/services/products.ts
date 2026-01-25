@@ -19,7 +19,9 @@ export function searchProducts(query: string): Product[] {
   const db = getDatabase()
   const searchTerm = `%${query}%`
 
-  const results = db.prepare(`
+  const results = db
+    .prepare(
+      `
     SELECT
       p.*,
       COALESCE(SUM(sb.quantity), 0) as total_stock,
@@ -36,7 +38,9 @@ export function searchProducts(query: string): Product[] {
     GROUP BY p.id
     ORDER BY p.name ASC
     LIMIT 20
-  `).all(searchTerm, searchTerm, query, searchTerm) as Product[]
+  `
+    )
+    .all(searchTerm, searchTerm, query, searchTerm) as Product[]
 
   return results
 }
@@ -47,7 +51,9 @@ export function searchProducts(query: string): Product[] {
 export function getProductByBarcode(barcode: string): Product | null {
   const db = getDatabase()
 
-  const result = db.prepare(`
+  const result = db
+    .prepare(
+      `
     SELECT
       p.*,
       COALESCE(SUM(sb.quantity), 0) as total_stock,
@@ -56,7 +62,9 @@ export function getProductByBarcode(barcode: string): Product | null {
     LEFT JOIN stock_batches sb ON p.id = sb.product_id
     WHERE p.is_active = 1 AND p.barcode = ?
     GROUP BY p.id
-  `).get(barcode) as Product | undefined
+  `
+    )
+    .get(barcode) as Product | undefined
 
   return result || null
 }
@@ -67,7 +75,9 @@ export function getProductByBarcode(barcode: string): Product | null {
 export function getQuickItems(): Product[] {
   const db = getDatabase()
 
-  const results = db.prepare(`
+  const results = db
+    .prepare(
+      `
     SELECT
       p.*,
       COALESCE(SUM(sb.quantity), 0) as total_stock,
@@ -82,7 +92,9 @@ export function getQuickItems(): Product[] {
     GROUP BY p.id
     ORDER BY sales_7d DESC, p.name ASC
     LIMIT 8
-  `).all() as Product[]
+  `
+    )
+    .all() as Product[]
 
   return results
 }
@@ -90,10 +102,15 @@ export function getQuickItems(): Product[] {
 /**
  * Check stock availability for a product
  */
-export function checkStockAvailability(productId: string): { available: number; batches: { id: string; quantity: number; expiry_date: string | null }[] } {
+export function checkStockAvailability(productId: string): {
+  available: number
+  batches: { id: string; quantity: number; expiry_date: string | null }[]
+} {
   const db = getDatabase()
 
-  const batches = db.prepare(`
+  const batches = db
+    .prepare(
+      `
     SELECT id, quantity, expiry_date
     FROM stock_batches
     WHERE product_id = ? AND quantity > 0
@@ -101,7 +118,9 @@ export function checkStockAvailability(productId: string): { available: number; 
       CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END,
       expiry_date ASC,
       received_date ASC
-  `).all(productId) as { id: string; quantity: number; expiry_date: string | null }[]
+  `
+    )
+    .all(productId) as { id: string; quantity: number; expiry_date: string | null }[]
 
   const available = batches.reduce((sum, batch) => sum + batch.quantity, 0)
 

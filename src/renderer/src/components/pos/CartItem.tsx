@@ -11,7 +11,12 @@ interface CartItemProps {
   onRemove: (index: number) => void
 }
 
-export function CartItem({ item, index, onUpdateQuantity, onRemove }: CartItemProps): React.JSX.Element {
+export function CartItem({
+  item,
+  index,
+  onUpdateQuantity,
+  onRemove
+}: CartItemProps): React.JSX.Element {
   const handleQuantityChange = (delta: number) => {
     const newQty = item.quantity + delta
     if (newQty < 1) return
@@ -30,9 +35,7 @@ export function CartItem({ item, index, onUpdateQuantity, onRemove }: CartItemPr
       <div className="flex-1 min-w-0">
         <p className="font-medium text-sm truncate">{item.product.name}</p>
         {item.product.generic_name && (
-          <p className="text-xs text-muted-foreground truncate">
-            {item.product.generic_name}
-          </p>
+          <p className="text-xs text-muted-foreground truncate">{item.product.generic_name}</p>
         )}
       </div>
 
@@ -65,12 +68,8 @@ export function CartItem({ item, index, onUpdateQuantity, onRemove }: CartItemPr
 
       {/* Price */}
       <div className="text-right w-24">
-        <p className="text-xs text-muted-foreground">
-          @ {formatCurrency(item.unit_price)}
-        </p>
-        <p className="font-semibold">
-          {formatCurrency(item.line_total)}
-        </p>
+        <p className="text-xs text-muted-foreground">@ {formatCurrency(item.unit_price)}</p>
+        <p className="font-semibold">{formatCurrency(item.line_total)}</p>
       </div>
 
       {/* Remove Button */}

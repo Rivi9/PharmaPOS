@@ -1,11 +1,6 @@
 import { useState } from 'react'
 import { CreditCard, Banknote, Split } from 'lucide-react'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@renderer/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
 import { Label } from '@renderer/components/ui/label'
@@ -80,7 +75,9 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
     } else if (paymentMethod === 'mixed') {
       const totalPaid = cashReceivedNum + cardAmountNum
       if (Math.abs(totalPaid - total) > 0.01) {
-        setError(`Payment mismatch. Total: ${formatCurrency(total)}, Paid: ${formatCurrency(totalPaid)}`)
+        setError(
+          `Payment mismatch. Total: ${formatCurrency(total)}, Paid: ${formatCurrency(totalPaid)}`
+        )
         return false
       }
     }
@@ -106,7 +103,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
           product_name: item.product.name,
           quantity: item.quantity,
           unit_price: item.unit_price,
-          line_total: item.line_total,
+          line_total: item.line_total
         })),
         subtotal,
         discount_amount: discountAmount,
@@ -115,11 +112,17 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
         tax_amount: taxAmount,
         total,
         payment_method: paymentMethod,
-        cash_received: paymentMethod === 'cash' ? cashReceivedNum : paymentMethod === 'mixed' ? cashReceivedNum : 0,
-        card_amount: paymentMethod === 'card' ? total : paymentMethod === 'mixed' ? cardAmountNum : 0,
+        cash_received:
+          paymentMethod === 'cash'
+            ? cashReceivedNum
+            : paymentMethod === 'mixed'
+              ? cashReceivedNum
+              : 0,
+        card_amount:
+          paymentMethod === 'card' ? total : paymentMethod === 'mixed' ? cardAmountNum : 0,
         change_given: change,
         customer_name: customerName.trim() || undefined,
-        customer_phone: customerPhone.trim() || undefined,
+        customer_phone: customerPhone.trim() || undefined
       }
 
       const result = await window.electron.createSale(saleData)
@@ -236,25 +239,14 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
           </div>
 
           {/* Error Message */}
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
           {/* Actions */}
           <div className="flex gap-2 pt-2">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              disabled={processing}
-              className="flex-1"
-            >
+            <Button variant="outline" onClick={onClose} disabled={processing} className="flex-1">
               Cancel
             </Button>
-            <Button
-              onClick={handleComplete}
-              disabled={processing}
-              className="flex-1"
-            >
+            <Button onClick={handleComplete} disabled={processing} className="flex-1">
               {processing ? 'Processing...' : 'Complete Sale'}
             </Button>
           </div>

@@ -40,9 +40,12 @@ export function registerPOSHandlers(): void {
     return checkStockAvailability(productId)
   })
 
-  ipcMain.handle(IPC_CHANNELS.STOCK_DEDUCT, async (_event, data: { productId: string; quantity: number }) => {
-    // Note: Stock deduction is handled by createSale with FEFO logic
-    // This handler is for manual stock checks if needed
-    throw new Error('Stock deduction should be done via createSale')
-  })
+  ipcMain.handle(
+    IPC_CHANNELS.STOCK_DEDUCT,
+    async (_event, data: { productId: string; quantity: number }) => {
+      // Note: Stock deduction is handled by createSale with FEFO logic
+      // This handler is for manual stock checks if needed
+      throw new Error('Stock deduction should be done via createSale')
+    }
+  )
 }

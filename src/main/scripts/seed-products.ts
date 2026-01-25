@@ -22,57 +22,57 @@ const sampleProducts: Product[] = [
     generic_name: 'Paracetamol',
     barcode: '8850123456789',
     sku: 'MED-001',
-    unit_price: 15.00,
+    unit_price: 15.0
   },
   {
     name: 'Strepsils Honey & Lemon',
     generic_name: null,
     barcode: '5000347022104',
     sku: 'MED-002',
-    unit_price: 18.50,
+    unit_price: 18.5
   },
   {
     name: 'Piriton 4mg',
     generic_name: 'Chlorpheniramine',
     barcode: '8850987654321',
     sku: 'MED-003',
-    unit_price: 12.00,
+    unit_price: 12.0
   },
   {
     name: 'Amoxil 250mg',
     generic_name: 'Amoxicillin',
     barcode: '8851234567890',
     sku: 'MED-004',
-    unit_price: 25.00,
+    unit_price: 25.0
   },
   {
     name: 'Ventolin Inhaler',
     generic_name: 'Salbutamol',
     barcode: '5000456789012',
     sku: 'MED-005',
-    unit_price: 450.00,
+    unit_price: 450.0
   },
   {
     name: 'Dettol Antiseptic Liquid 500ml',
     generic_name: null,
     barcode: '6001106082109',
     sku: 'GEN-001',
-    unit_price: 380.00,
+    unit_price: 380.0
   },
   {
     name: 'Cetaphil Gentle Skin Cleanser',
     generic_name: null,
     barcode: '3499320001618',
     sku: 'SKN-001',
-    unit_price: 1200.00,
+    unit_price: 1200.0
   },
   {
     name: 'Vitamin C 1000mg',
     generic_name: 'Ascorbic Acid',
     barcode: '8852468024567',
     sku: 'SUP-001',
-    unit_price: 35.00,
-  },
+    unit_price: 35.0
+  }
 ]
 
 export function seedProducts(): void {
@@ -89,11 +89,13 @@ export function seedProducts(): void {
       const productId = generateId()
 
       // Insert product
-      db.prepare(`
+      db.prepare(
+        `
         INSERT INTO products (
           id, name, generic_name, barcode, sku, unit_price, is_active
         ) VALUES (?, ?, ?, ?, ?, ?, 1)
-      `).run(
+      `
+      ).run(
         productId,
         product.name,
         product.generic_name,
@@ -109,25 +111,27 @@ export function seedProducts(): void {
           quantity: Math.floor(Math.random() * 50) + 20, // 20-70 units
           cost_per_unit: product.unit_price * 0.6, // 60% of selling price
           expiry_date: getRandomExpiryDate(6, 12), // 6-12 months from now
-          received_date: getRandomReceivedDate(30), // Within last 30 days
+          received_date: getRandomReceivedDate(30) // Within last 30 days
         },
         {
           product_id: productId,
           quantity: Math.floor(Math.random() * 30) + 10, // 10-40 units
           cost_per_unit: product.unit_price * 0.6,
           expiry_date: getRandomExpiryDate(12, 24), // 12-24 months from now
-          received_date: getRandomReceivedDate(15), // Within last 15 days
-        },
+          received_date: getRandomReceivedDate(15) // Within last 15 days
+        }
       ]
 
       for (const batch of batches) {
         const batchId = generateId()
-        db.prepare(`
+        db.prepare(
+          `
           INSERT INTO stock_batches (
             id, product_id, batch_number, quantity, cost_per_unit,
             expiry_date, received_date
           ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(
+        `
+        ).run(
           batchId,
           batch.product_id,
           `BATCH-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,

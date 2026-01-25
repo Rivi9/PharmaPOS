@@ -10,7 +10,10 @@ import { useKeyboardShortcuts } from '@renderer/hooks/useKeyboardShortcuts'
 export function POSPage(): React.JSX.Element {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false)
-  const [completedSale, setCompletedSale] = useState<{ saleId: string; receiptNumber: string } | null>(null)
+  const [completedSale, setCompletedSale] = useState<{
+    saleId: string
+    receiptNumber: string
+  } | null>(null)
   const [searchModalOpen, setSearchModalOpen] = useState(false)
 
   const items = usePOSStore((state) => state.items)
@@ -47,7 +50,7 @@ export function POSPage(): React.JSX.Element {
       if (searchModalOpen) setSearchModalOpen(false)
       if (paymentModalOpen) setPaymentModalOpen(false)
       if (receiptPreviewOpen) handleReceiptClose()
-    },
+    }
   })
 
   return (
@@ -57,9 +60,7 @@ export function POSPage(): React.JSX.Element {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium">POS Terminal</p>
-            <p className="text-xs text-muted-foreground">
-              Ready for checkout
-            </p>
+            <p className="text-xs text-muted-foreground">Ready for checkout</p>
           </div>
           <div className="text-right">
             <p className="text-xs text-muted-foreground">Today's Sales</p>
@@ -75,10 +76,7 @@ export function POSPage(): React.JSX.Element {
           {/* Product Entry Section */}
           <div className="space-y-2">
             <h2 className="text-sm font-semibold">Product Entry</h2>
-            <ProductEntry
-              searchOpen={searchModalOpen}
-              onSearchOpenChange={setSearchModalOpen}
-            />
+            <ProductEntry searchOpen={searchModalOpen} onSearchOpenChange={setSearchModalOpen} />
           </div>
 
           {/* Quick Items Section */}

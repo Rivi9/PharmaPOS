@@ -12,12 +12,12 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
 
   const handleNumber = (num: string): void => {
     if (pin.length < maxLength) {
-      setPin(prev => prev + num)
+      setPin((prev) => prev + num)
     }
   }
 
   const handleDelete = (): void => {
-    setPin(prev => prev.slice(0, -1))
+    setPin((prev) => prev.slice(0, -1))
   }
 
   const handleClear = (): void => {
@@ -86,12 +86,7 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
             {num}
           </Button>
         ))}
-        <Button
-          variant="outline"
-          size="lg"
-          className="w-14 h-14"
-          onClick={handleClear}
-        >
+        <Button variant="outline" size="lg" className="w-14 h-14" onClick={handleClear}>
           C
         </Button>
         <Button
@@ -102,23 +97,13 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
         >
           0
         </Button>
-        <Button
-          variant="outline"
-          size="lg"
-          className="w-14 h-14"
-          onClick={handleDelete}
-        >
+        <Button variant="outline" size="lg" className="w-14 h-14" onClick={handleDelete}>
           <Delete className="w-5 h-5" />
         </Button>
       </div>
 
       {/* Submit */}
-      <Button
-        className="w-full mt-2"
-        size="lg"
-        onClick={handleSubmit}
-        disabled={pin.length === 0}
-      >
+      <Button className="w-full mt-2" size="lg" onClick={handleSubmit} disabled={pin.length === 0}>
         <CornerDownLeft className="w-4 h-4 mr-2" />
         Login
       </Button>

@@ -30,7 +30,7 @@ export const IPC_CHANNELS = {
 
   // Stock
   STOCK_CHECK_AVAILABILITY: 'stock:checkAvailability',
-  STOCK_DEDUCT: 'stock:deduct',
+  STOCK_DEDUCT: 'stock:deduct'
 } as const
 
-export type IpcChannel = typeof IPC_CHANNELS[keyof typeof IPC_CHANNELS]
+export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

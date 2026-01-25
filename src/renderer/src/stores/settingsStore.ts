@@ -23,7 +23,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     business_phone: '',
     vat_rate: '18',
     currency_symbol: 'Rs.',
-    receipt_footer: '',
+    receipt_footer: ''
   },
   isLoading: true,
 
@@ -39,5 +39,5 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   updateSetting: async (key, value) => {
     await window.electron.setSetting(key, value)
     set({ settings: { ...get().settings, [key]: value } })
-  },
+  }
 }))

@@ -55,9 +55,7 @@ export function MainLayout({ user, onLogout }: MainLayoutProps): React.JSX.Eleme
       <Header user={user} onLogout={onLogout} />
       <div className="flex-1 flex overflow-hidden">
         <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
-        <main className="flex-1 overflow-auto">
-          {renderPage()}
-        </main>
+        <main className="flex-1 overflow-auto">{renderPage()}</main>
       </div>
     </div>
   )

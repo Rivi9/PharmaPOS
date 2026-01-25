@@ -10,7 +10,10 @@ interface ProductEntryProps {
   onSearchOpenChange?: (open: boolean) => void
 }
 
-export function ProductEntry({ searchOpen: externalSearchOpen, onSearchOpenChange }: ProductEntryProps = {}): React.JSX.Element {
+export function ProductEntry({
+  searchOpen: externalSearchOpen,
+  onSearchOpenChange
+}: ProductEntryProps = {}): React.JSX.Element {
   const [barcode, setBarcode] = useState('')
   const [internalSearchOpen, setInternalSearchOpen] = useState(false)
   const [error, setError] = useState('')
@@ -71,23 +74,14 @@ export function ProductEntry({ searchOpen: externalSearchOpen, onSearchOpenChang
             placeholder="Scan or enter barcode..."
             className="flex-1"
           />
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={() => setSearchOpen(true)}
-          >
+          <Button type="button" variant="outline" size="icon" onClick={() => setSearchOpen(true)}>
             <Search className="h-4 w-4" />
           </Button>
         </div>
 
-        {error && (
-          <p className="text-sm text-destructive">{error}</p>
-        )}
+        {error && <p className="text-sm text-destructive">{error}</p>}
 
-        <p className="text-xs text-muted-foreground">
-          F2 to search • Enter to add
-        </p>
+        <p className="text-xs text-muted-foreground">F2 to search • Enter to add</p>
       </form>
 
       <SearchModal

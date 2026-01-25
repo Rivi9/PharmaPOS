@@ -7,7 +7,12 @@ interface CartTotalsProps {
   total: number
 }
 
-export function CartTotals({ subtotal, discountAmount, taxAmount, total }: CartTotalsProps): React.JSX.Element {
+export function CartTotals({
+  subtotal,
+  discountAmount,
+  taxAmount,
+  total
+}: CartTotalsProps): React.JSX.Element {
   return (
     <div className="space-y-2">
       <div className="flex justify-between text-sm">

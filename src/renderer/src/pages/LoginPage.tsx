@@ -97,9 +97,7 @@ export function LoginPage(): React.JSX.Element {
         <CardContent>
           {!selectedUser ? (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground text-center mb-4">
-                Select user to login
-              </p>
+              <p className="text-sm text-muted-foreground text-center mb-4">Select user to login</p>
               {users.map((user) => (
                 <Button
                   key={user.id}
@@ -121,9 +119,7 @@ export function LoginPage(): React.JSX.Element {
                 <p className="text-sm text-muted-foreground">{selectedUser.role}</p>
               </div>
 
-              {error && (
-                <p className="text-sm text-destructive text-center">{error}</p>
-              )}
+              {error && <p className="text-sm text-destructive text-center">{error}</p>}
 
               {usePassword ? (
                 <div className="space-y-4">
@@ -143,18 +139,10 @@ export function LoginPage(): React.JSX.Element {
               )}
 
               <div className="flex justify-between pt-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedUser(null)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setSelectedUser(null)}>
                   Back
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setUsePassword(!usePassword)}
-                >
+                <Button variant="ghost" size="sm" onClick={() => setUsePassword(!usePassword)}>
                   {usePassword ? 'Use PIN' : 'Use Password'}
                 </Button>
               </div>

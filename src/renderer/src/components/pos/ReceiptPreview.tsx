@@ -1,11 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Copy, X } from 'lucide-react'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@renderer/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
 import { formatCurrency } from '@renderer/lib/calculations'
 
@@ -40,7 +35,12 @@ interface ReceiptData {
   }>
 }
 
-export function ReceiptPreview({ open, onClose, saleId, receiptNumber }: ReceiptPreviewProps): React.JSX.Element {
+export function ReceiptPreview({
+  open,
+  onClose,
+  saleId,
+  receiptNumber
+}: ReceiptPreviewProps): React.JSX.Element {
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -153,19 +153,13 @@ Card:             ${formatCurrency(receipt.sale.card_amount).padStart(10)}
           <DialogTitle>Receipt - {receiptNumber}</DialogTitle>
         </DialogHeader>
 
-        {loading && (
-          <div className="p-8 text-center text-muted-foreground">
-            Loading receipt...
-          </div>
-        )}
+        {loading && <div className="p-8 text-center text-muted-foreground">Loading receipt...</div>}
 
         {!loading && receipt && (
           <div className="space-y-4">
             {/* Receipt Display */}
             <div className="border rounded-lg p-4 bg-white text-black overflow-auto max-h-[60vh]">
-              <pre className="font-mono text-xs whitespace-pre">
-                {formatReceiptText()}
-              </pre>
+              <pre className="font-mono text-xs whitespace-pre">{formatReceiptText()}</pre>
             </div>
 
             {/* Actions */}
@@ -178,10 +172,7 @@ Card:             ${formatCurrency(receipt.sale.card_amount).padStart(10)}
                 <Copy className="h-4 w-4" />
                 Copy to Clipboard
               </Button>
-              <Button
-                onClick={onClose}
-                className="flex-1 flex items-center gap-2"
-              >
+              <Button onClick={onClose} className="flex-1 flex items-center gap-2">
                 <X className="h-4 w-4" />
                 New Sale
               </Button>
