@@ -20,6 +20,7 @@
 ## Overview & Architecture
 
 ### Goal
+
 Build a complete point-of-sale terminal where cashiers can scan products, build a cart, apply discounts, take payment, and complete sales with automatic inventory deduction.
 
 ### Key Features
@@ -195,6 +196,7 @@ Sale discount:
 Opens when: "Pay Now" clicked or Quick Pay triggered
 
 **Layout:**
+
 ```
 ┌─────────────────────────────────────┐
 │  Complete Sale - Rs. 1,121.00       │
@@ -214,6 +216,7 @@ Opens when: "Pay Now" clicked or Quick Pay triggered
 ```
 
 **Payment logic:**
+
 - **Cash:** Enter amount → auto-calculate change
   - If less than total → show error
 - **Card:** Just mark as paid (amount = total)
@@ -221,6 +224,7 @@ Opens when: "Pay Now" clicked or Quick Pay triggered
   - Validate cash + card = total
 
 **On "Complete Sale":**
+
 1. Validate payment amounts
 2. Generate receipt number
 3. Save sale to database (with all line items)
@@ -261,6 +265,7 @@ Shows after successful payment:
 ```
 
 **Actions:**
+
 - [ Copy to Clipboard ] (copies as text)
 - [ New Sale ] (close preview, start fresh)
 
@@ -336,7 +341,9 @@ LIMIT 8
 ```typescript
 async function deductStock(productId: string, qtyNeeded: number) {
   // Get batches in FEFO order
-  const batches = db.prepare(`
+  const batches = db
+    .prepare(
+      `
     SELECT id, quantity, expiry_date
     FROM stock_batches
     WHERE product_id = ? AND quantity > 0
@@ -344,7 +351,9 @@ async function deductStock(productId: string, qtyNeeded: number) {
       CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END,
       expiry_date ASC,
       received_date ASC
-  `).all(productId)
+  `
+    )
+    .all(productId)
 
   let remaining = qtyNeeded
   const deductions = []
@@ -364,11 +373,13 @@ async function deductStock(productId: string, qtyNeeded: number) {
   // Apply deductions in transaction
   db.transaction(() => {
     for (const { batchId, quantity } of deductions) {
-      db.prepare(`
+      db.prepare(
+        `
         UPDATE stock_batches
         SET quantity = quantity - ?
         WHERE id = ?
-      `).run(quantity, batchId)
+      `
+      ).run(quantity, batchId)
     }
   })()
 
@@ -475,7 +486,7 @@ interface POSStore {
   clearCart: () => void
 
   // Discounts
-  saleDiscount: { type: 'percentage' | 'fixed', value: number } | null
+  saleDiscount: { type: 'percentage' | 'fixed'; value: number } | null
   applySaleDiscount: (type, value) => void
 
   // Totals (computed)
@@ -497,15 +508,18 @@ interface POSStore {
 ### Error Handling
 
 **Stock check errors:**
+
 - "Product not found" → Clear input, focus ready
 - "Insufficient stock (only X available)" → Don't add, show warning
 - "No stock available" → Don't add, show error
 
 **Payment errors:**
+
 - "Cash received less than total" → Prevent completion
 - "Payment amounts don't match total" → Show validation
 
 **Database errors:**
+
 - Sale creation failed → Rollback, show error, keep cart
 - Stock deduction failed → Rollback entire transaction
 
@@ -540,4 +554,4 @@ Phase 2 delivers a complete, functional POS terminal with:
 
 ---
 
-*Document created: 2025-01-24*
+_Document created: 2025-01-24_

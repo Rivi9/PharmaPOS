@@ -1,12 +1,5 @@
 import { cn } from '@renderer/lib/utils'
-import {
-  ShoppingCart,
-  Package,
-  BarChart3,
-  Bot,
-  Users,
-  Settings
-} from 'lucide-react'
+import { ShoppingCart, Package, BarChart3, Bot, Users, Settings } from 'lucide-react'
 
 interface SidebarProps {
   currentPage: string
@@ -19,7 +12,7 @@ const navItems = [
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'ai', label: 'AI Insights', icon: Bot },
   { id: 'users', label: 'Users', icon: Users },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'settings', label: 'Settings', icon: Settings }
 ]
 
 export function Sidebar({ currentPage, onNavigate }: SidebarProps): React.JSX.Element {

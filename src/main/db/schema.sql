@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS products (
     category_id TEXT REFERENCES categories(id),
     supplier_id TEXT REFERENCES suppliers(id),
     cost_price REAL NOT NULL DEFAULT 0,
-    selling_price REAL NOT NULL,
+    unit_price REAL NOT NULL,
     tax_rate REAL DEFAULT 0,
     is_tax_inclusive INTEGER DEFAULT 1,
     reorder_level INTEGER DEFAULT 10,
@@ -120,6 +120,18 @@ CREATE TABLE IF NOT EXISTS sale_items (
     created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Product Sales Daily (for quick items / best sellers tracking)
+CREATE TABLE IF NOT EXISTS product_sales_daily (
+    id TEXT PRIMARY KEY,
+    date DATE NOT NULL,
+    product_id TEXT NOT NULL REFERENCES products(id),
+    quantity_sold INTEGER NOT NULL DEFAULT 0,
+    revenue REAL NOT NULL DEFAULT 0,
+    cost REAL NOT NULL DEFAULT 0,
+    profit REAL NOT NULL DEFAULT 0,
+    UNIQUE(date, product_id)
+);
+
 -- Settings
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
@@ -135,6 +147,8 @@ CREATE INDEX IF NOT EXISTS idx_stock_batches_expiry ON stock_batches(expiry_date
 CREATE INDEX IF NOT EXISTS idx_sales_created ON sales(created_at);
 CREATE INDEX IF NOT EXISTS idx_sales_user ON sales(user_id);
 CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
+CREATE INDEX IF NOT EXISTS idx_product_sales_daily_date ON product_sales_daily(date);
+CREATE INDEX IF NOT EXISTS idx_product_sales_daily_product ON product_sales_daily(product_id);
 
 -- Default data
 INSERT OR IGNORE INTO settings (key, value) VALUES

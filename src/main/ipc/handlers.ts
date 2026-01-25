@@ -2,16 +2,23 @@ import { ipcMain } from 'electron'
 import { getDatabase, generateId } from '../services/database'
 import { IPC_CHANNELS } from './channels'
 import bcrypt from 'bcryptjs'
+import { registerPOSHandlers } from './pos-handlers'
 
 export function registerIpcHandlers(): void {
+  // Register POS handlers
+  registerPOSHandlers()
   // Get all users (for login dropdown)
   ipcMain.handle(IPC_CHANNELS.AUTH_GET_USERS, () => {
     const db = getDatabase()
-    const users = db.prepare(`
+    const users = db
+      .prepare(
+        `
       SELECT id, username, full_name, role, is_active
       FROM users
       WHERE is_active = 1
-    `).all()
+    `
+      )
+      .all()
     return users
   })
 
@@ -43,22 +50,27 @@ export function registerIpcHandlers(): void {
   })
 
   // Create user
-  ipcMain.handle(IPC_CHANNELS.AUTH_CREATE_USER, async (_, { username, password, fullName, role, pin }) => {
-    const db = getDatabase()
-    const id = generateId()
-    const passwordHash = await bcrypt.hash(password, 10)
+  ipcMain.handle(
+    IPC_CHANNELS.AUTH_CREATE_USER,
+    async (_, { username, password, fullName, role, pin }) => {
+      const db = getDatabase()
+      const id = generateId()
+      const passwordHash = await bcrypt.hash(password, 10)
 
-    try {
-      db.prepare(`
+      try {
+        db.prepare(
+          `
         INSERT INTO users (id, username, password_hash, full_name, role, pin_code)
         VALUES (?, ?, ?, ?, ?, ?)
-      `).run(id, username, passwordHash, fullName, role, pin || null)
+      `
+        ).run(id, username, passwordHash, fullName, role, pin || null)
 
-      return { success: true, id }
-    } catch (error: any) {
-      return { success: false, error: error.message }
+        return { success: true, id }
+      } catch (error: any) {
+        return { success: false, error: error.message }
+      }
     }
-  })
+  )
 
   // Get settings
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, (_, key: string) => {
@@ -70,11 +82,13 @@ export function registerIpcHandlers(): void {
   // Set setting
   ipcMain.handle(IPC_CHANNELS.SETTINGS_SET, (_, { key, value }) => {
     const db = getDatabase()
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO settings (key, value, updated_at)
       VALUES (?, ?, datetime('now'))
       ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')
-    `).run(key, value, value)
+    `
+    ).run(key, value, value)
     return { success: true }
   })
 
@@ -82,7 +96,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_ALL, () => {
     const db = getDatabase()
     const rows = db.prepare('SELECT key, value FROM settings').all() as any[]
-    return Object.fromEntries(rows.map(r => [r.key, r.value]))
+    return Object.fromEntries(rows.map((r) => [r.key, r.value]))
   })
 
   // Start shift
@@ -90,10 +104,12 @@ export function registerIpcHandlers(): void {
     const db = getDatabase()
     const id = generateId()
 
-    db.prepare(`
+    db.prepare(
+      `
       INSERT INTO shifts (id, user_id, opening_cash, status)
       VALUES (?, ?, ?, 'active')
-    `).run(id, userId, openingCash)
+    `
+    ).run(id, userId, openingCash)
 
     return { success: true, shiftId: id }
   })
@@ -102,11 +118,13 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.SHIFT_END, (_, { shiftId, closingCash, notes }) => {
     const db = getDatabase()
 
-    db.prepare(`
+    db.prepare(
+      `
       UPDATE shifts
       SET ended_at = datetime('now'), closing_cash = ?, notes = ?, status = 'closed'
       WHERE id = ?
-    `).run(closingCash, notes || null, shiftId)
+    `
+    ).run(closingCash, notes || null, shiftId)
 
     return { success: true }
   })
@@ -114,11 +132,15 @@ export function registerIpcHandlers(): void {
   // Get active shift for user
   ipcMain.handle(IPC_CHANNELS.SHIFT_GET_ACTIVE, (_, userId: string) => {
     const db = getDatabase()
-    const shift = db.prepare(`
+    const shift = db
+      .prepare(
+        `
       SELECT * FROM shifts
       WHERE user_id = ? AND status = 'active'
       ORDER BY started_at DESC LIMIT 1
-    `).get(userId)
+    `
+      )
+      .get(userId)
 
     return shift || null
   })

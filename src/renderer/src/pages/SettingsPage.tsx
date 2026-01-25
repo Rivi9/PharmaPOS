@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@renderer/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription
+} from '@renderer/components/ui/card'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
@@ -29,7 +35,7 @@ export function SettingsPage(): React.JSX.Element {
   }
 
   const handleChange = (key: string, value: string): void => {
-    setLocalSettings(prev => ({ ...prev, [key]: value }))
+    setLocalSettings((prev) => ({ ...prev, [key]: value }))
   }
 
   if (isLoading) {

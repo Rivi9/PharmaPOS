@@ -37,18 +37,18 @@ PharmaPOS is a Windows desktop point-of-sale application designed for small phar
 
 ## Requirements Summary
 
-| Aspect | Decision |
-|--------|----------|
-| **Users** | Small team (2-5 staff), user accounts with PIN login, shift management |
-| **Inventory** | Supplier import + manual entry, basic expiry tracking |
-| **Prescriptions** | Not tracked (handled separately) |
-| **Analytics** | Sales + Inventory focused dashboards |
-| **Technology** | Electron + React (hybrid desktop app) |
-| **Data Storage** | Local SQLite database |
-| **Backup** | Google Drive (automatic) |
-| **Currency** | Sri Lankan Rupees (LKR) with 18% VAT |
-| **Integrations** | Standalone (no external system integrations) |
-| **AI Features** | Gemini API for forecasting and recommendations |
+| Aspect            | Decision                                                               |
+| ----------------- | ---------------------------------------------------------------------- |
+| **Users**         | Small team (2-5 staff), user accounts with PIN login, shift management |
+| **Inventory**     | Supplier import + manual entry, basic expiry tracking                  |
+| **Prescriptions** | Not tracked (handled separately)                                       |
+| **Analytics**     | Sales + Inventory focused dashboards                                   |
+| **Technology**    | Electron + React (hybrid desktop app)                                  |
+| **Data Storage**  | Local SQLite database                                                  |
+| **Backup**        | Google Drive (automatic)                                               |
+| **Currency**      | Sri Lankan Rupees (LKR) with 18% VAT                                   |
+| **Integrations**  | Standalone (no external system integrations)                           |
+| **AI Features**   | Gemini API for forecasting and recommendations                         |
 
 ---
 
@@ -58,33 +58,33 @@ PharmaPOS is a Windows desktop point-of-sale application designed for small phar
 
 ### Desktop Application
 
-| Layer | Technology | Version |
-|-------|------------|---------|
-| **Runtime** | Electron | ^35.0.0 |
-| **Frontend** | React + TypeScript | ^19.0.0 |
-| **Styling** | Tailwind CSS | ^4.1.0 |
-| **Components** | shadcn/ui (Radix UI primitives) | Latest |
-| **Data Tables** | @tanstack/react-table | ^8.21.0 |
-| **Charts** | Recharts | ^2.15.0 |
-| **Icons** | Lucide React | ^0.469.0 |
-| **Forms** | React Hook Form + Zod | ^7.54.0 / ^3.24.2 |
-| **State** | Zustand | ^5.0.8 |
-| **Database** | SQLite (better-sqlite3) | ^12.4.1 |
-| **Build** | electron-vite + electron-builder | ^3.0.0 / ^25.1.0 |
+| Layer           | Technology                       | Version           |
+| --------------- | -------------------------------- | ----------------- |
+| **Runtime**     | Electron                         | ^35.0.0           |
+| **Frontend**    | React + TypeScript               | ^19.0.0           |
+| **Styling**     | Tailwind CSS                     | ^4.1.0            |
+| **Components**  | shadcn/ui (Radix UI primitives)  | Latest            |
+| **Data Tables** | @tanstack/react-table            | ^8.21.0           |
+| **Charts**      | Recharts                         | ^2.15.0           |
+| **Icons**       | Lucide React                     | ^0.469.0          |
+| **Forms**       | React Hook Form + Zod            | ^7.54.0 / ^3.24.2 |
+| **State**       | Zustand                          | ^5.0.8            |
+| **Database**    | SQLite (better-sqlite3)          | ^12.4.1           |
+| **Build**       | electron-vite + electron-builder | ^3.0.0 / ^25.1.0  |
 
 ### Hardware Integration
 
-| Hardware | Library |
-|----------|---------|
-| **Thermal Printer** | escpos + escpos-usb |
-| **Cash Drawer** | Via printer RJ11 (escpos) |
+| Hardware            | Library                      |
+| ------------------- | ---------------------------- |
+| **Thermal Printer** | escpos + escpos-usb          |
+| **Cash Drawer**     | Via printer RJ11 (escpos)    |
 | **Barcode Scanner** | USB HID (keyboard emulation) |
 
 ### External Services
 
-| Service | Package | Purpose |
-|---------|---------|---------|
-| **Google Drive API** | googleapis ^146.0.0 | Automatic database backup |
+| Service               | Package              | Purpose                                |
+| --------------------- | -------------------- | -------------------------------------- |
+| **Google Drive API**  | googleapis ^146.0.0  | Automatic database backup              |
 | **Google Gemini API** | @google/genai ^1.0.0 | AI-powered analytics (new unified SDK) |
 
 ### Requirements
@@ -484,24 +484,26 @@ INSERT INTO settings (key, value) VALUES
 
 ### Features
 
-| Feature | Description | Trigger |
-|---------|-------------|---------|
-| **Reorder Suggestions** | Recommend products to reorder based on stock levels and sales velocity | Daily/On-demand |
-| **Sales Forecast** | Predict next week/month sales based on historical patterns | Dashboard view |
-| **Dead Stock Alert** | Identify slow-moving items, suggest discounts/removal | Weekly report |
-| **Expiry Risk Analysis** | Cross-reference expiry dates with sales velocity | Daily alert |
-| **Peak Hours Prediction** | Suggest optimal staffing based on traffic patterns | Weekly |
-| **Natural Language Query** | Answer ad-hoc questions about business data | On-demand chat |
+| Feature                    | Description                                                            | Trigger         |
+| -------------------------- | ---------------------------------------------------------------------- | --------------- |
+| **Reorder Suggestions**    | Recommend products to reorder based on stock levels and sales velocity | Daily/On-demand |
+| **Sales Forecast**         | Predict next week/month sales based on historical patterns             | Dashboard view  |
+| **Dead Stock Alert**       | Identify slow-moving items, suggest discounts/removal                  | Weekly report   |
+| **Expiry Risk Analysis**   | Cross-reference expiry dates with sales velocity                       | Daily alert     |
+| **Peak Hours Prediction**  | Suggest optimal staffing based on traffic patterns                     | Weekly          |
+| **Natural Language Query** | Answer ad-hoc questions about business data                            | On-demand chat  |
 
 ### Hybrid Approach
 
 **Local Statistical Model (No internet needed):**
+
 - Moving averages for basic trend detection
 - Simple exponential smoothing for short-term forecasts
 - Stock days-remaining calculation
 - Basic seasonality (weekly patterns)
 
 **Gemini API (When online):**
+
 - Natural language insights and explanations
 - Complex pattern recognition
 - Actionable recommendations with reasoning
@@ -513,22 +515,27 @@ INSERT INTO settings (key, value) VALUES
 You are PharmAssist AI, an intelligent analytics assistant for a pharmacy point-of-sale system in Sri Lanka.
 
 ## Your Role
+
 You analyze sales data, inventory levels, and business patterns to provide actionable insights for pharmacy owners and staff. You help with forecasting, reorder decisions, and identifying business opportunities.
 
 ## Context
+
 - Currency: Sri Lankan Rupees (Rs.)
 - Business: Retail pharmacy (medications, OTC products, cosmetics, health items)
 - No prescription tracking - focus on retail sales analytics
 - Staff size: 2-5 people
 
 ## Data You Receive
+
 You will receive JSON data containing:
+
 - `sales_history`: Daily/weekly sales with product details, quantities, revenue
 - `inventory`: Current stock levels, costs, expiry dates
 - `products`: Product catalog with categories, suppliers, reorder levels
 - `query`: The specific question or analysis requested
 
 ## Your Capabilities
+
 1. **Sales Forecasting**: Predict future sales based on historical patterns, seasonality, and trends
 2. **Reorder Recommendations**: Suggest what to order, when, and how much based on:
    - Current stock levels
@@ -541,6 +548,7 @@ You will receive JSON data containing:
 6. **Profitability Insights**: Highlight high-margin vs low-margin products, suggest pricing optimizations
 
 ## Response Guidelines
+
 - Be concise and actionable - pharmacy staff are busy
 - Use bullet points and clear numbers
 - Always include the "why" behind recommendations
@@ -550,6 +558,7 @@ You will receive JSON data containing:
 - Consider Sri Lankan pharmacy context (monsoon seasons, festival periods like Avurudu, school terms)
 
 ## Response Format for Forecasts
+
 📊 **[Forecast Type]**
 
 **Summary:** [One sentence overview]
@@ -559,22 +568,25 @@ You will receive JSON data containing:
 • [Finding 2 with numbers]
 
 **Recommendations:**
+
 1. [Action] - [Expected impact] - Priority: [High/Medium/Low]
 2. [Action] - [Expected impact] - Priority: [High/Medium/Low]
 
 **Data Confidence:** [High/Medium/Low] based on [X days/weeks] of history
 
 ## Response Format for Reorder Suggestions
+
 🛒 **Reorder Recommendations**
 
-| Product | Current Stock | Daily Sales | Days Left | Suggested Order | Urgency |
-|---------|---------------|-------------|-----------|-----------------|---------|
+| Product | Current Stock | Daily Sales | Days Left | Suggested Order | Urgency    |
+| ------- | ------------- | ----------- | --------- | --------------- | ---------- |
 | [Name]  | [X units]     | [X/day]     | [X days]  | [X units]       | [🔴/🟡/🟢] |
 
 **Notes:**
 • [Any special considerations like upcoming expiry, seasonal demand]
 
 ## Important Rules
+
 - Never make up data - only analyze what's provided
 - If asked about prescriptions or medical advice, decline and clarify you only handle sales/inventory analytics
 - Round forecasts appropriately (don't say "sell 47.3 units" - say "approximately 45-50 units")
@@ -736,99 +748,100 @@ pharma-pos/
 
 ### Phase 1: Foundation
 
-| Task | Description |
-|------|-------------|
-| 1.1 | Initialize Electron + Vite + React + TypeScript |
-| 1.2 | Setup Tailwind CSS + shadcn/ui |
-| 1.3 | Create SQLite database with schema |
-| 1.4 | Implement IPC bridge |
-| 1.5 | Build main layout (sidebar, header) |
-| 1.6 | User authentication (PIN + password) |
-| 1.7 | Shift management (start/end shift) |
-| 1.8 | Basic settings page |
+| Task | Description                                     |
+| ---- | ----------------------------------------------- |
+| 1.1  | Initialize Electron + Vite + React + TypeScript |
+| 1.2  | Setup Tailwind CSS + shadcn/ui                  |
+| 1.3  | Create SQLite database with schema              |
+| 1.4  | Implement IPC bridge                            |
+| 1.5  | Build main layout (sidebar, header)             |
+| 1.6  | User authentication (PIN + password)            |
+| 1.7  | Shift management (start/end shift)              |
+| 1.8  | Basic settings page                             |
 
 **Deliverable:** App launches, user can log in, navigate between empty pages
 
 ### Phase 2: Core POS
 
-| Task | Description |
-|------|-------------|
-| 2.1 | Product search component |
-| 2.2 | Barcode scanner integration |
-| 2.3 | Shopping cart state management |
-| 2.4 | Cart UI (add, remove, edit qty) |
-| 2.5 | Quick items grid |
-| 2.6 | Payment modal (cash/card) |
-| 2.7 | Sale completion & DB save |
-| 2.8 | Receipt printing |
-| 2.9 | Cash drawer integration |
-| 2.10 | Hold/recall sales |
-| 2.11 | Void transaction |
-| 2.12 | Keyboard shortcuts (F-keys) |
+| Task | Description                     |
+| ---- | ------------------------------- |
+| 2.1  | Product search component        |
+| 2.2  | Barcode scanner integration     |
+| 2.3  | Shopping cart state management  |
+| 2.4  | Cart UI (add, remove, edit qty) |
+| 2.5  | Quick items grid                |
+| 2.6  | Payment modal (cash/card)       |
+| 2.7  | Sale completion & DB save       |
+| 2.8  | Receipt printing                |
+| 2.9  | Cash drawer integration         |
+| 2.10 | Hold/recall sales               |
+| 2.11 | Void transaction                |
+| 2.12 | Keyboard shortcuts (F-keys)     |
 
 **Deliverable:** Complete sale workflow - scan → pay → print receipt → drawer opens
 
 ### Phase 3: Inventory Management
 
-| Task | Description |
-|------|-------------|
-| 3.1 | Products list with data table |
-| 3.2 | Add/edit product form |
-| 3.3 | Category management |
-| 3.4 | Supplier management |
-| 3.5 | Stock batch tracking |
-| 3.6 | Stock receive (goods in) |
-| 3.7 | Stock adjustments |
-| 3.8 | CSV import for products |
-| 3.9 | Export to CSV/Excel |
-| 3.10 | Low stock alerts |
-| 3.11 | FEFO stock deduction |
+| Task | Description                   |
+| ---- | ----------------------------- |
+| 3.1  | Products list with data table |
+| 3.2  | Add/edit product form         |
+| 3.3  | Category management           |
+| 3.4  | Supplier management           |
+| 3.5  | Stock batch tracking          |
+| 3.6  | Stock receive (goods in)      |
+| 3.7  | Stock adjustments             |
+| 3.8  | CSV import for products       |
+| 3.9  | Export to CSV/Excel           |
+| 3.10 | Low stock alerts              |
+| 3.11 | FEFO stock deduction          |
 
 **Deliverable:** Manage full product lifecycle, track batches, receive stock
 
 ### Phase 4: Analytics & AI
 
-| Task | Description |
-|------|-------------|
-| 4.1 | Daily sales aggregation job |
-| 4.2 | Dashboard KPI cards |
-| 4.3 | Sales trend chart |
-| 4.4 | Top products list |
-| 4.5 | Category breakdown pie chart |
-| 4.6 | Alerts panel (low stock, expiry) |
-| 4.7 | Sales report (by date range) |
-| 4.8 | Inventory valuation report |
-| 4.9 | Profit/loss report |
-| 4.10 | Gemini API integration |
-| 4.11 | AI reorder suggestions |
-| 4.12 | AI sales forecast |
-| 4.13 | AI dead stock detection |
-| 4.14 | Natural language query |
+| Task | Description                      |
+| ---- | -------------------------------- |
+| 4.1  | Daily sales aggregation job      |
+| 4.2  | Dashboard KPI cards              |
+| 4.3  | Sales trend chart                |
+| 4.4  | Top products list                |
+| 4.5  | Category breakdown pie chart     |
+| 4.6  | Alerts panel (low stock, expiry) |
+| 4.7  | Sales report (by date range)     |
+| 4.8  | Inventory valuation report       |
+| 4.9  | Profit/loss report               |
+| 4.10 | Gemini API integration           |
+| 4.11 | AI reorder suggestions           |
+| 4.12 | AI sales forecast                |
+| 4.13 | AI dead stock detection          |
+| 4.14 | Natural language query           |
 
 **Deliverable:** Visual dashboard, printable reports, AI recommendations
 
 ### Phase 5: Polish & Deployment
 
-| Task | Description |
-|------|-------------|
-| 5.1 | Google Drive backup integration |
-| 5.2 | Auto-backup scheduler |
-| 5.3 | Restore from backup |
-| 5.4 | User management (CRUD) |
-| 5.5 | Role-based permissions |
-| 5.6 | Printer setup wizard |
-| 5.7 | First-run setup wizard |
-| 5.8 | Error handling & logging |
-| 5.9 | End-to-end testing |
-| 5.10 | Windows installer build |
-| 5.11 | Auto-update mechanism |
-| 5.12 | User documentation |
+| Task | Description                     |
+| ---- | ------------------------------- |
+| 5.1  | Google Drive backup integration |
+| 5.2  | Auto-backup scheduler           |
+| 5.3  | Restore from backup             |
+| 5.4  | User management (CRUD)          |
+| 5.5  | Role-based permissions          |
+| 5.6  | Printer setup wizard            |
+| 5.7  | First-run setup wizard          |
+| 5.8  | Error handling & logging        |
+| 5.9  | End-to-end testing              |
+| 5.10 | Windows installer build         |
+| 5.11 | Auto-update mechanism           |
+| 5.12 | User documentation              |
 
 **Deliverable:** Installable `.exe`, auto-backups, ready for production use
 
 ### MVP Definition
 
 **MUST HAVE (MVP):**
+
 - User login (PIN)
 - Product management (basic)
 - Barcode scanning
@@ -839,6 +852,7 @@ pharma-pos/
 - Manual backup
 
 **SHOULD HAVE (v1.1):**
+
 - Card payment support
 - Stock batch/expiry tracking
 - Google Drive auto-backup
@@ -846,6 +860,7 @@ pharma-pos/
 - Low stock alerts
 
 **NICE TO HAVE (v1.2+):**
+
 - AI reorder suggestions
 - Sales forecasting
 - Natural language queries
@@ -858,26 +873,26 @@ pharma-pos/
 
 ### Receipt Printer
 
-| Model | Price | Notes |
-|-------|-------|-------|
+| Model               | Price | Notes                                       |
+| ------------------- | ----- | ------------------------------------------- |
 | **Epson TM-T20III** | ~$180 | Industry standard, excellent driver support |
-| **Star TSP143III** | ~$200 | Very reliable, easy setup |
-| **RONGTA RP326** | ~$60 | Budget option, good for lower volume |
+| **Star TSP143III**  | ~$200 | Very reliable, easy setup                   |
+| **RONGTA RP326**    | ~$60  | Budget option, good for lower volume        |
 
 ### Barcode Scanner
 
-| Model | Price | Notes |
-|-------|-------|-------|
-| **Netum C750** | ~$30 | Budget USB, handles 1D/2D barcodes |
-| **Honeywell Voyager 1200g** | ~$80 | Professional grade, very durable |
-| **Tera HW0002** | ~$40 | Good middle ground, wireless option |
+| Model                       | Price | Notes                               |
+| --------------------------- | ----- | ----------------------------------- |
+| **Netum C750**              | ~$30  | Budget USB, handles 1D/2D barcodes  |
+| **Honeywell Voyager 1200g** | ~$80  | Professional grade, very durable    |
+| **Tera HW0002**             | ~$40  | Good middle ground, wireless option |
 
 ### Cash Drawer
 
-| Model | Price | Notes |
-|-------|-------|-------|
-| **MUNBYN Cash Drawer** | ~$45 | Works with most thermal printers |
-| **APG Vasario** | ~$80 | Professional grade, very durable |
+| Model                  | Price | Notes                            |
+| ---------------------- | ----- | -------------------------------- |
+| **MUNBYN Cash Drawer** | ~$45  | Works with most thermal printers |
+| **APG Vasario**        | ~$80  | Professional grade, very durable |
 
 **Connection:** Cash drawer connects to receipt printer via RJ11 cable, auto-opens when receipt prints.
 
@@ -889,17 +904,17 @@ pharma-pos/
 
 ### Key Version Changes from Initial Design
 
-| Package | Old Version | New Version | Notes |
-|---------|-------------|-------------|-------|
-| `electron` | ^28.0.0 | ^35.0.0 | Latest stable |
-| `react` | ^18.2.0 | ^19.0.0 | React 19 stable with new features |
-| `vite` | ^5.0.0 | ^6.0.0 | Requires Node.js 20.19+ |
-| `tailwindcss` | ^3.4.0 | ^4.1.0 | Major rewrite, new CSS-first config |
-| `zustand` | ^4.4.7 | ^5.0.8 | Requires React 18+, stricter types |
-| `zod` | ^3.22.0 | ^3.24.2 | v4.0.1 available but v3 more stable |
-| `@google/generative-ai` | ^0.1.0 | **Replaced** | Use `@google/genai` instead |
-| `better-sqlite3` | ^9.2.0 | ^12.4.1 | Latest with Node 20+ support |
-| Build tool | vite + electron-builder | **electron-vite** | Better Electron + Vite integration |
+| Package                 | Old Version             | New Version       | Notes                               |
+| ----------------------- | ----------------------- | ----------------- | ----------------------------------- |
+| `electron`              | ^28.0.0                 | ^35.0.0           | Latest stable                       |
+| `react`                 | ^18.2.0                 | ^19.0.0           | React 19 stable with new features   |
+| `vite`                  | ^5.0.0                  | ^6.0.0            | Requires Node.js 20.19+             |
+| `tailwindcss`           | ^3.4.0                  | ^4.1.0            | Major rewrite, new CSS-first config |
+| `zustand`               | ^4.4.7                  | ^5.0.8            | Requires React 18+, stricter types  |
+| `zod`                   | ^3.22.0                 | ^3.24.2           | v4.0.1 available but v3 more stable |
+| `@google/generative-ai` | ^0.1.0                  | **Replaced**      | Use `@google/genai` instead         |
+| `better-sqlite3`        | ^9.2.0                  | ^12.4.1           | Latest with Node 20+ support        |
+| Build tool              | vite + electron-builder | **electron-vite** | Better Electron + Vite integration  |
 
 ### Package.json (Updated)
 
@@ -990,12 +1005,12 @@ Tailwind v4 introduces a new CSS-first configuration approach:
 
 ```css
 /* src/styles/globals.css */
-@import "tailwindcss";
+@import 'tailwindcss';
 
 @theme {
   --color-primary: #3b82f6;
   --color-secondary: #6b7280;
-  --font-sans: "Inter", sans-serif;
+  --font-sans: 'Inter', sans-serif;
 }
 ```
 
@@ -1034,17 +1049,17 @@ The `@google/generative-ai` package is **deprecated**. Use the new unified SDK:
 
 ```typescript
 // OLD (deprecated)
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI } from '@google/generative-ai'
 
 // NEW (use this)
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI } from '@google/genai'
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
 
 const response = await ai.models.generateContent({
   model: 'gemini-2.5-flash',
-  contents: 'Your prompt here',
-});
+  contents: 'Your prompt here'
+})
 ```
 
 ### shadcn/ui Setup (Updated CLI)
@@ -1063,5 +1078,5 @@ npx shadcn@latest add button input dialog table dropdown-menu
 
 ---
 
-*Document generated: 2025-01-22*
-*Dependencies updated via Context7: 2025-01-23*
+_Document generated: 2025-01-22_
+_Dependencies updated via Context7: 2025-01-23_
