@@ -1,3 +1,4 @@
 export * from './LoginPage'
 export * from './SettingsPage'
 export * from './POSPage'
+export * from './InventoryPage'
