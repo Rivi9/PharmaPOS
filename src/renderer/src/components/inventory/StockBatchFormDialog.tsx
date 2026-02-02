@@ -5,6 +5,7 @@ import { z } from 'zod'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle
 } from '@renderer/components/ui/dialog'
@@ -94,6 +95,11 @@ export function StockBatchFormDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{batch ? 'Edit Stock Batch' : 'Receive Stock'}</DialogTitle>
+          <DialogDescription>
+            {batch
+              ? 'Update stock batch details including quantity and expiry date.'
+              : 'Record a new stock receipt with batch tracking and expiry information.'}
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">

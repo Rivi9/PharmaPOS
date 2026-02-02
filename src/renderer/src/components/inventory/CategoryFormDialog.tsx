@@ -5,6 +5,7 @@ import { z } from 'zod'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle
 } from '@renderer/components/ui/dialog'
@@ -59,19 +60,24 @@ export function CategoryFormDialog({
       reset({
         name: category.name,
         description: category.description || '',
-        parent_id: category.parent_id || ''
+        parent_id: category.parent_id || 'none'
       })
     } else {
-      reset({ name: '', description: '', parent_id: '' })
+      reset({ name: '', description: '', parent_id: 'none' })
     }
   }, [category, reset])
 
   const handleFormSubmit = async (data: CategoryFormData) => {
-    await onSubmit(data)
+    // Convert "none" back to undefined for submission
+    const submitData = {
+      ...data,
+      parent_id: data.parent_id === 'none' ? undefined : data.parent_id
+    }
+    await onSubmit(submitData)
     reset()
   }
 
-  const parentId = watch('parent_id')
+  const parentId = watch('parent_id') || 'none'
 
   // Filter out current category and its descendants from parent options
   const availableParents = categories.filter((cat) => cat.id !== category?.id)
@@ -81,6 +87,11 @@ export function CategoryFormDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>{category ? 'Edit Category' : 'Add New Category'}</DialogTitle>
+          <DialogDescription>
+            {category
+              ? 'Update category details and hierarchy.'
+              : 'Create a new category to organize your products.'}
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
@@ -104,7 +115,7 @@ export function CategoryFormDialog({
                 <SelectValue placeholder="None (Top level)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None (Top level)</SelectItem>
+                <SelectItem value="none">None (Top level)</SelectItem>
                 {availableParents.map((cat) => (
                   <SelectItem key={cat.id} value={cat.id}>
                     {cat.name}

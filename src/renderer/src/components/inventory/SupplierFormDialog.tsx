@@ -5,6 +5,7 @@ import { z } from 'zod'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle
 } from '@renderer/components/ui/dialog'
@@ -80,6 +81,11 @@ export function SupplierFormDialog({
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>{supplier ? 'Edit Supplier' : 'Add New Supplier'}</DialogTitle>
+          <DialogDescription>
+            {supplier
+              ? 'Update supplier contact information and delivery details.'
+              : 'Add a new supplier for product sourcing and inventory management.'}
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">

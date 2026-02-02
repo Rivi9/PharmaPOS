@@ -5,6 +5,7 @@ import { z } from 'zod'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle
 } from '@renderer/components/ui/dialog'
@@ -122,6 +123,11 @@ export function ProductFormDialog({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{product ? 'Edit Product' : 'Add New Product'}</DialogTitle>
+          <DialogDescription>
+            {product
+              ? 'Update product information, pricing, and stock settings.'
+              : 'Add a new product to your inventory with pricing and stock tracking.'}
+          </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
