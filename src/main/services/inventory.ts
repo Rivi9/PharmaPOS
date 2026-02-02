@@ -200,3 +200,105 @@ export function getLowStockProducts(): any[] {
 
   return products
 }
+
+// =====================
+// CATEGORIES
+// =====================
+
+export interface CategoryData {
+  name: string
+  description?: string
+  parent_id?: string
+}
+
+export function listCategories(): any[] {
+  const db = getDatabase()
+
+  const categories = db
+    .prepare(
+      `
+    SELECT
+      c.*,
+      parent.name as parent_name,
+      COUNT(DISTINCT p.id) as product_count
+    FROM categories c
+    LEFT JOIN categories parent ON c.parent_id = parent.id
+    LEFT JOIN products p ON c.id = p.category_id
+    GROUP BY c.id
+    ORDER BY c.name ASC
+  `
+    )
+    .all()
+
+  return categories
+}
+
+export function createCategory(data: CategoryData): { id: string } {
+  const db = getDatabase()
+  const id = generateId()
+  const now = new Date().toISOString()
+
+  db.prepare(
+    `
+    INSERT INTO categories (
+      id, name, description, parent_id, created_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `
+  ).run(id, data.name, data.description || null, data.parent_id || null, now)
+
+  return { id }
+}
+
+export function updateCategory(id: string, data: Partial<CategoryData>): void {
+  const db = getDatabase()
+
+  const fields: string[] = []
+  const values: any[] = []
+
+  if (data.name !== undefined) {
+    fields.push('name = ?')
+    values.push(data.name)
+  }
+  if (data.description !== undefined) {
+    fields.push('description = ?')
+    values.push(data.description || null)
+  }
+  if (data.parent_id !== undefined) {
+    fields.push('parent_id = ?')
+    values.push(data.parent_id || null)
+  }
+
+  values.push(id)
+
+  db.prepare(
+    `
+    UPDATE categories
+    SET ${fields.join(', ')}
+    WHERE id = ?
+  `
+  ).run(...values)
+}
+
+export function deleteCategory(id: string): void {
+  const db = getDatabase()
+
+  // Check if category has products
+  const count = db
+    .prepare('SELECT COUNT(*) as count FROM products WHERE category_id = ?')
+    .get(id) as { count: number }
+
+  if (count.count > 0) {
+    throw new Error('Cannot delete category with products')
+  }
+
+  // Check if category has child categories
+  const childCount = db
+    .prepare('SELECT COUNT(*) as count FROM categories WHERE parent_id = ?')
+    .get(id) as { count: number }
+
+  if (childCount.count > 0) {
+    throw new Error('Cannot delete category with sub-categories')
+  }
+
+  db.prepare('DELETE FROM categories WHERE id = ?').run(id)
+}
