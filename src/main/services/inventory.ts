@@ -424,3 +424,185 @@ export function deleteSupplier(id: string): void {
   `
   ).run(id)
 }
+
+// =====================
+// STOCK BATCHES
+// =====================
+
+export interface StockBatchData {
+  product_id: string
+  batch_number?: string
+  quantity: number
+  cost_price: number
+  expiry_date?: string
+  received_date?: string
+  supplier_id?: string
+}
+
+export function listStockBatches(): any[] {
+  const db = getDatabase()
+
+  const batches = db
+    .prepare(
+      `
+    SELECT
+      sb.*,
+      p.name as product_name,
+      p.sku,
+      s.name as supplier_name
+    FROM stock_batches sb
+    JOIN products p ON sb.product_id = p.id
+    LEFT JOIN suppliers s ON sb.supplier_id = s.id
+    WHERE sb.quantity > 0
+    ORDER BY sb.expiry_date ASC NULLS LAST, sb.received_date DESC
+  `
+    )
+    .all()
+
+  return batches
+}
+
+export function createStockBatch(data: StockBatchData): { id: string } {
+  const db = getDatabase()
+  const id = generateId()
+  const now = new Date().toISOString()
+  const receivedDate = data.received_date || new Date().toISOString().split('T')[0]
+
+  db.prepare(
+    `
+    INSERT INTO stock_batches (
+      id, product_id, batch_number, quantity, cost_price,
+      expiry_date, received_date, supplier_id, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `
+  ).run(
+    id,
+    data.product_id,
+    data.batch_number || null,
+    data.quantity,
+    data.cost_price,
+    data.expiry_date || null,
+    receivedDate,
+    data.supplier_id || null,
+    now
+  )
+
+  return { id }
+}
+
+export function updateStockBatch(id: string, data: Partial<StockBatchData>): void {
+  const db = getDatabase()
+
+  const fields: string[] = []
+  const values: any[] = []
+
+  if (data.batch_number !== undefined) {
+    fields.push('batch_number = ?')
+    values.push(data.batch_number || null)
+  }
+  if (data.quantity !== undefined) {
+    fields.push('quantity = ?')
+    values.push(data.quantity)
+  }
+  if (data.cost_price !== undefined) {
+    fields.push('cost_price = ?')
+    values.push(data.cost_price)
+  }
+  if (data.expiry_date !== undefined) {
+    fields.push('expiry_date = ?')
+    values.push(data.expiry_date || null)
+  }
+  if (data.supplier_id !== undefined) {
+    fields.push('supplier_id = ?')
+    values.push(data.supplier_id || null)
+  }
+
+  values.push(id)
+
+  db.prepare(
+    `
+    UPDATE stock_batches
+    SET ${fields.join(', ')}
+    WHERE id = ?
+  `
+  ).run(...values)
+}
+
+export function deleteStockBatch(id: string): void {
+  const db = getDatabase()
+
+  // Hard delete - only allow if quantity is 0
+  const batch = db.prepare('SELECT quantity FROM stock_batches WHERE id = ?').get(id) as {
+    quantity: number
+  } | undefined
+
+  if (!batch) {
+    throw new Error('Stock batch not found')
+  }
+
+  if (batch.quantity > 0) {
+    throw new Error('Cannot delete batch with remaining stock')
+  }
+
+  db.prepare('DELETE FROM stock_batches WHERE id = ?').run(id)
+}
+
+export function adjustStockBatch(
+  batchId: string,
+  quantityChange: number,
+  reason: string,
+  userId: string
+): void {
+  const db = getDatabase()
+
+  // Get current batch
+  const batch = db.prepare('SELECT * FROM stock_batches WHERE id = ?').get(batchId) as any
+
+  if (!batch) {
+    throw new Error('Stock batch not found')
+  }
+
+  const newQuantity = batch.quantity + quantityChange
+
+  if (newQuantity < 0) {
+    throw new Error('Insufficient stock in batch')
+  }
+
+  // Update batch quantity
+  db.prepare('UPDATE stock_batches SET quantity = ? WHERE id = ?').run(newQuantity, batchId)
+
+  // Record adjustment in inventory_adjustments table (if exists)
+  // Note: This table is not in the schema yet, but we'll prepare for it
+  try {
+    const adjustmentType =
+      quantityChange > 0
+        ? 'received'
+        : reason.includes('sold')
+          ? 'sold'
+          : reason.includes('damaged')
+            ? 'damaged'
+            : reason.includes('expired')
+              ? 'expired'
+              : 'correction'
+
+    db.prepare(
+      `
+      INSERT INTO inventory_adjustments (
+        id, product_id, batch_id, user_id, adjustment_type, quantity, reason, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `
+    ).run(
+      generateId(),
+      batch.product_id,
+      batchId,
+      userId,
+      adjustmentType,
+      quantityChange,
+      reason,
+      new Date().toISOString()
+    )
+  } catch (error) {
+    // Table doesn't exist yet - skip logging for now
+    console.log('Note: inventory_adjustments table not found, skipping adjustment log')
+  }
+}
