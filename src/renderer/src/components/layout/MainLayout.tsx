@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
-import { SettingsPage, POSPage, InventoryPage } from '@renderer/pages'
+import { SettingsPage, POSPage, InventoryPage, AnalyticsPage } from '@renderer/pages'
 
 interface MainLayoutProps {
   user: { full_name: string; role: string } | null
@@ -20,17 +20,9 @@ export function MainLayout({ user, onLogout }: MainLayoutProps): React.JSX.Eleme
       case 'inventory':
         return <InventoryPage />
       case 'analytics':
-        return (
-          <div className="h-full flex items-center justify-center text-muted-foreground">
-            <p>Analytics Dashboard - Coming in Phase 4</p>
-          </div>
-        )
+        return <AnalyticsPage />
       case 'ai':
-        return (
-          <div className="h-full flex items-center justify-center text-muted-foreground">
-            <p>AI Insights - Coming in Phase 4</p>
-          </div>
-        )
+        return <AnalyticsPage />
       case 'users':
         return (
           <div className="h-full flex items-center justify-center text-muted-foreground">
