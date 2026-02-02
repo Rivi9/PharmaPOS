@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
 import { Button } from '@renderer/components/ui/button'
-import { Plus, Download } from 'lucide-react'
+import { Input } from '@renderer/components/ui/input'
+import { Plus, Download, Search } from 'lucide-react'
 import { useInventoryStore } from '@renderer/stores/inventoryStore'
 import type { Product, Category, Supplier, StockBatch } from '@renderer/stores/inventoryStore'
 
@@ -39,6 +40,12 @@ export function InventoryPage(): React.JSX.Element {
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false)
   const [supplierDialogOpen, setSupplierDialogOpen] = useState(false)
   const [batchDialogOpen, setBatchDialogOpen] = useState(false)
+
+  // Search states
+  const [productSearch, setProductSearch] = useState('')
+  const [categorySearch, setCategorySearch] = useState('')
+  const [supplierSearch, setSupplierSearch] = useState('')
+  const [batchSearch, setBatchSearch] = useState('')
 
   // Selected items for editing
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
@@ -250,6 +257,56 @@ export function InventoryPage(): React.JSX.Element {
     }
   }
 
+  // Filtered data based on search
+  const filteredProducts = useMemo(() => {
+    if (!productSearch) return products
+    const query = productSearch.toLowerCase()
+    return products.filter(
+      (p) =>
+        p.name.toLowerCase().includes(query) ||
+        p.generic_name?.toLowerCase().includes(query) ||
+        p.sku?.toLowerCase().includes(query) ||
+        p.barcode?.toLowerCase().includes(query) ||
+        p.category_name?.toLowerCase().includes(query) ||
+        p.supplier_name?.toLowerCase().includes(query)
+    )
+  }, [products, productSearch])
+
+  const filteredCategories = useMemo(() => {
+    if (!categorySearch) return categories
+    const query = categorySearch.toLowerCase()
+    return categories.filter(
+      (c) =>
+        c.name.toLowerCase().includes(query) ||
+        c.description?.toLowerCase().includes(query) ||
+        c.parent_name?.toLowerCase().includes(query)
+    )
+  }, [categories, categorySearch])
+
+  const filteredSuppliers = useMemo(() => {
+    if (!supplierSearch) return suppliers
+    const query = supplierSearch.toLowerCase()
+    return suppliers.filter(
+      (s) =>
+        s.name.toLowerCase().includes(query) ||
+        s.contact_person?.toLowerCase().includes(query) ||
+        s.phone?.toLowerCase().includes(query) ||
+        s.email?.toLowerCase().includes(query)
+    )
+  }, [suppliers, supplierSearch])
+
+  const filteredBatches = useMemo(() => {
+    if (!batchSearch) return stockBatches
+    const query = batchSearch.toLowerCase()
+    return stockBatches.filter(
+      (b) =>
+        b.batch_number?.toLowerCase().includes(query) ||
+        b.product_name?.toLowerCase().includes(query) ||
+        b.sku?.toLowerCase().includes(query) ||
+        b.supplier_name?.toLowerCase().includes(query)
+    )
+  }, [stockBatches, batchSearch])
+
   return (
     <div className="h-full flex flex-col p-6 bg-background">
       <div className="mb-6">
@@ -268,8 +325,21 @@ export function InventoryPage(): React.JSX.Element {
         </TabsList>
 
         <TabsContent value="products" className="flex-1 flex flex-col mt-6 space-y-4">
-          <div className="flex justify-between items-center">
-            <div className="text-sm text-muted-foreground">{products.length} products</div>
+          <div className="flex justify-between items-center gap-4">
+            <div className="flex items-center gap-4 flex-1">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search products by name, SKU, barcode..."
+                  value={productSearch}
+                  onChange={(e) => setProductSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <div className="text-sm text-muted-foreground whitespace-nowrap">
+                {filteredProducts.length} of {products.length} products
+              </div>
+            </div>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={handleExportProducts}>
                 <Download className="h-4 w-4 mr-2" />
@@ -289,7 +359,7 @@ export function InventoryPage(): React.JSX.Element {
           </div>
           <div className="flex-1 overflow-auto">
             <ProductsTable
-              products={products}
+              products={filteredProducts}
               onEdit={handleProductEdit}
               onDelete={handleProductDelete}
             />
@@ -297,8 +367,21 @@ export function InventoryPage(): React.JSX.Element {
         </TabsContent>
 
         <TabsContent value="categories" className="flex-1 flex flex-col mt-6 space-y-4">
-          <div className="flex justify-between items-center">
-            <div className="text-sm text-muted-foreground">{categories.length} categories</div>
+          <div className="flex justify-between items-center gap-4">
+            <div className="flex items-center gap-4 flex-1">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search categories by name..."
+                  value={categorySearch}
+                  onChange={(e) => setCategorySearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <div className="text-sm text-muted-foreground whitespace-nowrap">
+                {filteredCategories.length} of {categories.length} categories
+              </div>
+            </div>
             <Button
               size="sm"
               onClick={() => {
@@ -312,7 +395,7 @@ export function InventoryPage(): React.JSX.Element {
           </div>
           <div className="flex-1 overflow-auto">
             <CategoriesTable
-              categories={categories}
+              categories={filteredCategories}
               onEdit={handleCategoryEdit}
               onDelete={handleCategoryDelete}
             />
@@ -320,8 +403,21 @@ export function InventoryPage(): React.JSX.Element {
         </TabsContent>
 
         <TabsContent value="suppliers" className="flex-1 flex flex-col mt-6 space-y-4">
-          <div className="flex justify-between items-center">
-            <div className="text-sm text-muted-foreground">{suppliers.length} suppliers</div>
+          <div className="flex justify-between items-center gap-4">
+            <div className="flex items-center gap-4 flex-1">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search suppliers by name, contact..."
+                  value={supplierSearch}
+                  onChange={(e) => setSupplierSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <div className="text-sm text-muted-foreground whitespace-nowrap">
+                {filteredSuppliers.length} of {suppliers.length} suppliers
+              </div>
+            </div>
             <Button
               size="sm"
               onClick={() => {
@@ -335,7 +431,7 @@ export function InventoryPage(): React.JSX.Element {
           </div>
           <div className="flex-1 overflow-auto">
             <SuppliersTable
-              suppliers={suppliers}
+              suppliers={filteredSuppliers}
               onEdit={handleSupplierEdit}
               onDelete={handleSupplierDelete}
             />
@@ -343,8 +439,21 @@ export function InventoryPage(): React.JSX.Element {
         </TabsContent>
 
         <TabsContent value="stock" className="flex-1 flex flex-col mt-6 space-y-4">
-          <div className="flex justify-between items-center">
-            <div className="text-sm text-muted-foreground">{stockBatches.length} batches</div>
+          <div className="flex justify-between items-center gap-4">
+            <div className="flex items-center gap-4 flex-1">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search batches by product, batch number..."
+                  value={batchSearch}
+                  onChange={(e) => setBatchSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+              <div className="text-sm text-muted-foreground whitespace-nowrap">
+                {filteredBatches.length} of {stockBatches.length} batches
+              </div>
+            </div>
             <Button
               size="sm"
               onClick={() => {
@@ -358,7 +467,7 @@ export function InventoryPage(): React.JSX.Element {
           </div>
           <div className="flex-1 overflow-auto">
             <StockBatchesTable
-              batches={stockBatches}
+              batches={filteredBatches}
               onEdit={handleBatchEdit}
               onDelete={handleBatchDelete}
             />
