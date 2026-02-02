@@ -180,4 +180,17 @@ export function registerInventoryHandlers(): void {
       return { success: false, error: error.message }
     }
   })
+
+  // =====================
+  // CSV EXPORT
+  // =====================
+
+  ipcMain.handle(IPC_CHANNELS.PRODUCT_EXPORT_CSV, () => {
+    try {
+      const csv = inventory.exportProductsToCSV()
+      return { success: true, data: csv }
+    } catch (error: any) {
+      return { success: false, error: error.message }
+    }
+  })
 }

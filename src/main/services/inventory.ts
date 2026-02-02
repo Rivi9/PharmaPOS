@@ -606,3 +606,50 @@ export function adjustStockBatch(
     console.log('Note: inventory_adjustments table not found, skipping adjustment log')
   }
 }
+
+// =====================
+// CSV EXPORT
+// =====================
+
+export function exportProductsToCSV(): string {
+  const products = listProducts()
+
+  // Create CSV header
+  const headers = [
+    'SKU',
+    'Name',
+    'Generic Name',
+    'Barcode',
+    'Category',
+    'Supplier',
+    'Cost Price',
+    'Unit Price',
+    'Tax Rate',
+    'Stock',
+    'Unit',
+    'Reorder Level',
+    'Status'
+  ]
+
+  // Create CSV rows
+  const rows = products.map((p) => [
+    p.sku || '',
+    p.name,
+    p.generic_name || '',
+    p.barcode || '',
+    p.category_name || '',
+    p.supplier_name || '',
+    p.cost_price.toString(),
+    p.unit_price.toString(),
+    p.tax_rate.toString(),
+    (p.total_stock || 0).toString(),
+    p.unit,
+    p.reorder_level.toString(),
+    p.is_active ? 'Active' : 'Inactive'
+  ])
+
+  // Combine headers and rows
+  const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n')
+
+  return csvContent
+}

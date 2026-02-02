@@ -79,7 +79,10 @@ const electronAPI = {
       quantityChange,
       reason,
       userId
-    })
+    }),
+
+  // Inventory - CSV Export
+  exportProductsCSV: () => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_EXPORT_CSV)
 }
 
 contextBridge.exposeInMainWorld('electron', electronAPI)
