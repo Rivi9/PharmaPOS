@@ -302,3 +302,125 @@ export function deleteCategory(id: string): void {
 
   db.prepare('DELETE FROM categories WHERE id = ?').run(id)
 }
+
+// =====================
+// SUPPLIERS
+// =====================
+
+export interface SupplierData {
+  name: string
+  contact_person?: string
+  phone?: string
+  email?: string
+  address?: string
+  lead_time_days?: number
+  is_active?: number
+}
+
+export function listSuppliers(): any[] {
+  const db = getDatabase()
+
+  const suppliers = db
+    .prepare(
+      `
+    SELECT
+      s.*,
+      COUNT(DISTINCT p.id) as product_count,
+      COUNT(DISTINCT sb.id) as batch_count
+    FROM suppliers s
+    LEFT JOIN products p ON s.id = p.supplier_id
+    LEFT JOIN stock_batches sb ON s.id = sb.supplier_id
+    GROUP BY s.id
+    ORDER BY s.name ASC
+  `
+    )
+    .all()
+
+  return suppliers
+}
+
+export function createSupplier(data: SupplierData): { id: string } {
+  const db = getDatabase()
+  const id = generateId()
+  const now = new Date().toISOString()
+
+  db.prepare(
+    `
+    INSERT INTO suppliers (
+      id, name, contact_person, phone, email, address,
+      lead_time_days, is_active, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `
+  ).run(
+    id,
+    data.name,
+    data.contact_person || null,
+    data.phone || null,
+    data.email || null,
+    data.address || null,
+    data.lead_time_days ?? 3,
+    data.is_active ?? 1,
+    now
+  )
+
+  return { id }
+}
+
+export function updateSupplier(id: string, data: Partial<SupplierData>): void {
+  const db = getDatabase()
+
+  const fields: string[] = []
+  const values: any[] = []
+
+  if (data.name !== undefined) {
+    fields.push('name = ?')
+    values.push(data.name)
+  }
+  if (data.contact_person !== undefined) {
+    fields.push('contact_person = ?')
+    values.push(data.contact_person || null)
+  }
+  if (data.phone !== undefined) {
+    fields.push('phone = ?')
+    values.push(data.phone || null)
+  }
+  if (data.email !== undefined) {
+    fields.push('email = ?')
+    values.push(data.email || null)
+  }
+  if (data.address !== undefined) {
+    fields.push('address = ?')
+    values.push(data.address || null)
+  }
+  if (data.lead_time_days !== undefined) {
+    fields.push('lead_time_days = ?')
+    values.push(data.lead_time_days)
+  }
+  if (data.is_active !== undefined) {
+    fields.push('is_active = ?')
+    values.push(data.is_active)
+  }
+
+  values.push(id)
+
+  db.prepare(
+    `
+    UPDATE suppliers
+    SET ${fields.join(', ')}
+    WHERE id = ?
+  `
+  ).run(...values)
+}
+
+export function deleteSupplier(id: string): void {
+  const db = getDatabase()
+
+  // Soft delete - set is_active to 0
+  db.prepare(
+    `
+    UPDATE suppliers
+    SET is_active = 0
+    WHERE id = ?
+  `
+  ).run(id)
+}
