@@ -17,6 +17,9 @@ import { CategoryFormDialog } from '@renderer/components/inventory/CategoryFormD
 import { SupplierFormDialog } from '@renderer/components/inventory/SupplierFormDialog'
 import { StockBatchFormDialog } from '@renderer/components/inventory/StockBatchFormDialog'
 
+// Alerts
+import { LowStockAlert } from '@renderer/components/inventory/LowStockAlert'
+
 export function InventoryPage(): React.JSX.Element {
   const {
     products,
@@ -26,7 +29,9 @@ export function InventoryPage(): React.JSX.Element {
     suppliers,
     setSuppliers,
     stockBatches,
-    setStockBatches
+    setStockBatches,
+    lowStockProducts,
+    setLowStockProducts
   } = useInventoryStore()
 
   // Dialog states
@@ -47,13 +52,26 @@ export function InventoryPage(): React.JSX.Element {
   }, [])
 
   const loadAllData = async () => {
-    await Promise.all([loadProducts(), loadCategories(), loadSuppliers(), loadStockBatches()])
+    await Promise.all([
+      loadProducts(),
+      loadCategories(),
+      loadSuppliers(),
+      loadStockBatches(),
+      loadLowStockProducts()
+    ])
   }
 
   const loadProducts = async () => {
     const result = await window.electron.listProducts()
     if (result.success) {
       setProducts(result.data)
+    }
+  }
+
+  const loadLowStockProducts = async () => {
+    const result = await window.electron.getLowStockProducts()
+    if (result.success) {
+      setLowStockProducts(result.data)
     }
   }
 
@@ -84,6 +102,7 @@ export function InventoryPage(): React.JSX.Element {
       const result = await window.electron.updateProduct(selectedProduct.id, data)
       if (result.success) {
         await loadProducts()
+        await loadLowStockProducts()
         setProductDialogOpen(false)
         setSelectedProduct(null)
       }
@@ -91,6 +110,7 @@ export function InventoryPage(): React.JSX.Element {
       const result = await window.electron.createProduct(data)
       if (result.success) {
         await loadProducts()
+        await loadLowStockProducts()
         setProductDialogOpen(false)
       }
     }
@@ -183,6 +203,7 @@ export function InventoryPage(): React.JSX.Element {
       if (result.success) {
         await loadStockBatches()
         await loadProducts() // Refresh products to update stock counts
+        await loadLowStockProducts()
         setBatchDialogOpen(false)
         setSelectedBatch(null)
       }
@@ -191,6 +212,7 @@ export function InventoryPage(): React.JSX.Element {
       if (result.success) {
         await loadStockBatches()
         await loadProducts() // Refresh products to update stock counts
+        await loadLowStockProducts()
         setBatchDialogOpen(false)
       }
     }
@@ -207,6 +229,7 @@ export function InventoryPage(): React.JSX.Element {
       if (result.success) {
         await loadStockBatches()
         await loadProducts() // Refresh products to update stock counts
+        await loadLowStockProducts()
       } else {
         alert(result.error || 'Failed to delete batch')
       }
@@ -233,6 +256,8 @@ export function InventoryPage(): React.JSX.Element {
         <h1 className="text-3xl font-bold">Inventory Management</h1>
         <p className="text-muted-foreground">Manage products, categories, suppliers, and stock</p>
       </div>
+
+      <LowStockAlert lowStockProducts={lowStockProducts} />
 
       <Tabs defaultValue="products" className="flex-1 flex flex-col">
         <TabsList className="grid w-full grid-cols-4 max-w-2xl">
