@@ -3,10 +3,14 @@ import { getDatabase, generateId } from '../services/database'
 import { IPC_CHANNELS } from './channels'
 import bcrypt from 'bcryptjs'
 import { registerPOSHandlers } from './pos-handlers'
+import { registerInventoryHandlers } from './inventory-handlers'
 
 export function registerIpcHandlers(): void {
   // Register POS handlers
   registerPOSHandlers()
+
+  // Register Inventory handlers
+  registerInventoryHandlers()
   // Get all users (for login dropdown)
   ipcMain.handle(IPC_CHANNELS.AUTH_GET_USERS, () => {
     const db = getDatabase()
