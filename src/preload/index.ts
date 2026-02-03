@@ -95,7 +95,15 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_CATEGORY_BREAKDOWN, { startDate, endDate }),
     getLowStockAlerts: () => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_LOW_STOCK_ALERTS),
     getExpiryAlerts: (daysAhead?: number) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_EXPIRY_ALERTS, daysAhead),
-    runAggregation: (date?: string) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_RUN_AGGREGATION, date)
+    runAggregation: (date?: string) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_RUN_AGGREGATION, date),
+    reports: {
+      generateSalesReport: (startDate: string, endDate: string) =>
+        ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_SALES_REPORT, { startDate, endDate }),
+      generateInventoryValuation: () =>
+        ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_INVENTORY_VALUATION),
+      generateProfitLossReport: (startDate: string, endDate: string) =>
+        ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_PROFIT_LOSS_REPORT, { startDate, endDate })
+    }
   },
 
   // AI

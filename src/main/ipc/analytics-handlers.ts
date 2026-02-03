@@ -12,6 +12,11 @@ import {
   getLowStockAlerts,
   getExpiryAlerts
 } from '../services/analytics/queries'
+import {
+  generateSalesReport,
+  generateInventoryValuation,
+  generateProfitLossReport
+} from '../services/analytics/reports'
 
 export function registerAnalyticsHandlers(): void {
   // Dashboard queries
@@ -56,4 +61,23 @@ export function registerAnalyticsHandlers(): void {
       return runIncrementalAggregation()
     }
   })
+
+  // Reports
+  ipcMain.handle(
+    IPC_CHANNELS.ANALYTICS_SALES_REPORT,
+    (_event, { startDate, endDate }: { startDate: string; endDate: string }) => {
+      return generateSalesReport(startDate, endDate)
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.ANALYTICS_INVENTORY_VALUATION, () => {
+    return generateInventoryValuation()
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.ANALYTICS_PROFIT_LOSS_REPORT,
+    (_event, { startDate, endDate }: { startDate: string; endDate: string }) => {
+      return generateProfitLossReport(startDate, endDate)
+    }
+  )
 }
