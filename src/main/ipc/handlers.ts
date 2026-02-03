@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs'
 import { registerPOSHandlers } from './pos-handlers'
 import { registerInventoryHandlers } from './inventory-handlers'
 import { registerAnalyticsHandlers } from './analytics-handlers'
+import { registerAIHandlers } from './ai-handlers'
 
 export function registerIpcHandlers(): void {
   // Register POS handlers
@@ -15,6 +16,10 @@ export function registerIpcHandlers(): void {
 
   // Register Analytics handlers
   registerAnalyticsHandlers()
+
+  // Register AI handlers
+  registerAIHandlers()
+
   // Get all users (for login dropdown)
   ipcMain.handle(IPC_CHANNELS.AUTH_GET_USERS, () => {
     const db = getDatabase()
