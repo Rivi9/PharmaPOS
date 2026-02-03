@@ -8,6 +8,8 @@ import { SalesTrendChart } from '@renderer/components/analytics/SalesTrendChart'
 import { TopProductsList } from '@renderer/components/analytics/TopProductsList'
 import { CategoryBreakdownChart } from '@renderer/components/analytics/CategoryBreakdownChart'
 import { AlertsPanel } from '@renderer/components/analytics/AlertsPanel'
+import { AIInsightsPanel } from '@renderer/components/analytics/AIInsightsPanel'
+import { ReportsPanel } from '@renderer/components/analytics/ReportsPanel'
 
 export function AnalyticsPage(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true)
@@ -107,11 +109,11 @@ export function AnalyticsPage(): React.JSX.Element {
         </TabsContent>
 
         <TabsContent value="reports" className="flex-1">
-          <div className="text-muted-foreground">Reports functionality will be added in Part 3</div>
+          <ReportsPanel />
         </TabsContent>
 
         <TabsContent value="ai" className="flex-1">
-          <div className="text-muted-foreground">AI insights will be added in Part 3</div>
+          <AIInsightsPanel />
         </TabsContent>
 
         <TabsContent value="alerts" className="flex-1">
