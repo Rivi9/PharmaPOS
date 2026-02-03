@@ -1,6 +1,4 @@
-import { useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
 
 export function AnalyticsPage(): React.JSX.Element {
   return (
