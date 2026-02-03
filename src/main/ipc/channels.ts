@@ -60,7 +60,29 @@ export const IPC_CHANNELS = {
 
   // Inventory - Import/Export
   PRODUCT_IMPORT_CSV: 'product:importCsv',
-  PRODUCT_EXPORT_CSV: 'product:exportCsv'
+  PRODUCT_EXPORT_CSV: 'product:exportCsv',
+
+  // Analytics - Dashboard
+  ANALYTICS_DAILY_METRICS: 'analytics:daily-metrics',
+  ANALYTICS_PERIOD_METRICS: 'analytics:period-metrics',
+  ANALYTICS_TOP_PRODUCTS: 'analytics:top-products',
+  ANALYTICS_CATEGORY_BREAKDOWN: 'analytics:category-breakdown',
+  ANALYTICS_LOW_STOCK_ALERTS: 'analytics:low-stock-alerts',
+  ANALYTICS_EXPIRY_ALERTS: 'analytics:expiry-alerts',
+
+  // Analytics - Reports
+  ANALYTICS_SALES_REPORT: 'analytics:sales-report',
+  ANALYTICS_INVENTORY_VALUATION: 'analytics:inventory-valuation',
+  ANALYTICS_PROFIT_LOSS_REPORT: 'analytics:profit-loss-report',
+
+  // Analytics - Aggregation
+  ANALYTICS_RUN_AGGREGATION: 'analytics:run-aggregation',
+
+  // AI - Gemini Integration
+  AI_REORDER_SUGGESTIONS: 'ai:reorder-suggestions',
+  AI_SALES_FORECAST: 'ai:sales-forecast',
+  AI_DEAD_STOCK_DETECTION: 'ai:dead-stock-detection',
+  AI_NATURAL_QUERY: 'ai:natural-query'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
