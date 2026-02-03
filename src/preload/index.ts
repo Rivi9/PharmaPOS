@@ -82,7 +82,30 @@ const electronAPI = {
     }),
 
   // Inventory - CSV Export
-  exportProductsCSV: () => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_EXPORT_CSV)
+  exportProductsCSV: () => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_EXPORT_CSV),
+
+  // Analytics
+  analytics: {
+    getDailyMetrics: (date: string) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_DAILY_METRICS, date),
+    getPeriodMetrics: (startDate: string, endDate: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_PERIOD_METRICS, { startDate, endDate }),
+    getTopProducts: (startDate: string, endDate: string, limit?: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_TOP_PRODUCTS, { startDate, endDate, limit }),
+    getCategoryBreakdown: (startDate: string, endDate: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_CATEGORY_BREAKDOWN, { startDate, endDate }),
+    getLowStockAlerts: () => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_LOW_STOCK_ALERTS),
+    getExpiryAlerts: (daysAhead?: number) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_EXPIRY_ALERTS, daysAhead),
+    runAggregation: (date?: string) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_RUN_AGGREGATION, date)
+  },
+
+  // AI
+  ai: {
+    getReorderSuggestions: () => ipcRenderer.invoke(IPC_CHANNELS.AI_REORDER_SUGGESTIONS),
+    getSalesForecast: (productId: string, days: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_SALES_FORECAST, { productId, days }),
+    getDeadStockDetection: () => ipcRenderer.invoke(IPC_CHANNELS.AI_DEAD_STOCK_DETECTION),
+    naturalQuery: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.AI_NATURAL_QUERY, query)
+  }
 }
 
 contextBridge.exposeInMainWorld('electron', electronAPI)
