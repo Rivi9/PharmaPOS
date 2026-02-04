@@ -82,7 +82,25 @@ export const IPC_CHANNELS = {
   AI_REORDER_SUGGESTIONS: 'ai:reorder-suggestions',
   AI_SALES_FORECAST: 'ai:sales-forecast',
   AI_DEAD_STOCK_DETECTION: 'ai:dead-stock-detection',
-  AI_NATURAL_QUERY: 'ai:natural-query'
+  AI_NATURAL_QUERY: 'ai:natural-query',
+
+  // Backup - Local
+  BACKUP_CREATE: 'backup:create',
+  BACKUP_RESTORE: 'backup:restore',
+  BACKUP_LIST_LOCAL: 'backup:list-local',
+  BACKUP_DELETE_LOCAL: 'backup:delete-local',
+
+  // Backup - Google Drive
+  BACKUP_DRIVE_AUTH: 'backup:drive-auth',
+  BACKUP_DRIVE_UPLOAD: 'backup:drive-upload',
+  BACKUP_DRIVE_LIST: 'backup:drive-list',
+  BACKUP_DRIVE_DOWNLOAD: 'backup:drive-download',
+  BACKUP_DRIVE_DELETE: 'backup:drive-delete',
+
+  // Backup - Scheduler
+  BACKUP_SCHEDULER_START: 'backup:scheduler-start',
+  BACKUP_SCHEDULER_STOP: 'backup:scheduler-stop',
+  BACKUP_SCHEDULER_STATUS: 'backup:scheduler-status'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

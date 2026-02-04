@@ -113,6 +113,27 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.AI_SALES_FORECAST, { productId, days }),
     getDeadStockDetection: () => ipcRenderer.invoke(IPC_CHANNELS.AI_DEAD_STOCK_DETECTION),
     naturalQuery: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.AI_NATURAL_QUERY, query)
+  },
+
+  // Backup
+  backup: {
+    create: (password?: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_CREATE, password),
+    restore: (backupPath: string, password?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RESTORE, { backupPath, password }),
+    listLocal: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_LIST_LOCAL),
+    deleteLocal: (backupPath: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DELETE_LOCAL, backupPath),
+
+    driveAuth: (accessToken: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_AUTH, accessToken),
+    driveUpload: (filePath: string, fileName: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_UPLOAD, { filePath, fileName }),
+    driveList: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_LIST),
+    driveDownload: (fileId: string, fileName: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_DOWNLOAD, { fileId, fileName }),
+    driveDelete: (fileId: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_DELETE, fileId),
+
+    schedulerStart: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_START),
+    schedulerStop: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_STOP),
+    schedulerStatus: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_STATUS)
   }
 }
 
