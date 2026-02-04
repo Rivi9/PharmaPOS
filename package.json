@@ -47,6 +47,7 @@
     "jspdf": "^4.1.0",
     "lucide-react": "^0.562.0",
     "node-schedule": "^2.1.1",
+    "node-thermal-printer": "^4.6.0",
     "react-hook-form": "^7.71.1",
     "recharts": "^3.7.0",
     "tailwind-merge": "^3.4.0",
