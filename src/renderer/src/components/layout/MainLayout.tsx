@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { SettingsPage, POSPage, InventoryPage, AnalyticsPage } from '@renderer/pages'
+import { UsersPage } from '@renderer/pages/UsersPage'
 
 interface MainLayoutProps {
   user: { full_name: string; role: string } | null
@@ -24,11 +25,7 @@ export function MainLayout({ user, onLogout }: MainLayoutProps): React.JSX.Eleme
       case 'ai':
         return <AnalyticsPage />
       case 'users':
-        return (
-          <div className="h-full flex items-center justify-center text-muted-foreground">
-            <p>User Management - Coming in Phase 5</p>
-          </div>
-        )
+        return <UsersPage />
       default:
         return (
           <div className="h-full flex items-center justify-center text-muted-foreground">
