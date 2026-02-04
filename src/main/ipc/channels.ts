@@ -100,7 +100,22 @@ export const IPC_CHANNELS = {
   // Backup - Scheduler
   BACKUP_SCHEDULER_START: 'backup:scheduler-start',
   BACKUP_SCHEDULER_STOP: 'backup:scheduler-stop',
-  BACKUP_SCHEDULER_STATUS: 'backup:scheduler-status'
+  BACKUP_SCHEDULER_STATUS: 'backup:scheduler-status',
+
+  // Users - Management
+  USER_LIST: 'user:list',
+  USER_GET: 'user:get',
+  USER_CREATE: 'user:create',
+  USER_UPDATE: 'user:update',
+  USER_DELETE: 'user:delete',
+  USER_CHANGE_PASSWORD: 'user:change-password',
+  USER_VERIFY_PASSWORD: 'user:verify-password',
+  USER_VERIFY_PIN: 'user:verify-pin',
+  USER_STATS: 'user:stats',
+
+  // Users - Permissions
+  USER_CHECK_PERMISSION: 'user:check-permission',
+  USER_GET_PERMISSIONS: 'user:get-permissions'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

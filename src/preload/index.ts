@@ -134,6 +134,26 @@ const electronAPI = {
     schedulerStart: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_START),
     schedulerStop: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_STOP),
     schedulerStatus: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_STATUS)
+  },
+
+  // Users
+  users: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.USER_LIST),
+    get: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.USER_GET, id),
+    create: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.USER_CREATE, data),
+    update: (id: string, data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.USER_UPDATE, { id, data }),
+    delete: (id: string, reactivate?: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.USER_DELETE, { id, reactivate }),
+    changePassword: (id: string, password: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.USER_CHANGE_PASSWORD, { id, password }),
+    verifyPassword: (username: string, password: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.USER_VERIFY_PASSWORD, { username, password }),
+    verifyPin: (pin: string) => ipcRenderer.invoke(IPC_CHANNELS.USER_VERIFY_PIN, pin),
+    stats: () => ipcRenderer.invoke(IPC_CHANNELS.USER_STATS),
+
+    checkPermission: (role: string, permission: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.USER_CHECK_PERMISSION, { role, permission }),
+    getPermissions: (role: string) => ipcRenderer.invoke(IPC_CHANNELS.USER_GET_PERMISSIONS, role)
   }
 }
 
