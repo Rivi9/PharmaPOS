@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
-import { Plus, RefreshCw, Users as UsersIcon } from 'lucide-react'
+import { Plus, RefreshCw } from 'lucide-react'
 import { UsersTable } from '@renderer/components/users/UsersTable'
 import { UserFormModal } from '@renderer/components/users/UserFormModal'
 

@@ -172,6 +172,6 @@ export function getBackupStatus(): {
   return {
     enabled: enabled?.value === '1',
     lastBackup: lastBackup?.value || null,
-    nextBackup: scheduledJob ? scheduledJob.nextInvocation().toISOString() : null
+    nextBackup: scheduledJob?.nextInvocation()?.toISOString() || null
   }
 }

@@ -2,7 +2,6 @@ import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from './channels'
 import { createBackup, restoreBackup, listBackups } from '../services/backup/database-backup'
 import {
-  initializeDrive,
   uploadBackupToDrive,
   listDriveBackups,
   downloadBackupFromDrive,
