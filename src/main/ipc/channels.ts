@@ -115,7 +115,16 @@ export const IPC_CHANNELS = {
 
   // Users - Permissions
   USER_CHECK_PERMISSION: 'user:check-permission',
-  USER_GET_PERMISSIONS: 'user:get-permissions'
+  USER_GET_PERMISSIONS: 'user:get-permissions',
+
+  // Printer
+  PRINTER_INITIALIZE: 'printer:initialize',
+  PRINTER_TEST: 'printer:test',
+  PRINTER_SAVE_CONFIG: 'printer:save-config',
+  PRINTER_LIST_USB: 'printer:list-usb',
+  PRINTER_PRINT_RECEIPT: 'printer:print-receipt',
+  PRINTER_PRINT_SHIFT_REPORT: 'printer:print-shift-report',
+  PRINTER_OPEN_DRAWER: 'printer:open-drawer'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

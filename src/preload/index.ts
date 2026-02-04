@@ -154,6 +154,17 @@ const electronAPI = {
     checkPermission: (role: string, permission: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.USER_CHECK_PERMISSION, { role, permission }),
     getPermissions: (role: string) => ipcRenderer.invoke(IPC_CHANNELS.USER_GET_PERMISSIONS, role)
+  },
+
+  // Printer
+  printer: {
+    initialize: (config?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_INITIALIZE, config),
+    test: () => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_TEST),
+    saveConfig: (config: unknown) => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_SAVE_CONFIG, config),
+    listUSB: () => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_LIST_USB),
+    printReceipt: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_PRINT_RECEIPT, data),
+    printShiftReport: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_PRINT_SHIFT_REPORT, data),
+    openDrawer: () => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_OPEN_DRAWER)
   }
 }
 

@@ -8,6 +8,7 @@ import { registerAnalyticsHandlers } from './analytics-handlers'
 import { registerAIHandlers } from './ai-handlers'
 import { registerBackupHandlers } from './backup-handlers'
 import { registerUserHandlers } from './user-handlers'
+import { registerPrinterHandlers } from './printer-handlers'
 
 export function registerIpcHandlers(): void {
   // Register POS handlers
@@ -27,6 +28,9 @@ export function registerIpcHandlers(): void {
 
   // Register User handlers
   registerUserHandlers()
+
+  // Register Printer handlers
+  registerPrinterHandlers()
 
   // Get all users (for login dropdown)
   ipcMain.handle(IPC_CHANNELS.AUTH_GET_USERS, () => {
