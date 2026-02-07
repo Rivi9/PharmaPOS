@@ -124,7 +124,12 @@ export const IPC_CHANNELS = {
   PRINTER_LIST_USB: 'printer:list-usb',
   PRINTER_PRINT_RECEIPT: 'printer:print-receipt',
   PRINTER_PRINT_SHIFT_REPORT: 'printer:print-shift-report',
-  PRINTER_OPEN_DRAWER: 'printer:open-drawer'
+  PRINTER_OPEN_DRAWER: 'printer:open-drawer',
+
+  // Setup
+  SETUP_IS_FIRST_RUN: 'setup:is-first-run',
+  SETUP_INITIALIZE: 'setup:initialize',
+  SETUP_COMPLETE: 'setup:complete'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

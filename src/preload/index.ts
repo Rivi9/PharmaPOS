@@ -165,6 +165,23 @@ const electronAPI = {
     printReceipt: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_PRINT_RECEIPT, data),
     printShiftReport: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_PRINT_SHIFT_REPORT, data),
     openDrawer: () => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_OPEN_DRAWER)
+  },
+
+  // Setup
+  setup: {
+    isFirstRun: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_IS_FIRST_RUN),
+    initialize: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.SETUP_INITIALIZE, data),
+    complete: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_COMPLETE)
+  },
+
+  // IPC Renderer for event listeners
+  ipcRenderer: {
+    on: (channel: string, listener: (...args: any[]) => void) => {
+      ipcRenderer.on(channel, listener)
+    },
+    removeListener: (channel: string, listener: (...args: any[]) => void) => {
+      ipcRenderer.removeListener(channel, listener)
+    }
   }
 }
 
