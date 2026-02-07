@@ -8,8 +8,10 @@ let db: Database.Database | null = null
 export function getDatabase(): Database.Database {
   if (db) return db
 
-  const userDataPath = app.getPath('userData')
-  const dbPath = path.join(userDataPath, 'pharmapos.db')
+  // Use test database in test environment
+  const dbPath = process.env.TEST_DB_PATH
+    ? process.env.TEST_DB_PATH
+    : path.join(app.getPath('userData'), 'pharmapos.db')
 
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
