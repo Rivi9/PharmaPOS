@@ -5,6 +5,19 @@ import icon from '../../resources/icon.png?asset'
 import { initializeDatabase, closeDatabase } from './services/database'
 import { registerIpcHandlers } from './ipc/handlers'
 import { initializeAggregationJob } from './jobs/aggregation'
+import { initializeErrorTracking, setupGlobalErrorHandlers } from './services/logging/error-handler'
+import { logInfo } from './services/logging/logger'
+
+// Initialize error tracking
+initializeErrorTracking()
+setupGlobalErrorHandlers()
+
+// Log app start
+logInfo('Application starting', {
+  version: app.getVersion(),
+  platform: process.platform,
+  arch: process.arch
+})
 
 function createWindow(): void {
   // Create the browser window.
