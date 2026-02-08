@@ -1,6 +1,6 @@
 import * as Sentry from '@sentry/electron/main'
 import { app, dialog } from 'electron'
-import { logger, logError } from './logger'
+import { logError } from './logger'
 
 let isInitialized = false
 

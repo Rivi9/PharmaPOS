@@ -1,5 +1,5 @@
 import { autoUpdater } from 'electron-updater'
-import { app, BrowserWindow } from 'electron'
+import { BrowserWindow } from 'electron'
 import { logger, logInfo, logError } from '../logging/logger'
 
 let mainWindow: BrowserWindow | null = null

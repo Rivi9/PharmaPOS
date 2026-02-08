@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { getDatabase } from '../../db'
+import { getDatabase } from '../database'
 
 const SETUP_COMPLETE_FLAG = path.join(app.getPath('userData'), '.setup-complete')
 

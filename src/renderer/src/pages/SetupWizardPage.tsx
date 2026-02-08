@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -7,7 +6,6 @@ import { Label } from '@renderer/components/ui/label'
 import { CheckCircle2, Store, User } from 'lucide-react'
 
 export function SetupWizardPage(): React.JSX.Element {
-  const navigate = useNavigate()
   const [currentStep, setCurrentStep] = useState(1)
   const [formData, setFormData] = useState({
     businessName: '',
@@ -47,8 +45,8 @@ export function SetupWizardPage(): React.JSX.Element {
       // Mark setup complete
       await window.electron.setup.complete()
 
-      // Navigate to login
-      navigate('/login')
+      // Reload to show login page
+      window.location.reload()
     } catch (error: any) {
       alert(`Setup failed: ${error.message}`)
     }
