@@ -7,6 +7,7 @@ import { registerIpcHandlers } from './ipc/handlers'
 import { initializeAggregationJob } from './jobs/aggregation'
 import { initializeErrorTracking, setupGlobalErrorHandlers } from './services/logging/error-handler'
 import { logInfo } from './services/logging/logger'
+import { initializeAutoUpdater } from './services/updates/auto-updater'
 
 // Initialize error tracking
 initializeErrorTracking()
@@ -19,7 +20,7 @@ logInfo('Application starting', {
   arch: process.arch
 })
 
-function createWindow(): void {
+function createWindow(): BrowserWindow {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
     width: 900,
@@ -49,6 +50,8 @@ function createWindow(): void {
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  return mainWindow
 }
 
 // This method will be called when Electron has finished
@@ -77,7 +80,10 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
-  createWindow()
+  const mainWindow = createWindow()
+
+  // Initialize auto-updater
+  initializeAutoUpdater(mainWindow)
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

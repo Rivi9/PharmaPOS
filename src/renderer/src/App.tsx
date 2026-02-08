@@ -3,6 +3,7 @@ import { useAuthStore } from './stores/authStore'
 import { MainLayout } from './components/layout'
 import { LoginPage } from './pages/LoginPage'
 import { SetupWizardPage } from './pages/SetupWizardPage'
+import { UpdateNotification } from './components/UpdateNotification'
 
 function App(): React.JSX.Element {
   const { user, isAuthenticated, logout } = useAuthStore()
@@ -17,18 +18,38 @@ function App(): React.JSX.Element {
   }, [])
 
   if (isFirstRun === null) {
-    return <div className="min-h-screen flex items-center justify-center">Loading...</div>
+    return (
+      <>
+        <div className="min-h-screen flex items-center justify-center">Loading...</div>
+        <UpdateNotification />
+      </>
+    )
   }
 
   if (isFirstRun) {
-    return <SetupWizardPage />
+    return (
+      <>
+        <SetupWizardPage />
+        <UpdateNotification />
+      </>
+    )
   }
 
   if (!isAuthenticated) {
-    return <LoginPage />
+    return (
+      <>
+        <LoginPage />
+        <UpdateNotification />
+      </>
+    )
   }
 
-  return <MainLayout user={user} onLogout={logout} />
+  return (
+    <>
+      <MainLayout user={user} onLogout={logout} />
+      <UpdateNotification />
+    </>
+  )
 }
 
 export default App

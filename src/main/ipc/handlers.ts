@@ -10,6 +10,7 @@ import { registerBackupHandlers } from './backup-handlers'
 import { registerUserHandlers } from './user-handlers'
 import { registerPrinterHandlers } from './printer-handlers'
 import { registerSetupHandlers } from './setup-handlers'
+import { registerUpdateHandlers } from './update-handlers'
 
 export function registerIpcHandlers(): void {
   // Register POS handlers
@@ -35,6 +36,9 @@ export function registerIpcHandlers(): void {
 
   // Register Setup handlers
   registerSetupHandlers()
+
+  // Register Update handlers
+  registerUpdateHandlers()
 
   // Get all users (for login dropdown)
   ipcMain.handle(IPC_CHANNELS.AUTH_GET_USERS, () => {

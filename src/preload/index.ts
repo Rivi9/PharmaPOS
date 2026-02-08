@@ -174,6 +174,13 @@ const electronAPI = {
     complete: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_COMPLETE)
   },
 
+  // Updates
+  updates: {
+    check: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATES_CHECK),
+    download: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATES_DOWNLOAD),
+    install: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATES_INSTALL)
+  },
+
   // IPC Renderer for event listeners
   ipcRenderer: {
     on: (channel: string, listener: (...args: any[]) => void) => {

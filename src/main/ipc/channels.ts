@@ -126,6 +126,11 @@ export const IPC_CHANNELS = {
   PRINTER_PRINT_SHIFT_REPORT: 'printer:print-shift-report',
   PRINTER_OPEN_DRAWER: 'printer:open-drawer',
 
+  // Updates
+  UPDATES_CHECK: 'updates:check',
+  UPDATES_DOWNLOAD: 'updates:download',
+  UPDATES_INSTALL: 'updates:install',
+
   // Setup
   SETUP_IS_FIRST_RUN: 'setup:is-first-run',
   SETUP_INITIALIZE: 'setup:initialize',
