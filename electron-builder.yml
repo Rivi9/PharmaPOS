@@ -26,6 +26,10 @@ win:
         - x64
   icon: build/icon.ico
   artifactName: ${productName}-Setup-${version}.${ext}
+  certificateFile: ${env.CSC_LINK}
+  certificatePassword: ${env.CSC_KEY_PASSWORD}
+  signingHashAlgorithms:
+    - sha256
 
 nsis:
   oneClick: false
