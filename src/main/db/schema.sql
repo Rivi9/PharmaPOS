@@ -197,7 +197,9 @@ INSERT OR IGNORE INTO settings (key, value) VALUES
     ('business_phone', ''),
     ('vat_rate', '18'),
     ('currency_symbol', 'Rs.'),
-    ('receipt_footer', 'Thank you for your purchase!');
+    ('receipt_footer', 'Thank you for your purchase!'),
+    ('display_port', ''),
+    ('display_baud_rate', '9600');
 
 INSERT OR IGNORE INTO categories (id, name, description) VALUES
     ('cat-medications', 'Medications', 'Prescription and OTC medications'),

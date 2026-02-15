@@ -136,9 +136,14 @@ export const IPC_CHANNELS = {
   SETUP_INITIALIZE: 'setup:initialize',
   SETUP_COMPLETE: 'setup:complete',
 
-  // Customer Display
+  // Customer / Pole Display (serial COM port)
   DISPLAY_UPDATE: 'display:update',
   DISPLAY_SALE_COMPLETE: 'display:sale-complete',
+  DISPLAY_LIST_PORTS: 'display:list-ports',
+  DISPLAY_CONNECT: 'display:connect',
+  DISPLAY_DISCONNECT: 'display:disconnect',
+  DISPLAY_TEST: 'display:test',
+  DISPLAY_GET_STATUS: 'display:get-status',
 
   // Audit Log
   AUDIT_LOG_QUERY: 'audit:query',

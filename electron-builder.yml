@@ -42,8 +42,6 @@ nsis:
   uninstallerIcon: build/icon.ico
   license: LICENSE
   displayLanguageSelector: false
-  installerHeader: build/installerHeader.bmp
-  installerSidebar: build/installerSidebar.bmp
 
 mac:
   entitlementsInherit: build/entitlements.mac.plist
@@ -66,7 +64,7 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 
-npmRebuild: false
+npmRebuild: true
 
 publish:
   provider: github

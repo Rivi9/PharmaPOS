@@ -6,11 +6,11 @@ import { initializeDatabase, closeDatabase } from './services/database'
 import { registerIpcHandlers } from './ipc/handlers'
 import { initializeAggregationJob } from './jobs/aggregation'
 import { initializeErrorTracking, setupGlobalErrorHandlers } from './services/logging/error-handler'
-import { logInfo } from './services/logging/logger'
+import { logInfo, logError } from './services/logging/logger'
 import { initializeAutoUpdater } from './services/updates/auto-updater'
 import { IPC_CHANNELS } from './ipc/channels'
-
-let customerDisplayWindow: BrowserWindow | null = null
+import * as poleDisplay from './services/pole-display'
+import { getDatabase } from './services/database'
 
 // Initialize error tracking
 initializeErrorTracking()
@@ -22,41 +22,6 @@ logInfo('Application starting', {
   platform: process.platform,
   arch: process.arch
 })
-
-function createCustomerDisplayWindow(): BrowserWindow {
-  const displays = require('electron').screen.getAllDisplays()
-  const secondDisplay = displays.find((d: any) => d.id !== require('electron').screen.getPrimaryDisplay().id)
-
-  const displayWindow = new BrowserWindow({
-    width: secondDisplay?.bounds.width ?? 1024,
-    height: secondDisplay?.bounds.height ?? 768,
-    x: secondDisplay?.bounds.x ?? 0,
-    y: secondDisplay?.bounds.y ?? 0,
-    fullscreen: !!secondDisplay,
-    autoHideMenuBar: true,
-    frame: false,
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
-    }
-  })
-
-  // Load with customer-display hash to trigger CustomerDisplayPage in React
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    displayWindow.loadURL(process.env['ELECTRON_RENDERER_URL'] + '#customer-display')
-  } else {
-    displayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
-      hash: 'customer-display'
-    })
-  }
-
-  logInfo('Customer display window created', {
-    hasSecondDisplay: !!secondDisplay,
-    bounds: secondDisplay?.bounds
-  })
-
-  return displayWindow
-}
 
 function createWindow(): BrowserWindow {
   // Create the browser window.
@@ -120,23 +85,77 @@ app.whenReady().then(() => {
 
   const mainWindow = createWindow()
 
-  // Create customer display window (secondary monitor)
-  customerDisplayWindow = createCustomerDisplayWindow()
+  // ── Pole display IPC handlers ──────────────────────────────────────────────
 
-  // Handle display:update from main window, forward to customer display
-  ipcMain.handle(IPC_CHANNELS.DISPLAY_UPDATE, (_event, cartData) => {
-    if (customerDisplayWindow && !customerDisplayWindow.isDestroyed()) {
-      customerDisplayWindow.webContents.send('display:cart-updated', cartData)
+  // Cart updated — write last item + running total to pole display
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_UPDATE, (_event, cartData: any) => {
+    if (poleDisplay.isConnected()) {
+      const lastItem = cartData?.items?.at(-1)
+      const itemName = lastItem?.name ?? ''
+      poleDisplay.showCartUpdate(itemName, cartData?.total ?? 0, cartData?.currency ?? 'Rs.')
     }
     return { success: true }
   })
 
-  ipcMain.handle(IPC_CHANNELS.DISPLAY_SALE_COMPLETE, (_event, saleData) => {
-    if (customerDisplayWindow && !customerDisplayWindow.isDestroyed()) {
-      customerDisplayWindow.webContents.send('display:sale-completed', saleData)
+  // Sale complete — show total + change
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_SALE_COMPLETE, (_event, saleData: any) => {
+    if (poleDisplay.isConnected()) {
+      poleDisplay.showSaleComplete(
+        saleData?.total ?? 0,
+        saleData?.change_given ?? 0,
+        saleData?.currency ?? 'Rs.'
+      )
     }
     return { success: true }
   })
+
+  // List available COM ports
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_LIST_PORTS, async () => {
+    return await poleDisplay.listPorts()
+  })
+
+  // Connect to a COM port
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_CONNECT, async (_event, { port, baudRate }) => {
+    await poleDisplay.openDisplay(port, baudRate ?? 9600)
+    // Persist to settings
+    const db = getDatabase()
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('display_port', ?)").run(port)
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('display_baud_rate', ?)").run(String(baudRate ?? 9600))
+    return { success: true }
+  })
+
+  // Disconnect
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_DISCONNECT, async () => {
+    await poleDisplay.closeDisplay()
+    return { success: true }
+  })
+
+  // Test — send a test message
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_TEST, () => {
+    poleDisplay.sendTestMessage()
+    return { success: true }
+  })
+
+  // Get current connection status
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_GET_STATUS, () => {
+    return poleDisplay.getStatus()
+  })
+
+  // ── Auto-connect saved display port on startup ─────────────────────────────
+  try {
+    const db = getDatabase()
+    const portRow = db.prepare("SELECT value FROM settings WHERE key = 'display_port'").get() as { value: string } | undefined
+    const baudRow = db.prepare("SELECT value FROM settings WHERE key = 'display_baud_rate'").get() as { value: string } | undefined
+    const savedPort = portRow?.value
+    const savedBaud = parseInt(baudRow?.value ?? '9600', 10)
+    if (savedPort) {
+      poleDisplay.openDisplay(savedPort, savedBaud).catch((err: Error) => {
+        logError('Could not auto-connect pole display', { port: savedPort, error: err.message })
+      })
+    }
+  } catch (err: any) {
+    logError('Failed to read display settings for auto-connect', { error: err.message })
+  }
 
   // Initialize auto-updater
   initializeAutoUpdater(mainWindow)
@@ -157,8 +176,9 @@ app.on('window-all-closed', () => {
   }
 })
 
-// Close database before quitting
+// Close database and pole display before quitting
 app.on('before-quit', () => {
+  poleDisplay.closeDisplay().catch(() => {})
   closeDatabase()
 })
 

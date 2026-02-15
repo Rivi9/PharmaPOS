@@ -192,11 +192,17 @@ const electronAPI = {
     exportCsv: (options?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_EXPORT_CSV, options)
   },
 
-  // Customer Display
+  // Pole Display (serial COM port)
   display: {
     update: (cartData: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DISPLAY_UPDATE, cartData),
     saleComplete: (saleData: unknown) =>
-      ipcRenderer.invoke(IPC_CHANNELS.DISPLAY_SALE_COMPLETE, saleData)
+      ipcRenderer.invoke(IPC_CHANNELS.DISPLAY_SALE_COMPLETE, saleData),
+    listPorts: () => ipcRenderer.invoke(IPC_CHANNELS.DISPLAY_LIST_PORTS),
+    connect: (port: string, baudRate: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DISPLAY_CONNECT, { port, baudRate }),
+    disconnect: () => ipcRenderer.invoke(IPC_CHANNELS.DISPLAY_DISCONNECT),
+    test: () => ipcRenderer.invoke(IPC_CHANNELS.DISPLAY_TEST),
+    getStatus: () => ipcRenderer.invoke(IPC_CHANNELS.DISPLAY_GET_STATUS)
   },
 
   // Updates
