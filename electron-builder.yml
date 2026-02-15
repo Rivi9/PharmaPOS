@@ -66,6 +66,10 @@ appImage:
 
 npmRebuild: true
 
+electronRebuildConfig:
+  onlyModules:
+    - better-sqlite3
+
 publish:
   provider: github
   owner: your-org
