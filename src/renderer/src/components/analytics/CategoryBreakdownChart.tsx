@@ -75,17 +75,17 @@ export function CategoryBreakdownChart({
               cx="50%"
               cy="50%"
               labelLine={false}
-              label={({ name, percentage }) => `${name} ${percentage}%`}
+              label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
               outerRadius={80}
               fill="#8884d8"
               dataKey="value"
             >
-              {chartData.map((entry, index) => (
+              {chartData.map((_, index) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
               ))}
             </Pie>
             <Tooltip
-              formatter={(value: number) => `Rs. ${value.toFixed(2)}`}
+              formatter={(value: number | undefined) => `Rs. ${(value ?? 0).toFixed(2)}`}
               contentStyle={{
                 backgroundColor: 'hsl(var(--background))',
                 border: '1px solid hsl(var(--border))',

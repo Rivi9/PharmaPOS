@@ -59,31 +59,33 @@ export function SearchModal({ open, onClose, onSelect }: SearchModalProps): Reac
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh]">
+      <DialogContent className="max-w-2xl max-h-[90vh]">
         <DialogHeader>
-          <DialogTitle>Search Products</DialogTitle>
+          <DialogTitle className="text-xl">Search Products</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Search Input */}
+          {/* Search Input — tall for touch */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
             <Input
               ref={inputRef}
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search by name, generic name, barcode, or SKU..."
-              className="pl-10"
+              className="pl-12 h-12 text-base"
             />
           </div>
 
-          {/* Results */}
-          <div className="min-h-[300px] max-h-[400px] overflow-auto border rounded-lg">
-            {loading && <div className="p-8 text-center text-muted-foreground">Searching...</div>}
+          {/* Results — tall rows for touch */}
+          <div className="min-h-[300px] max-h-[55vh] overflow-auto border rounded-lg">
+            {loading && (
+              <div className="p-8 text-center text-muted-foreground text-base">Searching...</div>
+            )}
 
             {!loading && results.length === 0 && query && (
-              <div className="p-8 text-center text-muted-foreground">
+              <div className="p-8 text-center text-muted-foreground text-base">
                 No products found for "{query}"
               </div>
             )}
@@ -91,7 +93,7 @@ export function SearchModal({ open, onClose, onSelect }: SearchModalProps): Reac
             {!loading && results.length === 0 && !query && (
               <div className="p-8 text-center text-muted-foreground">
                 <Package className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>Start typing to search products</p>
+                <p className="text-base">Start typing to search products</p>
               </div>
             )}
 
@@ -101,24 +103,24 @@ export function SearchModal({ open, onClose, onSelect }: SearchModalProps): Reac
                   <button
                     key={product.id}
                     onClick={() => handleSelect(product)}
-                    className="w-full p-4 text-left hover:bg-muted/50 transition-colors"
+                    className="w-full p-5 text-left hover:bg-muted/50 active:bg-muted transition-colors min-h-[72px]"
                   >
-                    <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center justify-between gap-4">
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium truncate">{product.name}</p>
+                        <p className="font-semibold text-base truncate">{product.name}</p>
                         {product.generic_name && (
-                          <p className="text-sm text-muted-foreground truncate">
+                          <p className="text-sm text-muted-foreground truncate mt-0.5">
                             {product.generic_name}
                           </p>
                         )}
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p className="text-sm text-muted-foreground mt-1">
                           SKU: {product.sku}
-                          {product.barcode && ` • Barcode: ${product.barcode}`}
+                          {product.barcode && ` • ${product.barcode}`}
                         </p>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="font-semibold">Rs. {product.unit_price.toFixed(2)}</p>
-                        <p className={`text-sm font-medium ${getStockColor(product.total_stock)}`}>
+                        <p className="font-bold text-base">Rs. {product.unit_price.toFixed(2)}</p>
+                        <p className={`text-sm font-medium mt-0.5 ${getStockColor(product.total_stock)}`}>
                           {product.total_stock || 0} in stock
                         </p>
                       </div>
@@ -129,8 +131,8 @@ export function SearchModal({ open, onClose, onSelect }: SearchModalProps): Reac
             )}
           </div>
 
-          <p className="text-xs text-muted-foreground text-center">
-            Click a product to add to cart • ESC to close
+          <p className="text-sm text-muted-foreground text-center">
+            Tap a product to add to cart
           </p>
         </div>
       </DialogContent>

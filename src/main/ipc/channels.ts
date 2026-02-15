@@ -134,7 +134,24 @@ export const IPC_CHANNELS = {
   // Setup
   SETUP_IS_FIRST_RUN: 'setup:is-first-run',
   SETUP_INITIALIZE: 'setup:initialize',
-  SETUP_COMPLETE: 'setup:complete'
+  SETUP_COMPLETE: 'setup:complete',
+
+  // Customer Display
+  DISPLAY_UPDATE: 'display:update',
+  DISPLAY_SALE_COMPLETE: 'display:sale-complete',
+
+  // Audit Log
+  AUDIT_LOG_QUERY: 'audit:query',
+  AUDIT_LOG_EXPORT_CSV: 'audit:export-csv',
+
+  // Customer Management
+  CUSTOMER_LIST: 'customer:list',
+  CUSTOMER_GET: 'customer:get',
+  CUSTOMER_GET_BY_PHONE: 'customer:getByPhone',
+  CUSTOMER_CREATE: 'customer:create',
+  CUSTOMER_UPDATE: 'customer:update',
+  CUSTOMER_DELETE: 'customer:delete',
+  CUSTOMER_PURCHASE_HISTORY: 'customer:purchaseHistory'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

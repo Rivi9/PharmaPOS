@@ -7,6 +7,7 @@ import {
   checkStockAvailability
 } from '../services/products'
 import { createSale, getReceipt, getTodaySalesTotal } from '../services/sales'
+import { logAudit } from '../services/audit'
 
 export function registerPOSHandlers(): void {
   // Product handlers
@@ -24,7 +25,20 @@ export function registerPOSHandlers(): void {
 
   // Sales handlers
   ipcMain.handle(IPC_CHANNELS.SALE_CREATE, async (_event, saleData: unknown) => {
-    return createSale(saleData as any) // Type validated by service
+    const result = createSale(saleData as any) // Type validated by service
+    const sale = saleData as { user_id: string; total: number; payment_method: string }
+    logAudit({
+      userId: sale.user_id,
+      action: 'SALE_CREATED',
+      entityType: 'sale',
+      entityId: result.sale_id,
+      details: {
+        receipt_number: result.receipt_number,
+        total: sale.total,
+        payment_method: sale.payment_method
+      }
+    })
+    return result
   })
 
   ipcMain.handle(IPC_CHANNELS.SALE_GET_RECEIPT, async (_event, saleId: string) => {

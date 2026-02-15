@@ -174,6 +174,31 @@ const electronAPI = {
     complete: () => ipcRenderer.invoke(IPC_CHANNELS.SETUP_COMPLETE)
   },
 
+  // Customers
+  customers: {
+    list: (search?: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_LIST, search),
+    get: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_GET, id),
+    getByPhone: (phone: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_GET_BY_PHONE, phone),
+    create: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_CREATE, data),
+    update: (id: string, data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_UPDATE, { id, data }),
+    delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_DELETE, id),
+    purchaseHistory: (customerId: string, limit?: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_PURCHASE_HISTORY, { customerId, limit })
+  },
+
+  // Audit Log
+  audit: {
+    query: (options: unknown) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_QUERY, options),
+    exportCsv: (options?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_EXPORT_CSV, options)
+  },
+
+  // Customer Display
+  display: {
+    update: (cartData: unknown) => ipcRenderer.invoke(IPC_CHANNELS.DISPLAY_UPDATE, cartData),
+    saleComplete: (saleData: unknown) =>
+      ipcRenderer.invoke(IPC_CHANNELS.DISPLAY_SALE_COMPLETE, saleData)
+  },
+
   // Updates
   updates: {
     check: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATES_CHECK),

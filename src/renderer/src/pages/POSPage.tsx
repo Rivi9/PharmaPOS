@@ -6,6 +6,7 @@ import { PaymentModal } from '@renderer/components/pos/PaymentModal'
 import { ReceiptPreview } from '@renderer/components/pos/ReceiptPreview'
 import { usePOSStore } from '@renderer/stores/posStore'
 import { useKeyboardShortcuts } from '@renderer/hooks/useKeyboardShortcuts'
+import { useCustomerDisplay } from '@renderer/hooks/useCustomerDisplay'
 
 export function POSPage(): React.JSX.Element {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
@@ -15,6 +16,9 @@ export function POSPage(): React.JSX.Element {
     receiptNumber: string
   } | null>(null)
   const [searchModalOpen, setSearchModalOpen] = useState(false)
+
+  // Sync cart state to customer display window
+  useCustomerDisplay()
 
   const items = usePOSStore((state) => state.items)
   const holdCurrentSale = usePOSStore((state) => state.holdCurrentSale)

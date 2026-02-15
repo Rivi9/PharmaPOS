@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { getDatabase, generateId } from '../services/database'
 import { IPC_CHANNELS } from './channels'
 import bcrypt from 'bcryptjs'
+import { logAudit } from '../services/audit'
 import { registerPOSHandlers } from './pos-handlers'
 import { registerInventoryHandlers } from './inventory-handlers'
 import { registerAnalyticsHandlers } from './analytics-handlers'
@@ -11,6 +12,8 @@ import { registerUserHandlers } from './user-handlers'
 import { registerPrinterHandlers } from './printer-handlers'
 import { registerSetupHandlers } from './setup-handlers'
 import { registerUpdateHandlers } from './update-handlers'
+import { registerAuditHandlers } from './audit-handlers'
+import { registerCustomerHandlers } from './customer-handlers'
 
 export function registerIpcHandlers(): void {
   // Register POS handlers
@@ -40,6 +43,12 @@ export function registerIpcHandlers(): void {
   // Register Update handlers
   registerUpdateHandlers()
 
+  // Register Audit handlers
+  registerAuditHandlers()
+
+  // Register Customer handlers
+  registerCustomerHandlers()
+
   // Get all users (for login dropdown)
   ipcMain.handle(IPC_CHANNELS.AUTH_GET_USERS, () => {
     const db = getDatabase()
@@ -67,6 +76,7 @@ export function registerIpcHandlers(): void {
     // Check PIN
     if (pin && user.pin_code === pin) {
       const { password_hash, ...safeUser } = user
+      logAudit({ userId: user.id, userName: user.full_name, action: 'USER_LOGIN', entityType: 'user', entityId: user.id })
       return { success: true, user: safeUser }
     }
 
@@ -75,6 +85,7 @@ export function registerIpcHandlers(): void {
       const valid = await bcrypt.compare(password, user.password_hash)
       if (valid) {
         const { password_hash, ...safeUser } = user
+        logAudit({ userId: user.id, userName: user.full_name, action: 'USER_LOGIN', entityType: 'user', entityId: user.id })
         return { success: true, user: safeUser }
       }
     }

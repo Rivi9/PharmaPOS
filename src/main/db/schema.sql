@@ -132,6 +132,46 @@ CREATE TABLE IF NOT EXISTS product_sales_daily (
     UNIQUE(date, product_id)
 );
 
+-- Customers
+CREATE TABLE IF NOT EXISTS customers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    phone TEXT UNIQUE,
+    email TEXT,
+    address TEXT,
+    date_of_birth TEXT,
+    loyalty_points INTEGER DEFAULT 0,
+    notes TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone);
+CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
+
+-- Add customer_id to sales (migration for existing databases)
+-- SQLite ignores duplicate column errors for ALTER TABLE in a try-catch at app level
+-- The service layer handles this gracefully
+
+-- Audit Log (immutable - never UPDATE or DELETE rows)
+CREATE TABLE IF NOT EXISTS audit_log (
+    id TEXT PRIMARY KEY,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now')),
+    user_id TEXT REFERENCES users(id),
+    user_name TEXT,
+    action TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT,
+    details TEXT,
+    ip_address TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
+CREATE INDEX IF NOT EXISTS idx_audit_log_user ON audit_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action);
+CREATE INDEX IF NOT EXISTS idx_audit_log_entity ON audit_log(entity_type, entity_id);
+
 -- Settings
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,

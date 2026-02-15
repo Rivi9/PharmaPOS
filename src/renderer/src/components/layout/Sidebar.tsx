@@ -1,5 +1,5 @@
 import { cn } from '@renderer/lib/utils'
-import { ShoppingCart, Package, BarChart3, Bot, Users, Settings } from 'lucide-react'
+import { ShoppingCart, Package, BarChart3, Bot, Users, Settings, Shield, UserCircle } from 'lucide-react'
 
 interface SidebarProps {
   currentPage: string
@@ -11,7 +11,9 @@ const navItems = [
   { id: 'inventory', label: 'Inventory', icon: Package },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   { id: 'ai', label: 'AI Insights', icon: Bot },
+  { id: 'customers', label: 'Customers', icon: UserCircle },
   { id: 'users', label: 'Users', icon: Users },
+  { id: 'audit', label: 'Audit', icon: Shield },
   { id: 'settings', label: 'Settings', icon: Settings }
 ]
 

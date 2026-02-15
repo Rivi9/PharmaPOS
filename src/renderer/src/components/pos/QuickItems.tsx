@@ -55,18 +55,18 @@ export function QuickItems(): React.JSX.Element {
           key={product.id}
           onClick={() => handleQuickAdd(product)}
           variant="outline"
-          className="h-auto p-3 flex flex-col items-start gap-2 relative overflow-hidden"
+          className="h-24 p-3 flex flex-col items-start gap-1.5 relative overflow-hidden"
           disabled={!product.total_stock || product.total_stock === 0}
         >
           {/* Stock indicator dot */}
           <div
-            className={`absolute top-2 right-2 w-2 h-2 rounded-full ${getStockIndicator(product.total_stock)}`}
+            className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStockIndicator(product.total_stock)}`}
             title={`${product.total_stock || 0} in stock`}
           />
 
           {/* Product info */}
           <div className="w-full text-left">
-            <p className="font-medium text-sm line-clamp-2 pr-4">{product.name}</p>
+            <p className="font-semibold text-sm line-clamp-2 pr-4 leading-tight">{product.name}</p>
             {product.generic_name && (
               <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
                 {product.generic_name}
@@ -75,8 +75,8 @@ export function QuickItems(): React.JSX.Element {
           </div>
 
           {/* Price */}
-          <div className="w-full flex items-end justify-between">
-            <span className="text-base font-bold">Rs. {product.unit_price.toFixed(2)}</span>
+          <div className="w-full flex items-end justify-between mt-auto">
+            <span className="font-bold">Rs. {product.unit_price.toFixed(2)}</span>
             <span className="text-xs text-muted-foreground">{product.total_stock || 0}</span>
           </div>
         </Button>

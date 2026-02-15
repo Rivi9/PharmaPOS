@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Search } from 'lucide-react'
+import { Search, AlertTriangle } from 'lucide-react'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
 import { usePOSStore } from '@renderer/stores/posStore'
@@ -17,6 +17,7 @@ export function ProductEntry({
   const [barcode, setBarcode] = useState('')
   const [internalSearchOpen, setInternalSearchOpen] = useState(false)
   const [error, setError] = useState('')
+  const [expiryWarning, setExpiryWarning] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const addItem = usePOSStore((state) => state.addItem)
 
@@ -34,6 +35,7 @@ export function ProductEntry({
     if (!barcode.trim()) return
 
     setError('')
+    setExpiryWarning('')
 
     try {
       const product = await window.electron.getProductByBarcode(barcode.trim())
@@ -49,6 +51,19 @@ export function ProductEntry({
         setError('No stock available')
         setBarcode('')
         return
+      }
+
+      // Check near-expiry
+      if (product.nearest_expiry) {
+        const expiry = new Date(product.nearest_expiry)
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const days = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+        if (days <= 0) {
+          setExpiryWarning(`⚠ ${product.name} is EXPIRED (${product.nearest_expiry})`)
+        } else if (days <= 30) {
+          setExpiryWarning(`⚠ ${product.name} expires in ${days} day${days === 1 ? '' : 's'} (${product.nearest_expiry})`)
+        }
       }
 
       // Add to cart
@@ -72,22 +87,44 @@ export function ProductEntry({
             value={barcode}
             onChange={(e) => setBarcode(e.target.value)}
             placeholder="Scan or enter barcode..."
-            className="flex-1"
+            className="flex-1 h-12 text-base"
           />
-          <Button type="button" variant="outline" size="icon" onClick={() => setSearchOpen(true)}>
-            <Search className="h-4 w-4" />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setSearchOpen(true)}
+            className="h-12 w-12 shrink-0"
+          >
+            <Search className="h-5 w-5" />
           </Button>
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
-
-        <p className="text-xs text-muted-foreground">F2 to search • Enter to add</p>
+        {error && <p className="text-base text-destructive">{error}</p>}
+        {expiryWarning && (
+          <p className="text-base text-orange-600 flex items-center gap-1">
+            <AlertTriangle className="h-5 w-5 shrink-0" />
+            {expiryWarning}
+          </p>
+        )}
       </form>
 
       <SearchModal
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         onSelect={(product) => {
+          // Check near-expiry when selecting via search
+          setExpiryWarning('')
+          if (product.nearest_expiry) {
+            const expiry = new Date(product.nearest_expiry)
+            const today = new Date()
+            today.setHours(0, 0, 0, 0)
+            const days = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+            if (days <= 0) {
+              setExpiryWarning(`⚠ ${product.name} is EXPIRED (${product.nearest_expiry})`)
+            } else if (days <= 30) {
+              setExpiryWarning(`⚠ ${product.name} expires in ${days} day${days === 1 ? '' : 's'}`)
+            }
+          }
           addItem(product, 1)
           setSearchOpen(false)
           inputRef.current?.focus()

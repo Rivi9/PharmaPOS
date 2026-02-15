@@ -1,5 +1,29 @@
 @import 'tailwindcss';
 
+/* ── Touch screen optimizations ─────────────────────────────────────── */
+/* Eliminate 300ms click delay on Windows touch screens */
+* {
+  touch-action: manipulation;
+}
+
+/* Prevent accidental text selection when tapping buttons quickly */
+button,
+[role='button'] {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Momentum scrolling for touch in scroll areas */
+.overflow-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Remove tap highlight flash on Windows touch */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
 @theme {
   --color-primary: #3b82f6;
   --color-primary-foreground: #ffffff;

@@ -1,8 +1,15 @@
-import { Minus, Plus, X } from 'lucide-react'
+import { Minus, Plus, X, AlertTriangle } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import type { CartItem as CartItemType } from '@renderer/lib/types'
 import { formatCurrency } from '@renderer/lib/calculations'
+
+function getDaysUntilExpiry(expiryDate: string): number {
+  const expiry = new Date(expiryDate)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+}
 
 interface CartItemProps {
   item: CartItemType
@@ -33,53 +40,71 @@ export function CartItem({
     <div className="flex items-center gap-3 p-3 border rounded-lg bg-card">
       {/* Product Info */}
       <div className="flex-1 min-w-0">
-        <p className="font-medium text-sm truncate">{item.product.name}</p>
+        <p className="font-medium truncate">{item.product.name}</p>
         {item.product.generic_name && (
-          <p className="text-xs text-muted-foreground truncate">{item.product.generic_name}</p>
+          <p className="text-sm text-muted-foreground truncate">{item.product.generic_name}</p>
         )}
+        {item.product.nearest_expiry && (() => {
+          const days = getDaysUntilExpiry(item.product.nearest_expiry!)
+          if (days <= 0) {
+            return (
+              <p className="text-sm text-red-600 flex items-center gap-1 mt-0.5 font-medium">
+                <AlertTriangle className="h-4 w-4" /> EXPIRED
+              </p>
+            )
+          }
+          if (days <= 30) {
+            return (
+              <p className="text-sm text-orange-500 flex items-center gap-1 mt-0.5">
+                <AlertTriangle className="h-4 w-4" /> Expires in {days}d
+              </p>
+            )
+          }
+          return null
+        })()}
       </div>
 
-      {/* Quantity Controls */}
+      {/* Quantity Controls — min 44px touch targets */}
       <div className="flex items-center gap-1">
         <Button
           size="icon"
           variant="outline"
-          className="h-8 w-8"
+          className="h-11 w-11"
           onClick={() => handleQuantityChange(-1)}
         >
-          <Minus className="h-3 w-3" />
+          <Minus className="h-4 w-4" />
         </Button>
         <Input
           type="number"
           value={item.quantity}
           onChange={(e) => handleManualQuantityChange(e.target.value)}
-          className="w-16 h-8 text-center"
+          className="w-16 h-11 text-center text-base"
           min="1"
         />
         <Button
           size="icon"
           variant="outline"
-          className="h-8 w-8"
+          className="h-11 w-11"
           onClick={() => handleQuantityChange(1)}
         >
-          <Plus className="h-3 w-3" />
+          <Plus className="h-4 w-4" />
         </Button>
       </div>
 
       {/* Price */}
       <div className="text-right w-24">
-        <p className="text-xs text-muted-foreground">@ {formatCurrency(item.unit_price)}</p>
+        <p className="text-sm text-muted-foreground">@ {formatCurrency(item.unit_price)}</p>
         <p className="font-semibold">{formatCurrency(item.line_total)}</p>
       </div>
 
-      {/* Remove Button */}
+      {/* Remove Button — 44px touch target */}
       <Button
         size="icon"
         variant="ghost"
-        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+        className="h-11 w-11 text-destructive hover:text-destructive hover:bg-destructive/10"
         onClick={() => onRemove(index)}
       >
-        <X className="h-4 w-4" />
+        <X className="h-5 w-5" />
       </Button>
     </div>
   )

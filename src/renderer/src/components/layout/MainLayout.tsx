@@ -3,6 +3,8 @@ import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { SettingsPage, POSPage, InventoryPage, AnalyticsPage } from '@renderer/pages'
 import { UsersPage } from '@renderer/pages/UsersPage'
+import { AuditLogPage } from '@renderer/pages/AuditLogPage'
+import { CustomersPage } from '@renderer/pages/CustomersPage'
 
 interface MainLayoutProps {
   user: { full_name: string; role: string } | null
@@ -26,6 +28,10 @@ export function MainLayout({ user, onLogout }: MainLayoutProps): React.JSX.Eleme
         return <AnalyticsPage />
       case 'users':
         return <UsersPage />
+      case 'customers':
+        return <CustomersPage />
+      case 'audit':
+        return <AuditLogPage />
       default:
         return (
           <div className="h-full flex items-center justify-center text-muted-foreground">

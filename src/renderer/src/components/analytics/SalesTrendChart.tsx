@@ -68,7 +68,7 @@ export function SalesTrendChart({ data, isLoading }: SalesTrendChartProps): Reac
               tickFormatter={(value) => `Rs. ${value}`}
             />
             <Tooltip
-              formatter={(value: number) => `Rs. ${value.toFixed(2)}`}
+              formatter={(value: number | undefined) => `Rs. ${(value ?? 0).toFixed(2)}`}
               contentStyle={{
                 backgroundColor: 'hsl(var(--background))',
                 border: '1px solid hsl(var(--border))',

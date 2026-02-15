@@ -43,8 +43,22 @@ export function initializeDatabase(): void {
     }
   }
 
-  // Run schema
+  // Run schema (CREATE TABLE IF NOT EXISTS — safe to re-run)
   database.exec(schema)
+
+  // Run column migrations for existing databases
+  // SQLite does not support ADD COLUMN IF NOT EXISTS — use try/catch
+  const columnMigrations = [
+    'ALTER TABLE sales ADD COLUMN customer_id TEXT REFERENCES customers(id)'
+  ]
+  for (const migration of columnMigrations) {
+    try {
+      database.exec(migration)
+    } catch {
+      // Column already exists — safe to ignore
+    }
+  }
+
   console.log('Database initialized at:', app.getPath('userData'))
 }
 

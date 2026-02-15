@@ -46,51 +46,44 @@ export function CartActions({
         {/* Hold Button */}
         <Button
           variant="outline"
-          size="sm"
           disabled={!hasItems}
           onClick={onHold}
-          className="flex items-center gap-2"
+          className="h-12 flex flex-col items-center gap-1 py-2"
         >
-          <Pause className="h-4 w-4" />
-          <span>Hold</span>
-          <span className="text-xs text-muted-foreground">(F4)</span>
+          <Pause className="h-5 w-5" />
+          <span className="text-xs">Hold</span>
         </Button>
 
         {/* Recall Button */}
         <Button
           variant="outline"
-          size="sm"
           disabled={!hasHeldSale}
           onClick={onRecall}
-          className="flex items-center gap-2"
+          className="h-12 flex flex-col items-center gap-1 py-2"
         >
-          <RotateCcw className="h-4 w-4" />
-          <span>Recall</span>
-          <span className="text-xs text-muted-foreground">(F5)</span>
+          <RotateCcw className="h-5 w-5" />
+          <span className="text-xs">Recall</span>
         </Button>
 
         {/* Clear Button */}
         <Button
           variant="outline"
-          size="sm"
           disabled={!hasItems}
           onClick={handleClearClick}
-          className="flex items-center gap-2 text-destructive hover:text-destructive"
+          className="h-12 flex flex-col items-center gap-1 py-2 text-destructive hover:text-destructive"
         >
-          <Trash2 className="h-4 w-4" />
-          <span>Clear</span>
-          <span className="text-xs text-muted-foreground">(F8)</span>
+          <Trash2 className="h-5 w-5" />
+          <span className="text-xs">Clear</span>
         </Button>
       </div>
 
-      {/* Pay Button */}
+      {/* Pay Button — large, easy to tap */}
       <Button
-        size="lg"
         disabled={!hasItems}
         onClick={onPayment}
-        className="w-full text-base font-semibold"
+        className="w-full h-16 text-xl font-bold"
       >
-        Pay Now (F9)
+        Pay Now
       </Button>
 
       {/* Clear Confirmation Dialog */}

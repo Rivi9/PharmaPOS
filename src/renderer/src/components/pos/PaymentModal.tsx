@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { CreditCard, Banknote, Split } from 'lucide-react'
+import { CreditCard, Banknote, Split, Delete } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
 import { Label } from '@renderer/components/ui/label'
 import { usePOSStore } from '@renderer/stores/posStore'
 import { useShiftStore } from '@renderer/stores/shiftStore'
+import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { calculateChange, formatCurrency } from '@renderer/lib/calculations'
 
 interface PaymentModalProps {
@@ -15,6 +16,9 @@ interface PaymentModalProps {
 }
 
 type PaymentMethod = 'cash' | 'card' | 'mixed'
+
+// Common cash denominations for quick-select
+const QUICK_AMOUNTS = [100, 500, 1000, 2000, 5000]
 
 export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): React.JSX.Element {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
@@ -34,6 +38,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   const clearCart = usePOSStore((state) => state.clearCart)
   const currentShift = useShiftStore((state) => state.currentShift)
   const addToTodaySales = useShiftStore((state) => state.addToTodaySales)
+  const currencySymbol = useSettingsStore((state) => state.settings.currency_symbol)
 
   const cashReceivedNum = parseFloat(cashReceived) || 0
   const cardAmountNum = parseFloat(cardAmount) || 0
@@ -42,28 +47,35 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   const handlePaymentMethodChange = (method: PaymentMethod) => {
     setPaymentMethod(method)
     setError('')
+    setCashReceived('')
     if (method === 'card') {
-      setCashReceived('')
       setCardAmount(total.toFixed(2))
-    } else if (method === 'mixed') {
-      setCashReceived('')
-      setCardAmount('')
     } else {
-      setCashReceived('')
       setCardAmount('')
     }
   }
 
-  const handleCashReceivedChange = (value: string) => {
+  const updateCash = (value: string) => {
     setCashReceived(value)
     setError('')
-
-    // For mixed payments, auto-calculate card amount
     if (paymentMethod === 'mixed') {
       const cash = parseFloat(value) || 0
       const remaining = Math.max(0, total - cash)
       setCardAmount(remaining.toFixed(2))
     }
+  }
+
+  // Numpad key handler — builds cash string digit by digit
+  const handleNumpadKey = (key: string) => {
+    if (key === 'backspace') {
+      updateCash(cashReceived.slice(0, -1))
+      return
+    }
+    if (key === '.' && cashReceived.includes('.')) return
+    // Limit to 2 decimal places
+    const dotIndex = cashReceived.indexOf('.')
+    if (dotIndex !== -1 && cashReceived.length - dotIndex > 2) return
+    updateCash(cashReceived + key)
   }
 
   const validatePayment = (): boolean => {
@@ -127,19 +139,21 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
 
       const result = await window.electron.createSale(saleData)
 
-      // Update shift totals
       addToTodaySales(total)
 
-      // Clear cart
-      clearCart()
+      window.electron.display.saleComplete({
+        total,
+        cash_received: paymentMethod === 'cash' || paymentMethod === 'mixed' ? cashReceivedNum : 0,
+        change_given: change,
+        currency: currencySymbol
+      }).catch(() => {})
 
-      // Reset form
+      clearCart()
       setCashReceived('')
       setCardAmount('')
       setCustomerName('')
       setCustomerPhone('')
 
-      // Call completion handler
       onComplete(result.sale_id, result.receipt_number)
     } catch (err: any) {
       setError(err.message || 'Failed to complete sale')
@@ -148,105 +162,165 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
     }
   }
 
+  const showCashEntry = paymentMethod === 'cash' || paymentMethod === 'mixed'
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg max-h-[95vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Complete Sale - {formatCurrency(total)}</DialogTitle>
+          <DialogTitle className="text-xl">
+            Complete Sale — {formatCurrency(total)}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Payment Method Selection */}
-          <div className="space-y-2">
-            <Label>Payment Method</Label>
-            <div className="grid grid-cols-3 gap-2">
-              <Button
-                variant={paymentMethod === 'cash' ? 'default' : 'outline'}
-                onClick={() => handlePaymentMethodChange('cash')}
-                className="flex flex-col items-center gap-1 h-auto py-3"
-              >
-                <Banknote className="h-5 w-5" />
-                <span className="text-xs">Cash</span>
-              </Button>
-              <Button
-                variant={paymentMethod === 'card' ? 'default' : 'outline'}
-                onClick={() => handlePaymentMethodChange('card')}
-                className="flex flex-col items-center gap-1 h-auto py-3"
-              >
-                <CreditCard className="h-5 w-5" />
-                <span className="text-xs">Card</span>
-              </Button>
-              <Button
-                variant={paymentMethod === 'mixed' ? 'default' : 'outline'}
-                onClick={() => handlePaymentMethodChange('mixed')}
-                className="flex flex-col items-center gap-1 h-auto py-3"
-              >
-                <Split className="h-5 w-5" />
-                <span className="text-xs">Mixed</span>
-              </Button>
-            </div>
+          {/* Payment Method — large touch buttons */}
+          <div className="grid grid-cols-3 gap-3">
+            <Button
+              variant={paymentMethod === 'cash' ? 'default' : 'outline'}
+              onClick={() => handlePaymentMethodChange('cash')}
+              className="h-16 flex flex-col items-center gap-1"
+            >
+              <Banknote className="h-6 w-6" />
+              <span>Cash</span>
+            </Button>
+            <Button
+              variant={paymentMethod === 'card' ? 'default' : 'outline'}
+              onClick={() => handlePaymentMethodChange('card')}
+              className="h-16 flex flex-col items-center gap-1"
+            >
+              <CreditCard className="h-6 w-6" />
+              <span>Card</span>
+            </Button>
+            <Button
+              variant={paymentMethod === 'mixed' ? 'default' : 'outline'}
+              onClick={() => handlePaymentMethodChange('mixed')}
+              className="h-16 flex flex-col items-center gap-1"
+            >
+              <Split className="h-6 w-6" />
+              <span>Mixed</span>
+            </Button>
           </div>
 
-          {/* Cash Payment */}
-          {(paymentMethod === 'cash' || paymentMethod === 'mixed') && (
-            <div className="space-y-2">
-              <Label htmlFor="cash-received">Cash Received</Label>
+          {/* Cash entry section */}
+          {showCashEntry && (
+            <div className="space-y-3">
+              <Label className="text-base">Cash Received</Label>
+
+              {/* Cash display */}
               <Input
                 id="cash-received"
                 type="number"
                 step="0.01"
                 value={cashReceived}
-                onChange={(e) => handleCashReceivedChange(e.target.value)}
+                onChange={(e) => updateCash(e.target.value)}
                 placeholder="0.00"
-                autoFocus
+                className="h-14 text-2xl font-bold text-right pr-4"
               />
-              {paymentMethod === 'cash' && cashReceivedNum >= total && (
-                <p className="text-sm font-medium text-green-600">
-                  Change: {formatCurrency(change)}
-                </p>
+
+              {/* Quick preset amounts */}
+              <div className="grid grid-cols-5 gap-2">
+                <Button
+                  variant="outline"
+                  className="h-11 font-medium"
+                  onClick={() => updateCash(total.toFixed(2))}
+                >
+                  Exact
+                </Button>
+                {QUICK_AMOUNTS.map((amount) => (
+                  <Button
+                    key={amount}
+                    variant="outline"
+                    className="h-11 font-medium"
+                    onClick={() => updateCash(String(amount))}
+                  >
+                    {amount >= 1000 ? `${amount / 1000}K` : amount}
+                  </Button>
+                ))}
+              </div>
+
+              {/* Touch Numpad */}
+              <div className="grid grid-cols-3 gap-2">
+                {['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', 'backspace'].map(
+                  (key) => (
+                    <Button
+                      key={key}
+                      variant="outline"
+                      className="h-14 text-xl font-semibold"
+                      onClick={() => handleNumpadKey(key)}
+                    >
+                      {key === 'backspace' ? <Delete className="h-5 w-5" /> : key}
+                    </Button>
+                  )
+                )}
+              </div>
+
+              {/* Change display */}
+              {paymentMethod === 'cash' && cashReceivedNum > 0 && (
+                <div
+                  className={`p-3 rounded-lg text-center text-lg font-bold ${
+                    cashReceivedNum >= total
+                      ? 'bg-green-50 text-green-700'
+                      : 'bg-red-50 text-red-700'
+                  }`}
+                >
+                  {cashReceivedNum >= total
+                    ? `Change: ${formatCurrency(change)}`
+                    : `Short: ${formatCurrency(total - cashReceivedNum)}`}
+                </div>
               )}
             </div>
           )}
 
-          {/* Card Payment */}
+          {/* Mixed payment — card amount (auto-calculated) */}
           {paymentMethod === 'mixed' && (
             <div className="space-y-2">
-              <Label htmlFor="card-amount">Card Amount</Label>
+              <Label className="text-base">Card Amount (auto)</Label>
               <Input
-                id="card-amount"
                 type="number"
                 step="0.01"
                 value={cardAmount}
                 onChange={(e) => setCardAmount(e.target.value)}
+                className="h-12 text-lg"
                 placeholder="0.00"
               />
             </div>
           )}
 
-          {/* Customer Info (Optional) */}
-          <div className="space-y-3 border-t pt-4">
-            <Label className="text-muted-foreground">Customer Info (Optional)</Label>
+          {/* Customer Info */}
+          <div className="space-y-3 border-t pt-3">
+            <Label className="text-muted-foreground">Customer (Optional)</Label>
             <Input
               placeholder="Customer name"
               value={customerName}
               onChange={(e) => setCustomerName(e.target.value)}
+              className="h-12 text-base"
             />
             <Input
               placeholder="Phone number"
               value={customerPhone}
               onChange={(e) => setCustomerPhone(e.target.value)}
+              className="h-12 text-base"
             />
           </div>
 
-          {/* Error Message */}
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          {error && <p className="text-base text-destructive font-medium">{error}</p>}
 
           {/* Actions */}
-          <div className="flex gap-2 pt-2">
-            <Button variant="outline" onClick={onClose} disabled={processing} className="flex-1">
+          <div className="flex gap-3 pt-1">
+            <Button
+              variant="outline"
+              onClick={onClose}
+              disabled={processing}
+              className="flex-1 h-14 text-base"
+            >
               Cancel
             </Button>
-            <Button onClick={handleComplete} disabled={processing} className="flex-1">
+            <Button
+              onClick={handleComplete}
+              disabled={processing}
+              className="flex-1 h-14 text-lg font-bold"
+            >
               {processing ? 'Processing...' : 'Complete Sale'}
             </Button>
           </div>

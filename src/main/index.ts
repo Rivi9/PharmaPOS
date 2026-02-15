@@ -8,6 +8,9 @@ import { initializeAggregationJob } from './jobs/aggregation'
 import { initializeErrorTracking, setupGlobalErrorHandlers } from './services/logging/error-handler'
 import { logInfo } from './services/logging/logger'
 import { initializeAutoUpdater } from './services/updates/auto-updater'
+import { IPC_CHANNELS } from './ipc/channels'
+
+let customerDisplayWindow: BrowserWindow | null = null
 
 // Initialize error tracking
 initializeErrorTracking()
@@ -19,6 +22,41 @@ logInfo('Application starting', {
   platform: process.platform,
   arch: process.arch
 })
+
+function createCustomerDisplayWindow(): BrowserWindow {
+  const displays = require('electron').screen.getAllDisplays()
+  const secondDisplay = displays.find((d: any) => d.id !== require('electron').screen.getPrimaryDisplay().id)
+
+  const displayWindow = new BrowserWindow({
+    width: secondDisplay?.bounds.width ?? 1024,
+    height: secondDisplay?.bounds.height ?? 768,
+    x: secondDisplay?.bounds.x ?? 0,
+    y: secondDisplay?.bounds.y ?? 0,
+    fullscreen: !!secondDisplay,
+    autoHideMenuBar: true,
+    frame: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  // Load with customer-display hash to trigger CustomerDisplayPage in React
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    displayWindow.loadURL(process.env['ELECTRON_RENDERER_URL'] + '#customer-display')
+  } else {
+    displayWindow.loadFile(join(__dirname, '../renderer/index.html'), {
+      hash: 'customer-display'
+    })
+  }
+
+  logInfo('Customer display window created', {
+    hasSecondDisplay: !!secondDisplay,
+    bounds: secondDisplay?.bounds
+  })
+
+  return displayWindow
+}
 
 function createWindow(): BrowserWindow {
   // Create the browser window.
@@ -81,6 +119,24 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
 
   const mainWindow = createWindow()
+
+  // Create customer display window (secondary monitor)
+  customerDisplayWindow = createCustomerDisplayWindow()
+
+  // Handle display:update from main window, forward to customer display
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_UPDATE, (_event, cartData) => {
+    if (customerDisplayWindow && !customerDisplayWindow.isDestroyed()) {
+      customerDisplayWindow.webContents.send('display:cart-updated', cartData)
+    }
+    return { success: true }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_SALE_COMPLETE, (_event, saleData) => {
+    if (customerDisplayWindow && !customerDisplayWindow.isDestroyed()) {
+      customerDisplayWindow.webContents.send('display:sale-completed', saleData)
+    }
+    return { success: true }
+  })
 
   // Initialize auto-updater
   initializeAutoUpdater(mainWindow)

@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from './channels'
 import * as inventory from '../services/inventory'
+import { logAudit } from '../services/audit'
 
 export function registerInventoryHandlers(): void {
   // =====================
@@ -175,6 +176,13 @@ export function registerInventoryHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_ADJUST, (_, { batchId, quantityChange, reason, userId }) => {
     try {
       inventory.adjustStockBatch(batchId, quantityChange, reason, userId)
+      logAudit({
+        userId,
+        action: 'STOCK_ADJUSTED',
+        entityType: 'stock_batch',
+        entityId: batchId,
+        details: { quantity_change: quantityChange, reason }
+      })
       return { success: true }
     } catch (error: any) {
       return { success: false, error: error.message }
