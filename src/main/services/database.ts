@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import path from 'path'
-import fs from 'fs'
+import schemaSql from '../db/schema.sql?raw'
 
 let db: Database.Database | null = null
 
@@ -23,28 +23,8 @@ export function getDatabase(): Database.Database {
 export function initializeDatabase(): void {
   const database = getDatabase()
 
-  // Read schema file - in production it's bundled, in dev it's in src
-  const schemaPath = path.join(__dirname, '../db/schema.sql')
-  const devSchemaPath = path.join(__dirname, '../../src/main/db/schema.sql')
-
-  let schema: string
-  if (fs.existsSync(schemaPath)) {
-    schema = fs.readFileSync(schemaPath, 'utf-8')
-  } else if (fs.existsSync(devSchemaPath)) {
-    schema = fs.readFileSync(devSchemaPath, 'utf-8')
-  } else {
-    // Fallback: try relative to process.cwd()
-    const cwdSchemaPath = path.join(process.cwd(), 'src/main/db/schema.sql')
-    if (fs.existsSync(cwdSchemaPath)) {
-      schema = fs.readFileSync(cwdSchemaPath, 'utf-8')
-    } else {
-      console.error('Schema file not found at:', schemaPath, devSchemaPath, cwdSchemaPath)
-      return
-    }
-  }
-
-  // Run schema (CREATE TABLE IF NOT EXISTS — safe to re-run)
-  database.exec(schema)
+  // schemaSql is inlined at build time via Vite's ?raw import — no file path issues
+  database.exec(schemaSql)
 
   // Run column migrations for existing databases
   // SQLite does not support ADD COLUMN IF NOT EXISTS — use try/catch
