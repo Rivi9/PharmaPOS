@@ -64,11 +64,7 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 
-npmRebuild: true
-
-electronRebuildConfig:
-  onlyModules:
-    - better-sqlite3
+npmRebuild: false
 
 publish:
   provider: github
