@@ -64,7 +64,7 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 
-npmRebuild: true
+npmRebuild: false
 
 publish:
   provider: github
