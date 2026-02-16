@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, session } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
@@ -85,6 +85,43 @@ app.whenReady().then(() => {
 
   const mainWindow = createWindow()
 
+  // ── Web Serial API — grant port access automatically ──────────────────────
+  // This intercepts navigator.serial.requestPort() calls from the renderer.
+  // The pole-display module uses it to list ports and to auto-select by name.
+  session.defaultSession.on('select-serial-port', (_event, portList, _webContents, callback) => {
+    poleDisplay.handlePortSelect(portList, callback)
+  })
+
+  // Initialise the pole display bridge with the window reference
+  poleDisplay.init(mainWindow)
+
+  // Result messages sent back from the renderer's Web Serial implementation
+  ipcMain.on(poleDisplay.SERIAL_RESULT_CHANNEL, (_event, data) => {
+    poleDisplay.handleResult(data)
+  })
+
+  // Renderer signals it is ready — trigger auto-connect now that we can send IPC
+  ipcMain.on(poleDisplay.SERIAL_READY_CHANNEL, () => {
+    try {
+      const db = getDatabase()
+      const portRow = db
+        .prepare("SELECT value FROM settings WHERE key = 'display_port'")
+        .get() as { value: string } | undefined
+      const baudRow = db
+        .prepare("SELECT value FROM settings WHERE key = 'display_baud_rate'")
+        .get() as { value: string } | undefined
+      const savedPort = portRow?.value
+      const savedBaud = parseInt(baudRow?.value ?? '9600', 10)
+      if (savedPort) {
+        poleDisplay.openDisplay(savedPort, savedBaud).catch((err: Error) => {
+          logError('Could not auto-connect pole display', { port: savedPort, error: err.message })
+        })
+      }
+    } catch (err: any) {
+      logError('Failed to read display settings for auto-connect', { error: err.message })
+    }
+  })
+
   // ── Pole display IPC handlers ──────────────────────────────────────────────
 
   // Cart updated — write last item + running total to pole display
@@ -140,22 +177,6 @@ app.whenReady().then(() => {
   ipcMain.handle(IPC_CHANNELS.DISPLAY_GET_STATUS, () => {
     return poleDisplay.getStatus()
   })
-
-  // ── Auto-connect saved display port on startup ─────────────────────────────
-  try {
-    const db = getDatabase()
-    const portRow = db.prepare("SELECT value FROM settings WHERE key = 'display_port'").get() as { value: string } | undefined
-    const baudRow = db.prepare("SELECT value FROM settings WHERE key = 'display_baud_rate'").get() as { value: string } | undefined
-    const savedPort = portRow?.value
-    const savedBaud = parseInt(baudRow?.value ?? '9600', 10)
-    if (savedPort) {
-      poleDisplay.openDisplay(savedPort, savedBaud).catch((err: Error) => {
-        logError('Could not auto-connect pole display', { port: savedPort, error: err.message })
-      })
-    }
-  } catch (err: any) {
-    logError('Failed to read display settings for auto-connect', { error: err.message })
-  }
 
   // Initialize auto-updater
   initializeAutoUpdater(mainWindow)

@@ -219,6 +219,9 @@ const electronAPI = {
     },
     removeListener: (channel: string, listener: (...args: any[]) => void) => {
       ipcRenderer.removeListener(channel, listener)
+    },
+    send: (channel: string, ...args: any[]) => {
+      ipcRenderer.send(channel, ...args)
     }
   }
 }

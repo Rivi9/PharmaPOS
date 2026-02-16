@@ -56,7 +56,6 @@
     "node-thermal-printer": "^4.6.0",
     "react-hook-form": "^7.71.1",
     "recharts": "^3.7.0",
-    "serialport": "^13.0.0",
     "tailwind-merge": "^3.4.0",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
