@@ -50,7 +50,7 @@ export function initializePrinter(config?: PrinterConfig): ThermalPrinter {
       path: settings.path?.value,
       ip: settings.ip?.value,
       port: settings.port?.value ? parseInt(settings.port.value) : 9100,
-      width: settings.width?.value ? parseInt(settings.width.value) : 48
+      width: settings.width?.value ? parseInt(settings.width.value) : 42
     }
   }
 
@@ -73,7 +73,7 @@ export function initializePrinter(config?: PrinterConfig): ThermalPrinter {
     characterSet: config.characterSet || 'SLOVENIA',
     removeSpecialCharacters: config.removeSpecialCharacters ?? false,
     lineCharacter: config.lineCharacter || '=',
-    width: config.width || 48
+    width: config.width || 42
   }
 
   if (config.interface === 'tcp' && config.ip) {
@@ -188,21 +188,42 @@ export async function openCashDrawer(): Promise<void> {
 }
 
 /**
- * List available USB printers
+ * List available printers.
+ * On Windows, node-thermal-printer uses the Windows print spooler — the path
+ * must be the printer name exactly as shown in "Devices and Printers".
+ * We enumerate installed printers via PowerShell Get-Printer.
  */
 export async function listUSBPrinters(): Promise<Array<{ name: string; path: string }>> {
-  // This is platform-specific and would require additional native modules
-  // For now, return common USB printer paths
-  const commonPaths = [
-    '/dev/usb/lp0',
-    '/dev/usb/lp1',
-    'COM1',
-    'COM2',
-    'COM3',
-    'LPT1'
-  ]
+  if (process.platform === 'win32') {
+    try {
+      const { execFile } = await import('child_process')
+      const output = await new Promise<string>((resolve, reject) => {
+        execFile(
+          'powershell',
+          ['-NoProfile', '-Command', 'Get-Printer | Select-Object -ExpandProperty Name'],
+          { timeout: 5000 },
+          (err, stdout) => (err ? reject(err) : resolve(stdout))
+        )
+      })
+      const names = output
+        .split('\n')
+        .map((l) => l.trim())
+        .filter(Boolean)
+      if (names.length > 0) {
+        return names.map((name) => ({ name, path: name }))
+      }
+    } catch {
+      // PowerShell unavailable — fall through to defaults
+    }
+    // Well-known Epson TM-T81III Windows printer names as fallback
+    return [
+      { name: 'EPSON TM-T81III', path: 'EPSON TM-T81III' },
+      { name: 'EPSON TM-T81III Receipt', path: 'EPSON TM-T81III Receipt' }
+    ]
+  }
 
-  return commonPaths.map((path) => ({
+  // Linux/macOS
+  return ['/dev/usb/lp0', '/dev/usb/lp1', '/dev/ttyUSB0'].map((path) => ({
     name: `USB Printer (${path})`,
     path
   }))
