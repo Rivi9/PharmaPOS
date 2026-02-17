@@ -1,6 +1,13 @@
+import { eq } from 'drizzle-orm'
+import { getDb } from '../db/index'
 import { getDatabase } from './database'
+import { sales, saleItems, products, customers } from '../db/schema'
+import type { Sale, SaleItem, SaleRefund } from '../db/schema'
 
-interface SaleItem {
+// Re-export types that may be consumed by other modules
+export type { Sale, SaleItem, SaleRefund }
+
+interface SaleItemInput {
   product_id: string
   product_name: string
   quantity: number
@@ -11,7 +18,7 @@ interface SaleItem {
 interface SaleData {
   shift_id: string
   user_id: string
-  items: SaleItem[]
+  items: SaleItemInput[]
   subtotal: number
   discount_amount: number
   discount_type: 'percentage' | 'fixed' | null
@@ -38,7 +45,6 @@ function generateReceiptNumber(): string {
   const db = getDatabase()
   const currentYear = new Date().getFullYear()
 
-  // Get last receipt number for this year
   const lastReceipt = db
     .prepare(
       `
@@ -61,12 +67,12 @@ function generateReceiptNumber(): string {
 }
 
 /**
- * Deduct stock using FEFO (First Expiry First Out) strategy
+ * Deduct stock using FEFO (First Expiry First Out) strategy.
+ * Called inside a transaction so raw SQL is intentional.
  */
 function deductStockFEFO(productId: string, quantityNeeded: number): BatchDeduction[] {
   const db = getDatabase()
 
-  // Get batches in FEFO order
   const batches = db
     .prepare(
       `
@@ -98,7 +104,6 @@ function deductStockFEFO(productId: string, quantityNeeded: number): BatchDeduct
     )
   }
 
-  // Apply deductions
   for (const deduction of deductions) {
     db.prepare(
       `
@@ -113,130 +118,161 @@ function deductStockFEFO(productId: string, quantityNeeded: number): BatchDeduct
 }
 
 /**
- * Create a complete sale with stock deduction and shift update
+ * Create a complete sale with stock deduction.
+ * FIX 1: Auto-links customer by phone.
+ * FIX 2: Calculates per-item tax amount.
+ * FIX 3: Uses ON CONFLICT upsert for product_sales_daily.
+ * FIX 4: No longer updates shifts.expected_cash (computed at shift-end).
  */
 export function createSale(saleData: SaleData): { sale_id: string; receipt_number: string } {
   const db = getDatabase()
+  const drizzleDb = getDb()
 
   return db.transaction(() => {
     const saleId = crypto.randomUUID()
     const receiptNumber = generateReceiptNumber()
     const now = new Date().toISOString()
+    const today = now.split('T')[0]
 
-    // 1. Insert sale header
-    db.prepare(
-      `
-      INSERT INTO sales (
-        id, receipt_number, shift_id, user_id,
-        subtotal, discount_amount, discount_type, discount_value,
-        tax_amount, total,
-        payment_method, cash_received, card_received, change_given,
-        customer_name, customer_phone,
-        created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `
-    ).run(
-      saleId,
-      receiptNumber,
-      saleData.shift_id,
-      saleData.user_id,
-      saleData.subtotal,
-      saleData.discount_amount,
-      saleData.discount_type,
-      saleData.discount_value,
-      saleData.tax_amount,
-      saleData.total,
-      saleData.payment_method,
-      saleData.cash_received,
-      saleData.card_received,
-      saleData.change_given,
-      saleData.customer_name || null,
-      saleData.customer_phone || null,
-      now
-    )
+    // FIX 1: Auto-link customer by phone
+    let customerId: string | null = null
+    if (saleData.customer_phone) {
+      const customer = drizzleDb
+        .select({ id: customers.id })
+        .from(customers)
+        .where(eq(customers.phone, saleData.customer_phone))
+        .get()
+      customerId = customer?.id ?? null
+    }
 
-    // 2. Insert sale items and deduct stock
+    // Insert sale header using Drizzle
+    drizzleDb
+      .insert(sales)
+      .values({
+        id: saleId,
+        receiptNumber,
+        shiftId: saleData.shift_id,
+        userId: saleData.user_id,
+        customerId,
+        subtotal: saleData.subtotal,
+        taxAmount: saleData.tax_amount,
+        discountAmount: saleData.discount_amount,
+        discountType: saleData.discount_type,
+        discountValue: saleData.discount_value,
+        total: saleData.total,
+        paymentMethod: saleData.payment_method,
+        cashReceived: saleData.cash_received,
+        cardReceived: saleData.card_received,
+        changeGiven: saleData.change_given,
+        status: 'completed',
+        customerName: saleData.customer_name ?? null,
+        customerPhone: saleData.customer_phone ?? null,
+        createdAt: now
+      })
+      .run()
+
+    // Insert sale items with per-item tax
     for (const item of saleData.items) {
       const itemId = crypto.randomUUID()
-
-      // Deduct stock using FEFO
       const batches = deductStockFEFO(item.product_id, item.quantity)
 
-      // Get cost_price before INSERT (cost_price NOT NULL in schema)
-      const product = db
-        .prepare('SELECT cost_price FROM products WHERE id = ?')
-        .get(item.product_id) as { cost_price: number } | undefined
+      // Get product for cost_price and tax info
+      const product = drizzleDb
+        .select({
+          costPrice: products.costPrice,
+          taxRate: products.taxRate,
+          isTaxInclusive: products.isTaxInclusive
+        })
+        .from(products)
+        .where(eq(products.id, item.product_id))
+        .get()
 
-      const costPrice = product?.cost_price || 0
+      const costPrice = product?.costPrice ?? 0
+      const taxRate = product?.taxRate ?? 0
 
-      // Insert sale item (record first batch used)
-      db.prepare(
-        `
-        INSERT INTO sale_items (
-          id, sale_id, product_id,
-          quantity, unit_price, cost_price, line_total,
-          batch_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `
-      ).run(
-        itemId,
-        saleId,
-        item.product_id,
-        item.quantity,
-        item.unit_price,
-        costPrice,
-        item.line_total,
-        batches[0].batch_id
-      )
+      // FIX 2: Calculate per-item tax amount
+      let taxAmount = 0
+      if (taxRate > 0) {
+        if (product?.isTaxInclusive) {
+          taxAmount = item.line_total - item.line_total / (1 + taxRate / 100)
+        } else {
+          taxAmount = (item.line_total * taxRate) / 100
+        }
+      }
 
-      // Update product_sales_daily
-      const today = new Date().toISOString().split('T')[0]
+      drizzleDb
+        .insert(saleItems)
+        .values({
+          id: itemId,
+          saleId,
+          productId: item.product_id,
+          batchId: batches[0].batch_id,
+          quantity: item.quantity,
+          unitPrice: item.unit_price,
+          costPrice,
+          taxRate,
+          taxAmount,
+          discountAmount: 0,
+          lineTotal: item.line_total,
+          createdAt: now
+        })
+        .run()
 
+      // FIX 3: product_sales_daily upsert using composite PK (date, product_id)
       const cost = costPrice * item.quantity
       const profit = item.line_total - cost
 
-      const existing = db
-        .prepare(
-          `
-        SELECT id FROM product_sales_daily
-        WHERE date = ? AND product_id = ?
+      db.prepare(
+        `
+        INSERT INTO product_sales_daily (date, product_id, quantity_sold, revenue, cost, profit)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(date, product_id) DO UPDATE SET
+          quantity_sold = quantity_sold + excluded.quantity_sold,
+          revenue = revenue + excluded.revenue,
+          cost = cost + excluded.cost,
+          profit = profit + excluded.profit
       `
-        )
-        .get(today, item.product_id) as { id: string } | undefined
-
-      if (existing) {
-        db.prepare(
-          `
-          UPDATE product_sales_daily
-          SET quantity_sold = quantity_sold + ?,
-              revenue = revenue + ?,
-              cost = cost + ?,
-              profit = profit + ?
-          WHERE date = ? AND product_id = ?
-        `
-        ).run(item.quantity, item.line_total, cost, profit, today, item.product_id)
-      } else {
-        db.prepare(
-          `
-          INSERT INTO product_sales_daily (
-            id, date, product_id, quantity_sold, revenue, cost, profit
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        `
-        ).run(crypto.randomUUID(), today, item.product_id, item.quantity, item.line_total, cost, profit)
-      }
+      ).run(today, item.product_id, item.quantity, item.line_total, cost, profit)
     }
 
-    // 3. Update shift totals
-    db.prepare(
-      `
-      UPDATE shifts
-      SET expected_cash = expected_cash + ?
-      WHERE id = ?
-    `
-    ).run(saleData.cash_received, saleData.shift_id)
+    // FIX 4: REMOVED — do NOT update shifts.expected_cash here
+    // expected_cash is computed at shift-end from actual sales
 
     return { sale_id: saleId, receipt_number: receiptNumber }
   })()
+}
+
+/**
+ * Void a completed sale. Requires a non-empty reason.
+ */
+export function voidSale(saleId: string, _userId: string, reason: string): void {
+  if (!reason.trim()) throw new Error('Void reason is required')
+
+  const db = getDb()
+  const sale = db.select({ status: sales.status }).from(sales).where(eq(sales.id, saleId)).get()
+  if (!sale) throw new Error('Sale not found')
+  if (sale.status !== 'completed') throw new Error(`Cannot void a ${sale.status} sale`)
+
+  db.update(sales)
+    .set({
+      status: 'voided',
+      voidReason: reason.trim()
+    })
+    .where(eq(sales.id, saleId))
+    .run()
+}
+
+/**
+ * Compute expected cash in drawer for a shift.
+ * opening_cash + sum of cash_received from completed sales.
+ */
+export function computeShiftExpectedCash(shiftId: string, openingCash: number): number {
+  const result = getDatabase()
+    .prepare(
+      `SELECT COALESCE(SUM(cash_received), 0) as total FROM sales WHERE shift_id = ? AND status = 'completed'`
+    )
+    .get(shiftId) as { total: number }
+  return openingCash + result.total
 }
 
 /**
