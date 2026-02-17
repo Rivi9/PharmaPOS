@@ -166,14 +166,16 @@ const electronAPI = {
 
   // Users
   users: {
-    list: () => ipcRenderer.invoke(IPC_CHANNELS.USER_LIST),
-    get: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.USER_GET, id),
-    create: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.USER_CREATE, data),
-    update: (id: string, data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.USER_UPDATE, { id, data }),
-    delete: (id: string, reactivate?: boolean) =>
-      ipcRenderer.invoke(IPC_CHANNELS.USER_DELETE, { id, reactivate }),
-    changePassword: (id: string, password: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.USER_CHANGE_PASSWORD, { id, password }),
+    list: (userId: string) => ipcRenderer.invoke(IPC_CHANNELS.USER_LIST, { userId }),
+    get: (userId: string, id: string) => ipcRenderer.invoke(IPC_CHANNELS.USER_GET, { userId, id }),
+    create: (userId: string, data: unknown) =>
+      ipcRenderer.invoke(IPC_CHANNELS.USER_CREATE, { userId, ...(data as object) }),
+    update: (userId: string, id: string, data: unknown) =>
+      ipcRenderer.invoke(IPC_CHANNELS.USER_UPDATE, { userId, id, data }),
+    delete: (userId: string, id: string, reactivate?: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.USER_DELETE, { userId, id, reactivate }),
+    changePassword: (userId: string, id: string, password: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.USER_CHANGE_PASSWORD, { userId, id, password }),
     verifyPassword: (username: string, password: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.USER_VERIFY_PASSWORD, { username, password }),
     verifyPin: (pin: string) => ipcRenderer.invoke(IPC_CHANNELS.USER_VERIFY_PIN, pin),

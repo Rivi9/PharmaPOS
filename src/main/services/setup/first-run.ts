@@ -1,7 +1,8 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { getDatabase } from '../database'
+import { getDatabase, generateId } from '../database'
+import bcrypt from 'bcryptjs'
 
 const SETUP_COMPLETE_FLAG = path.join(app.getPath('userData'), '.setup-complete')
 
@@ -60,8 +61,13 @@ export function initializeDatabase(data: {
     )
   }
 
-  // Note: Admin user creation is handled by user-management service
-  // This is just for database setup
+  // Create the first admin user (bypasses RBAC — no authenticated user exists yet)
+  const passwordHash = bcrypt.hashSync(data.adminPassword, 10)
+  const adminId = generateId()
+  db.prepare(
+    `INSERT OR IGNORE INTO users (id, username, password_hash, full_name, role, is_active, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'admin', 1, datetime('now'), datetime('now'))`
+  ).run(adminId, data.adminUsername, passwordHash, data.adminFullName)
 }
 
 /**

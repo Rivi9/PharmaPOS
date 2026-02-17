@@ -7,7 +7,6 @@ import {
   createCustomer,
   updateCustomer,
   deleteCustomer,
-  getCustomerPurchaseHistory,
   type CustomerData
 } from '../services/customers'
 
@@ -36,8 +35,5 @@ export function registerCustomerHandlers(): void {
     deleteCustomer(id)
     return { success: true }
   })
-
-  ipcMain.handle(IPC_CHANNELS.CUSTOMER_PURCHASE_HISTORY, (_event, { customerId, limit }: { customerId: string; limit?: number }) => {
-    return getCustomerPurchaseHistory(customerId, limit)
-  })
+  // NOTE: CUSTOMER_PURCHASE_HISTORY is handled in pos-handlers.ts
 }

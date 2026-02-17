@@ -4,6 +4,7 @@ import { Button } from '@renderer/components/ui/button'
 import { Plus, RefreshCw } from 'lucide-react'
 import { UsersTable } from '@renderer/components/users/UsersTable'
 import { UserFormModal } from '@renderer/components/users/UserFormModal'
+import { useAuthStore } from '@renderer/stores/authStore'
 
 export interface User {
   id: string
@@ -23,11 +24,13 @@ export function UsersPage(): React.JSX.Element {
   const [showFormModal, setShowFormModal] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
 
+  const currentUserId = useAuthStore((s) => s.user?.id ?? '')
+
   const loadUsers = async () => {
     setIsLoading(true)
     try {
       const [userList, userStats] = await Promise.all([
-        window.electron.users.list(),
+        window.electron.users.list(currentUserId),
         window.electron.users.stats()
       ])
       setUsers(userList)
@@ -106,6 +109,7 @@ export function UsersPage(): React.JSX.Element {
 
       <UsersTable
         users={users}
+        userId={currentUserId}
         onEdit={(user) => {
           setEditingUser(user)
           setShowFormModal(true)
@@ -117,6 +121,7 @@ export function UsersPage(): React.JSX.Element {
         open={showFormModal}
         onClose={() => setShowFormModal(false)}
         user={editingUser}
+        userId={currentUserId}
         onSuccess={loadUsers}
       />
     </div>

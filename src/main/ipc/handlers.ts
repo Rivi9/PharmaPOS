@@ -73,11 +73,17 @@ export function registerIpcHandlers(): void {
       return { success: false, error: 'User not found' }
     }
 
-    // Check PIN
-    if (pin && user.pin_code === pin) {
-      const { password_hash, ...safeUser } = user
-      logAudit({ userId: user.id, userName: user.full_name, action: 'USER_LOGIN', entityType: 'user', entityId: user.id })
-      return { success: true, user: safeUser }
+    // Check PIN (bcrypt-compare; also handles legacy plain-text PINs via startsWith guard)
+    if (pin && user.pin_code) {
+      const isBcryptHash = user.pin_code.startsWith('$2')
+      const pinValid = isBcryptHash
+        ? await bcrypt.compare(pin, user.pin_code)
+        : user.pin_code === pin
+      if (pinValid) {
+        const { password_hash, ...safeUser } = user
+        logAudit({ userId: user.id, userName: user.full_name, action: 'USER_LOGIN', entityType: 'user', entityId: user.id })
+        return { success: true, user: safeUser }
+      }
     }
 
     // Check password
@@ -93,13 +99,14 @@ export function registerIpcHandlers(): void {
     return { success: false, error: 'Invalid credentials' }
   })
 
-  // Create user
+  // Create user (legacy auth route — used by LoginPage first-run fallback)
   ipcMain.handle(
     IPC_CHANNELS.AUTH_CREATE_USER,
     async (_, { username, password, fullName, role, pin }) => {
       const db = getDatabase()
       const id = generateId()
       const passwordHash = await bcrypt.hash(password, 10)
+      const pinHash = pin ? await bcrypt.hash(pin, 10) : null
 
       try {
         db.prepare(
@@ -107,7 +114,7 @@ export function registerIpcHandlers(): void {
         INSERT INTO users (id, username, password_hash, full_name, role, pin_code)
         VALUES (?, ?, ?, ?, ?, ?)
       `
-        ).run(id, username, passwordHash, fullName, role, pin || null)
+        ).run(id, username, passwordHash, fullName, role, pinHash)
 
         return { success: true, id }
       } catch (error: any) {
@@ -150,8 +157,8 @@ export function registerIpcHandlers(): void {
 
     db.prepare(
       `
-      INSERT INTO shifts (id, user_id, opening_cash, status)
-      VALUES (?, ?, ?, 'active')
+      INSERT INTO shifts (id, user_id, opening_cash, status, started_at)
+      VALUES (?, ?, ?, 'active', datetime('now'))
     `
     ).run(id, userId, openingCash)
 

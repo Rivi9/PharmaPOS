@@ -9,10 +9,11 @@ interface UserFormModalProps {
   open: boolean
   onClose: () => void
   user?: User | null
+  userId: string
   onSuccess: () => void
 }
 
-export function UserFormModal({ open, onClose, user, onSuccess }: UserFormModalProps): React.JSX.Element {
+export function UserFormModal({ open, onClose, user, userId, onSuccess }: UserFormModalProps): React.JSX.Element {
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -45,13 +46,13 @@ export function UserFormModal({ open, onClose, user, onSuccess }: UserFormModalP
     e.preventDefault()
     try {
       if (user) {
-        await window.electron.users.update(user.id, {
+        await window.electron.users.update(userId, user.id, {
           full_name: formData.full_name,
           role: formData.role,
           pin_code: formData.pin_code || null
         })
       } else {
-        await window.electron.users.create(formData)
+        await window.electron.users.create(userId, formData)
       }
       onSuccess()
       onClose()

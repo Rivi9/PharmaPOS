@@ -5,15 +5,16 @@ import type { User } from '@renderer/pages/UsersPage'
 
 interface UsersTableProps {
   users: User[]
+  userId: string
   onEdit: (user: User) => void
   onRefresh: () => void
 }
 
-export function UsersTable({ users, onEdit, onRefresh }: UsersTableProps): React.JSX.Element {
+export function UsersTable({ users, userId, onEdit, onRefresh }: UsersTableProps): React.JSX.Element {
   const handleToggleActive = async (user: User) => {
     const action = user.is_active ? 'deactivate' : 'reactivate'
     if (confirm(`Are you sure you want to ${action} ${user.full_name}?`)) {
-      await window.electron.users.delete(user.id, !user.is_active)
+      await window.electron.users.delete(userId, user.id, !user.is_active)
       onRefresh()
     }
   }
@@ -21,7 +22,7 @@ export function UsersTable({ users, onEdit, onRefresh }: UsersTableProps): React
   const handleChangePassword = async (user: User) => {
     const newPassword = prompt(`Enter new password for ${user.full_name}:`)
     if (newPassword) {
-      await window.electron.users.changePassword(user.id, newPassword)
+      await window.electron.users.changePassword(userId, user.id, newPassword)
       alert('Password changed successfully')
     }
   }

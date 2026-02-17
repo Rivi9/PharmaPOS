@@ -31,15 +31,7 @@ export function SetupWizardPage(): React.JSX.Element {
 
   const handleComplete = async () => {
     try {
-      // Create admin user
-      await window.electron.users.create({
-        username: formData.adminUsername,
-        password: formData.adminPassword,
-        full_name: formData.adminFullName,
-        role: 'admin'
-      })
-
-      // Initialize database settings
+      // Initialize database settings AND create the first admin user
       await window.electron.setup.initialize(formData)
 
       // Mark setup complete
