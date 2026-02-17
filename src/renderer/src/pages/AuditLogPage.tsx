@@ -3,6 +3,7 @@ import { Download, Search, RefreshCw } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import { useAuthStore } from '@renderer/stores/authStore'
 
 interface AuditEntry {
   id: string
@@ -30,6 +31,9 @@ const ACTION_BADGE_VARIANTS: Record<string, string> = {
 }
 
 export function AuditLogPage(): React.JSX.Element {
+  const { user } = useAuthStore()
+  const userId = user?.id ?? ''
+
   const [entries, setEntries] = useState<AuditEntry[]>([])
   const [total, setTotal] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
@@ -40,7 +44,7 @@ export function AuditLogPage(): React.JSX.Element {
   const loadEntries = useCallback(async () => {
     setIsLoading(true)
     try {
-      const result = await window.electron.audit.query({
+      const result = await window.electron.audit.query(userId, {
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
         action: actionFilter || undefined
@@ -50,14 +54,14 @@ export function AuditLogPage(): React.JSX.Element {
     } finally {
       setIsLoading(false)
     }
-  }, [page, actionFilter])
+  }, [page, actionFilter, userId])
 
   useEffect(() => {
     loadEntries()
   }, [loadEntries])
 
   const handleExport = async () => {
-    await window.electron.audit.exportCsv({
+    await window.electron.audit.exportCsv(userId, {
       action: actionFilter || undefined
     })
   }

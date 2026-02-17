@@ -5,6 +5,7 @@ import { Input } from '@renderer/components/ui/input'
 import { Plus, Download, Search } from 'lucide-react'
 import { useInventoryStore } from '@renderer/stores/inventoryStore'
 import type { Product, Category, Supplier, StockBatch } from '@renderer/stores/inventoryStore'
+import { useAuthStore } from '@renderer/stores/authStore'
 
 // Tables
 import { ProductsTable } from '@renderer/components/inventory/ProductsTable'
@@ -22,6 +23,9 @@ import { StockBatchFormDialog } from '@renderer/components/inventory/StockBatchF
 import { LowStockAlert } from '@renderer/components/inventory/LowStockAlert'
 
 export function InventoryPage(): React.JSX.Element {
+  const { user } = useAuthStore()
+  const userId = user?.id ?? ''
+
   const {
     products,
     setProducts,
@@ -69,35 +73,35 @@ export function InventoryPage(): React.JSX.Element {
   }
 
   const loadProducts = async () => {
-    const result = await window.electron.listProducts()
+    const result = await window.electron.listProducts(userId)
     if (result.success) {
       setProducts(result.data)
     }
   }
 
   const loadLowStockProducts = async () => {
-    const result = await window.electron.getLowStockProducts()
+    const result = await window.electron.getLowStockProducts(userId)
     if (result.success) {
       setLowStockProducts(result.data)
     }
   }
 
   const loadCategories = async () => {
-    const result = await window.electron.listCategories()
+    const result = await window.electron.listCategories(userId)
     if (result.success) {
       setCategories(result.data)
     }
   }
 
   const loadSuppliers = async () => {
-    const result = await window.electron.listSuppliers()
+    const result = await window.electron.listSuppliers(userId)
     if (result.success) {
       setSuppliers(result.data)
     }
   }
 
   const loadStockBatches = async () => {
-    const result = await window.electron.listStockBatches()
+    const result = await window.electron.listStockBatches(userId)
     if (result.success) {
       setStockBatches(result.data)
     }
@@ -106,7 +110,7 @@ export function InventoryPage(): React.JSX.Element {
   // Product handlers
   const handleProductSubmit = async (data: any) => {
     if (selectedProduct) {
-      const result = await window.electron.updateProduct(selectedProduct.id, data)
+      const result = await window.electron.updateProduct(userId, selectedProduct.id, data)
       if (result.success) {
         await loadProducts()
         await loadLowStockProducts()
@@ -114,7 +118,7 @@ export function InventoryPage(): React.JSX.Element {
         setSelectedProduct(null)
       }
     } else {
-      const result = await window.electron.createProduct(data)
+      const result = await window.electron.createProduct(userId, data)
       if (result.success) {
         await loadProducts()
         await loadLowStockProducts()
@@ -130,7 +134,7 @@ export function InventoryPage(): React.JSX.Element {
 
   const handleProductDelete = async (product: Product) => {
     if (confirm(`Are you sure you want to delete ${product.name}?`)) {
-      const result = await window.electron.deleteProduct(product.id)
+      const result = await window.electron.deleteProduct(userId, product.id)
       if (result.success) {
         await loadProducts()
       }
@@ -140,14 +144,14 @@ export function InventoryPage(): React.JSX.Element {
   // Category handlers
   const handleCategorySubmit = async (data: any) => {
     if (selectedCategory) {
-      const result = await window.electron.updateCategory(selectedCategory.id, data)
+      const result = await window.electron.updateCategory(userId, selectedCategory.id, data)
       if (result.success) {
         await loadCategories()
         setCategoryDialogOpen(false)
         setSelectedCategory(null)
       }
     } else {
-      const result = await window.electron.createCategory(data)
+      const result = await window.electron.createCategory(userId, data)
       if (result.success) {
         await loadCategories()
         setCategoryDialogOpen(false)
@@ -162,7 +166,7 @@ export function InventoryPage(): React.JSX.Element {
 
   const handleCategoryDelete = async (category: Category) => {
     if (confirm(`Are you sure you want to delete ${category.name}?`)) {
-      const result = await window.electron.deleteCategory(category.id)
+      const result = await window.electron.deleteCategory(userId, category.id)
       if (result.success) {
         await loadCategories()
       } else {
@@ -174,14 +178,14 @@ export function InventoryPage(): React.JSX.Element {
   // Supplier handlers
   const handleSupplierSubmit = async (data: any) => {
     if (selectedSupplier) {
-      const result = await window.electron.updateSupplier(selectedSupplier.id, data)
+      const result = await window.electron.updateSupplier(userId, selectedSupplier.id, data)
       if (result.success) {
         await loadSuppliers()
         setSupplierDialogOpen(false)
         setSelectedSupplier(null)
       }
     } else {
-      const result = await window.electron.createSupplier(data)
+      const result = await window.electron.createSupplier(userId, data)
       if (result.success) {
         await loadSuppliers()
         setSupplierDialogOpen(false)
@@ -196,7 +200,7 @@ export function InventoryPage(): React.JSX.Element {
 
   const handleSupplierDelete = async (supplier: Supplier) => {
     if (confirm(`Are you sure you want to deactivate ${supplier.name}?`)) {
-      const result = await window.electron.deleteSupplier(supplier.id)
+      const result = await window.electron.deleteSupplier(userId, supplier.id)
       if (result.success) {
         await loadSuppliers()
       }
@@ -206,7 +210,7 @@ export function InventoryPage(): React.JSX.Element {
   // Stock batch handlers
   const handleBatchSubmit = async (data: any) => {
     if (selectedBatch) {
-      const result = await window.electron.updateStockBatch(selectedBatch.id, data)
+      const result = await window.electron.updateStockBatch(userId, selectedBatch.id, data)
       if (result.success) {
         await loadStockBatches()
         await loadProducts() // Refresh products to update stock counts
@@ -215,7 +219,7 @@ export function InventoryPage(): React.JSX.Element {
         setSelectedBatch(null)
       }
     } else {
-      const result = await window.electron.createStockBatch(data)
+      const result = await window.electron.createStockBatch(userId, data)
       if (result.success) {
         await loadStockBatches()
         await loadProducts() // Refresh products to update stock counts
@@ -232,7 +236,7 @@ export function InventoryPage(): React.JSX.Element {
 
   const handleBatchDelete = async (batch: StockBatch) => {
     if (confirm(`Are you sure you want to delete this batch?`)) {
-      const result = await window.electron.deleteStockBatch(batch.id)
+      const result = await window.electron.deleteStockBatch(userId, batch.id)
       if (result.success) {
         await loadStockBatches()
         await loadProducts() // Refresh products to update stock counts
@@ -245,7 +249,7 @@ export function InventoryPage(): React.JSX.Element {
 
   // CSV Export
   const handleExportProducts = async () => {
-    const result = await window.electron.exportProductsCSV()
+    const result = await window.electron.exportProductsCSV(userId)
     if (result.success) {
       const blob = new Blob([result.data], { type: 'text/csv' })
       const url = URL.createObjectURL(blob)

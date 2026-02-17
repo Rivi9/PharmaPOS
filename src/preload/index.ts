@@ -38,6 +38,8 @@ const electronAPI = {
   getReceipt: (saleId: string) => ipcRenderer.invoke(IPC_CHANNELS.SALE_GET_RECEIPT, saleId),
   getTodaySalesTotal: (shiftId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.SALE_GET_TODAY_TOTAL, shiftId),
+  void: (params: { userId: string; saleId: string; reason: string }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SALE_VOID, params),
 
   // Stock
   checkStockAvailability: (productId: string) =>
@@ -46,63 +48,85 @@ const electronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.STOCK_DEDUCT, { productId, quantity }),
 
   // Inventory - Products
-  listProducts: () => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_LIST),
-  createProduct: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_CREATE, data),
-  updateProduct: (id: string, data: unknown) =>
-    ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_UPDATE, { id, data }),
-  deleteProduct: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_DELETE, id),
-  getLowStockProducts: () => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_LOW_STOCK),
+  listProducts: (userId: string) => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_LIST, { userId }),
+  createProduct: (userId: string, data: unknown) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_CREATE, { userId, ...(data as object) }),
+  updateProduct: (userId: string, id: string, data: unknown) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_UPDATE, { userId, id, data }),
+  deleteProduct: (userId: string, id: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_DELETE, { userId, id }),
+  getLowStockProducts: (userId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_LOW_STOCK, { userId }),
 
   // Inventory - Categories
-  listCategories: () => ipcRenderer.invoke(IPC_CHANNELS.CATEGORY_LIST),
-  createCategory: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.CATEGORY_CREATE, data),
-  updateCategory: (id: string, data: unknown) =>
-    ipcRenderer.invoke(IPC_CHANNELS.CATEGORY_UPDATE, { id, data }),
-  deleteCategory: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CATEGORY_DELETE, id),
+  listCategories: (userId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CATEGORY_LIST, { userId }),
+  createCategory: (userId: string, data: unknown) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CATEGORY_CREATE, { userId, ...(data as object) }),
+  updateCategory: (userId: string, id: string, data: unknown) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CATEGORY_UPDATE, { userId, id, data }),
+  deleteCategory: (userId: string, id: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.CATEGORY_DELETE, { userId, id }),
 
   // Inventory - Suppliers
-  listSuppliers: () => ipcRenderer.invoke(IPC_CHANNELS.SUPPLIER_LIST),
-  createSupplier: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.SUPPLIER_CREATE, data),
-  updateSupplier: (id: string, data: unknown) =>
-    ipcRenderer.invoke(IPC_CHANNELS.SUPPLIER_UPDATE, { id, data }),
-  deleteSupplier: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.SUPPLIER_DELETE, id),
+  listSuppliers: (userId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SUPPLIER_LIST, { userId }),
+  createSupplier: (userId: string, data: unknown) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SUPPLIER_CREATE, { userId, ...(data as object) }),
+  updateSupplier: (userId: string, id: string, data: unknown) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SUPPLIER_UPDATE, { userId, id, data }),
+  deleteSupplier: (userId: string, id: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.SUPPLIER_DELETE, { userId, id }),
 
   // Inventory - Stock Batches
-  listStockBatches: () => ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_LIST),
-  createStockBatch: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_CREATE, data),
-  updateStockBatch: (id: string, data: unknown) =>
-    ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_UPDATE, { id, data }),
-  deleteStockBatch: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_DELETE, id),
-  adjustStockBatch: (batchId: string, quantityChange: number, reason: string, userId: string) =>
+  listStockBatches: (userId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_LIST, { userId }),
+  createStockBatch: (userId: string, data: unknown) =>
+    ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_CREATE, { userId, ...(data as object) }),
+  updateStockBatch: (userId: string, id: string, data: unknown) =>
+    ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_UPDATE, { userId, id, data }),
+  deleteStockBatch: (userId: string, id: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_DELETE, { userId, id }),
+  adjustStockBatch: (
+    userId: string,
+    batchId: string,
+    quantityChange: number,
+    reason: string
+  ) =>
     ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_ADJUST, {
+      userId,
       batchId,
       quantityChange,
-      reason,
-      userId
+      reason
     }),
 
   // Inventory - CSV Export
-  exportProductsCSV: () => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_EXPORT_CSV),
+  exportProductsCSV: (userId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_EXPORT_CSV, { userId }),
 
   // Analytics
   analytics: {
-    getDailyMetrics: (date: string) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_DAILY_METRICS, date),
-    getPeriodMetrics: (startDate: string, endDate: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_PERIOD_METRICS, { startDate, endDate }),
-    getTopProducts: (startDate: string, endDate: string, limit?: number) =>
-      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_TOP_PRODUCTS, { startDate, endDate, limit }),
-    getCategoryBreakdown: (startDate: string, endDate: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_CATEGORY_BREAKDOWN, { startDate, endDate }),
-    getLowStockAlerts: () => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_LOW_STOCK_ALERTS),
-    getExpiryAlerts: (daysAhead?: number) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_EXPIRY_ALERTS, daysAhead),
-    runAggregation: (date?: string) => ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_RUN_AGGREGATION, date),
+    getDailyMetrics: (userId: string, date: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_DAILY_METRICS, { userId, date }),
+    getPeriodMetrics: (userId: string, startDate: string, endDate: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_PERIOD_METRICS, { userId, startDate, endDate }),
+    getTopProducts: (userId: string, startDate: string, endDate: string, limit?: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_TOP_PRODUCTS, { userId, startDate, endDate, limit }),
+    getCategoryBreakdown: (userId: string, startDate: string, endDate: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_CATEGORY_BREAKDOWN, { userId, startDate, endDate }),
+    getLowStockAlerts: (userId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_LOW_STOCK_ALERTS, { userId }),
+    getExpiryAlerts: (userId: string, daysAhead?: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_EXPIRY_ALERTS, { userId, daysAhead }),
+    runAggregation: (userId: string, date?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_RUN_AGGREGATION, { userId, date }),
     reports: {
-      generateSalesReport: (startDate: string, endDate: string) =>
-        ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_SALES_REPORT, { startDate, endDate }),
-      generateInventoryValuation: () =>
-        ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_INVENTORY_VALUATION),
-      generateProfitLossReport: (startDate: string, endDate: string) =>
-        ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_PROFIT_LOSS_REPORT, { startDate, endDate })
+      generateSalesReport: (userId: string, startDate: string, endDate: string) =>
+        ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_SALES_REPORT, { userId, startDate, endDate }),
+      generateInventoryValuation: (userId: string) =>
+        ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_INVENTORY_VALUATION, { userId }),
+      generateProfitLossReport: (userId: string, startDate: string, endDate: string) =>
+        ipcRenderer.invoke(IPC_CHANNELS.ANALYTICS_PROFIT_LOSS_REPORT, { userId, startDate, endDate })
     }
   },
 
@@ -117,19 +141,23 @@ const electronAPI = {
 
   // Backup
   backup: {
-    create: (password?: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_CREATE, password),
-    restore: (backupPath: string, password?: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RESTORE, { backupPath, password }),
+    create: (userId: string, password?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_CREATE, { userId, password }),
+    restore: (userId: string, backupPath: string, password?: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RESTORE, { userId, backupPath, password }),
     listLocal: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_LIST_LOCAL),
-    deleteLocal: (backupPath: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DELETE_LOCAL, backupPath),
+    deleteLocal: (backupPath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DELETE_LOCAL, backupPath),
 
-    driveAuth: (accessToken: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_AUTH, accessToken),
+    driveAuth: (accessToken: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_AUTH, accessToken),
     driveUpload: (filePath: string, fileName: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_UPLOAD, { filePath, fileName }),
     driveList: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_LIST),
     driveDownload: (fileId: string, fileName: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_DOWNLOAD, { fileId, fileName }),
-    driveDelete: (fileId: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_DELETE, fileId),
+    driveDelete: (fileId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_DELETE, fileId),
 
     schedulerStart: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_START),
     schedulerStop: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_STOP),
@@ -182,14 +210,22 @@ const electronAPI = {
     create: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_CREATE, data),
     update: (id: string, data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_UPDATE, { id, data }),
     delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_DELETE, id),
-    purchaseHistory: (customerId: string, limit?: number) =>
-      ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_PURCHASE_HISTORY, { customerId, limit })
+    purchaseHistory: (customerId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_PURCHASE_HISTORY, customerId)
   },
 
   // Audit Log
   audit: {
-    query: (options: unknown) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_QUERY, options),
-    exportCsv: (options?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_EXPORT_CSV, options)
+    query: (userId: string, options: unknown) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_QUERY, { userId, ...(options as object) }),
+    exportCsv: (userId: string, options?: unknown) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_EXPORT_CSV, { userId, ...(options as object ?? {}) })
+  },
+
+  // Shifts - Extended
+  shifts: {
+    computeExpectedCash: (shiftId: string, openingCash: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.SHIFT_COMPUTE_EXPECTED_CASH, { shiftId, openingCash })
   },
 
   // Pole Display (serial COM port)

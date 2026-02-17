@@ -3,8 +3,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@rend
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { FileText, Download } from 'lucide-react'
+import { useAuthStore } from '@renderer/stores/authStore'
 
 export function ReportsPanel(): React.JSX.Element {
+  const { user } = useAuthStore()
+  const userId = user?.id ?? ''
+
   const [startDate, setStartDate] = useState(
     new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   )
@@ -15,6 +19,7 @@ export function ReportsPanel(): React.JSX.Element {
     setIsLoading(true)
     try {
       const report = await window.electron.analytics.reports.generateSalesReport(
+        userId,
         startDate,
         endDate
       )
@@ -30,7 +35,7 @@ export function ReportsPanel(): React.JSX.Element {
   const generateInventoryReport = async () => {
     setIsLoading(true)
     try {
-      const report = await window.electron.analytics.reports.generateInventoryValuation()
+      const report = await window.electron.analytics.reports.generateInventoryValuation(userId)
       console.log('Inventory Valuation:', report)
       alert(`Inventory Valuation Generated!\nTotal Value: Rs. ${report.total_value.toFixed(2)}`)
     } catch (error: any) {
@@ -44,6 +49,7 @@ export function ReportsPanel(): React.JSX.Element {
     setIsLoading(true)
     try {
       const report = await window.electron.analytics.reports.generateProfitLossReport(
+        userId,
         startDate,
         endDate
       )

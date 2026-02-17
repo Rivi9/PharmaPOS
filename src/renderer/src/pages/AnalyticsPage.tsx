@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/u
 import { Button } from '@renderer/components/ui/button'
 import { RefreshCw } from 'lucide-react'
 import { useAnalyticsStore } from '@renderer/stores/analyticsStore'
+import { useAuthStore } from '@renderer/stores/authStore'
 import { KPICards } from '@renderer/components/analytics/KPICards'
 import { SalesTrendChart } from '@renderer/components/analytics/SalesTrendChart'
 import { TopProductsList } from '@renderer/components/analytics/TopProductsList'
@@ -13,6 +14,8 @@ import { ReportsPanel } from '@renderer/components/analytics/ReportsPanel'
 
 export function AnalyticsPage(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true)
+  const { user } = useAuthStore()
+  const userId = user?.id ?? ''
 
   const {
     todayMetrics,
@@ -33,7 +36,7 @@ export function AnalyticsPage(): React.JSX.Element {
     setIsLoading(true)
     try {
       // Run aggregation first
-      await window.electron.analytics.runAggregation()
+      await window.electron.analytics.runAggregation(userId)
 
       // Get today's date
       const today = new Date().toISOString().split('T')[0]
@@ -44,12 +47,12 @@ export function AnalyticsPage(): React.JSX.Element {
       // Load all dashboard data in parallel
       const [todayData, weekData, topProds, categoryData, lowStock, expiring] =
         await Promise.all([
-          window.electron.analytics.getDailyMetrics(today),
-          window.electron.analytics.getPeriodMetrics(weekAgo, today),
-          window.electron.analytics.getTopProducts(weekAgo, today, 10),
-          window.electron.analytics.getCategoryBreakdown(weekAgo, today),
-          window.electron.analytics.getLowStockAlerts(),
-          window.electron.analytics.getExpiryAlerts(30)
+          window.electron.analytics.getDailyMetrics(userId, today),
+          window.electron.analytics.getPeriodMetrics(userId, weekAgo, today),
+          window.electron.analytics.getTopProducts(userId, weekAgo, today, 10),
+          window.electron.analytics.getCategoryBreakdown(userId, weekAgo, today),
+          window.electron.analytics.getLowStockAlerts(userId),
+          window.electron.analytics.getExpiryAlerts(userId, 30)
         ])
 
       setTodayMetrics(todayData)
