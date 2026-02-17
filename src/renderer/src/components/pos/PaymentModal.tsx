@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { CreditCard, Banknote, Split, Delete } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Input } from '@renderer/components/ui/input'
@@ -17,6 +17,15 @@ interface PaymentModalProps {
 
 type PaymentMethod = 'cash' | 'card' | 'mixed'
 
+interface PurchaseHistoryEntry {
+  id: string
+  receiptNumber: string
+  total: number
+  paymentMethod: string
+  createdAt: string
+  items: { productName: string; quantity: number; lineTotal: number }[]
+}
+
 // Common cash denominations for quick-select
 const QUICK_AMOUNTS = [100, 500, 1000, 2000, 5000]
 
@@ -28,6 +37,8 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   const [customerPhone, setCustomerPhone] = useState('')
   const [error, setError] = useState('')
   const [processing, setProcessing] = useState(false)
+  const [foundCustomer, setFoundCustomer] = useState<{ id: string; name: string } | null>(null)
+  const [purchaseHistory, setPurchaseHistory] = useState<PurchaseHistoryEntry[]>([])
 
   const items = usePOSStore((state) => state.items)
   const saleDiscount = usePOSStore((state) => state.saleDiscount)
@@ -39,6 +50,34 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   const currentShift = useShiftStore((state) => state.currentShift)
   const addToTodaySales = useShiftStore((state) => state.addToTodaySales)
   const currencySymbol = useSettingsStore((state) => state.settings.currency_symbol)
+
+  useEffect(() => {
+    if (customerPhone.length < 7) {
+      setFoundCustomer(null)
+      setPurchaseHistory([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const customer = await window.electron.customers.getByPhone(customerPhone)
+        if (customer) {
+          setFoundCustomer({ id: customer.id, name: customer.name })
+          setCustomerName(customer.name)
+          const history = await window.electron.customers.purchaseHistory(customer.id)
+          setPurchaseHistory(history ?? [])
+        } else {
+          setFoundCustomer(null)
+          setPurchaseHistory([])
+        }
+      } catch {
+        setFoundCustomer(null)
+        setPurchaseHistory([])
+      }
+    }, 400)
+
+    return () => clearTimeout(timer)
+  }, [customerPhone])
 
   const cashReceivedNum = parseFloat(cashReceived) || 0
   const cardAmountNum = parseFloat(cardAmount) || 0
@@ -153,6 +192,8 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
       setCardAmount('')
       setCustomerName('')
       setCustomerPhone('')
+      setFoundCustomer(null)
+      setPurchaseHistory([])
 
       onComplete(result.sale_id, result.receipt_number)
     } catch (err: any) {
@@ -291,17 +332,50 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
           <div className="space-y-3 border-t pt-3">
             <Label className="text-muted-foreground">Customer (Optional)</Label>
             <Input
-              placeholder="Customer name"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              className="h-12 text-base"
-            />
-            <Input
               placeholder="Phone number"
               value={customerPhone}
               onChange={(e) => setCustomerPhone(e.target.value)}
               className="h-12 text-base"
             />
+
+            {foundCustomer && (
+              <p className="text-sm font-medium text-green-600">
+                Customer found: {foundCustomer.name}
+              </p>
+            )}
+
+            <Input
+              placeholder="Customer name"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              className="h-12 text-base"
+            />
+
+            {purchaseHistory.length > 0 && (
+              <div className="border rounded-lg max-h-48 overflow-y-auto">
+                <p className="text-xs font-semibold px-3 pt-2 pb-1 text-muted-foreground border-b">Purchase History</p>
+                <div className="divide-y">
+                  {purchaseHistory.map((sale) => (
+                    <div key={sale.id} className="px-3 py-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">
+                          {new Date(sale.createdAt).toLocaleDateString()}
+                        </span>
+                        <span className="font-medium">{formatCurrency(sale.total)}</span>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        {sale.items.map((item, i) => (
+                          <span key={i}>
+                            {item.productName} &times; {item.quantity}
+                            {i < sale.items.length - 1 ? ', ' : ''}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {error && <p className="text-base text-destructive font-medium">{error}</p>}
