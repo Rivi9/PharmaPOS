@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { getDb } from '../db/index'
 import { getDatabase } from './database'
-import { sales, saleItems, products, customers } from '../db/schema'
+import { sales, saleItems, products, customers, saleRefunds } from '../db/schema'
 import type { Sale, SaleItem, SaleRefund } from '../db/schema'
 
 // Re-export types that may be consumed by other modules
@@ -321,4 +321,77 @@ export function getTodaySalesTotal(shiftId: string): number {
     .get(shiftId) as { total: number }
 
   return result.total
+}
+
+interface RefundItemInput {
+  product_id: string
+  product_name: string
+  quantity: number
+  unit_price: number
+  line_total: number
+}
+
+/**
+ * Create a partial or full refund for a completed sale.
+ * Optionally restores stock back to batches (restock=true).
+ */
+export function createRefund(
+  saleId: string,
+  userId: string,
+  items: RefundItemInput[],
+  reason: string,
+  restock: boolean
+): { refund_id: string } {
+  if (!items.length) throw new Error('Refund must include at least one item')
+
+  const db = getDb()
+  const rawDb = getDatabase()
+
+  const sale = db.select({ status: sales.status }).from(sales).where(eq(sales.id, saleId)).get()
+  if (!sale) throw new Error('Sale not found')
+  if (sale.status !== 'completed') throw new Error(`Cannot refund a ${sale.status} sale`)
+
+  const totalRefunded = items.reduce((sum, i) => sum + i.line_total, 0)
+  const refundId = crypto.randomUUID()
+  const now = new Date().toISOString()
+
+  rawDb.transaction(() => {
+    db.insert(saleRefunds)
+      .values({
+        id: refundId,
+        saleId,
+        userId,
+        items: JSON.stringify(items),
+        totalRefunded,
+        restock: restock ? 1 : 0,
+        reason: reason.trim() || null,
+        createdAt: now
+      })
+      .run()
+
+    if (restock) {
+      for (const item of items) {
+        // Return stock to the most recent active batch for this product,
+        // or create an adjustment batch if none exists.
+        const batch = rawDb
+          .prepare(
+            `SELECT id FROM stock_batches WHERE product_id = ? ORDER BY received_date DESC LIMIT 1`
+          )
+          .get(item.product_id) as { id: string } | undefined
+
+        if (batch) {
+          rawDb
+            .prepare(`UPDATE stock_batches SET quantity = quantity + ? WHERE id = ?`)
+            .run(item.quantity, batch.id)
+        }
+
+        // Update the product's total stock level
+        rawDb
+          .prepare(`UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?`)
+          .run(item.quantity, item.product_id)
+      }
+    }
+  })()
+
+  return { refund_id: refundId }
 }

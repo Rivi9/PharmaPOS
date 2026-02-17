@@ -8,8 +8,12 @@ export type Permission =
   | 'inventory:update'
   | 'inventory:delete'
   | 'inventory:import_export'
+  | 'analytics:view'
   | 'reports:view'
   | 'reports:generate'
+  | 'customers:create'
+  | 'customers:update'
+  | 'customers:delete'
   | 'shifts:manage'
   | 'users:view'
   | 'users:create'
@@ -37,8 +41,12 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'inventory:update',
     'inventory:delete',
     'inventory:import_export',
+    'analytics:view',
     'reports:view',
     'reports:generate',
+    'customers:create',
+    'customers:update',
+    'customers:delete',
     'shifts:manage',
     'users:view',
     'users:create',
@@ -60,8 +68,12 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'inventory:update',
     'inventory:delete',
     'inventory:import_export',
+    'analytics:view',
     'reports:view',
     'reports:generate',
+    'customers:create',
+    'customers:update',
+    'customers:delete',
     'shifts:manage',
     'users:view',
     'backup:create'
@@ -71,6 +83,7 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'sales:create',
     'sales:view_all',
     'inventory:view',
+    'customers:create',
     'shifts:manage'
   ]
 }
@@ -112,8 +125,12 @@ export function getPermissionDescription(permission: Permission): string {
     'inventory:update': 'Update product information',
     'inventory:delete': 'Delete products',
     'inventory:import_export': 'Import/export inventory data',
+    'analytics:view': 'View analytics and AI insights',
     'reports:view': 'View reports',
     'reports:generate': 'Generate new reports',
+    'customers:create': 'Register new customers',
+    'customers:update': 'Update customer information',
+    'customers:delete': 'Delete customers',
     'shifts:manage': 'Open and close shifts',
     'users:view': 'View user list',
     'users:create': 'Create new users',

@@ -1,4 +1,5 @@
-import { ipcMain } from 'electron'
+import { ipcMain, dialog } from 'electron'
+import * as XLSX from 'xlsx'
 import { IPC_CHANNELS } from './channels'
 import { withPermission } from './middleware'
 import * as inventory from '../services/inventory'
@@ -117,5 +118,75 @@ export function registerInventoryHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.PRODUCT_EXPORT_CSV, async (_event, { userId }) => {
     return withPermission(userId, 'inventory:import_export', () => inventory.exportProductsToCSV())
+  })
+
+  // =====================
+  // EXCEL IMPORT
+  // =====================
+
+  ipcMain.handle(IPC_CHANNELS.PRODUCT_IMPORT_CSV, async (_event, { userId }) => {
+    return withPermission(userId, 'inventory:import_export', async () => {
+      const { canceled, filePaths } = await dialog.showOpenDialog({
+        title: 'Import Products from Excel',
+        filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls'] }],
+        properties: ['openFile']
+      })
+
+      if (canceled || !filePaths[0]) {
+        return { canceled: true, imported: 0, errors: [] }
+      }
+
+      const workbook = XLSX.readFile(filePaths[0])
+      const sheetName = workbook.SheetNames[0]
+      const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName])
+
+      const errors: string[] = []
+      let imported = 0
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]
+        const rowNum = i + 2 // 1-indexed + header row
+
+        const name = String(row['name'] ?? row['Name'] ?? '').trim()
+        if (!name) {
+          errors.push(`Row ${rowNum}: missing "name"`)
+          continue
+        }
+
+        const costPrice = parseFloat(String(row['cost_price'] ?? row['Cost Price'] ?? '0'))
+        const unitPrice = parseFloat(String(row['unit_price'] ?? row['Unit Price'] ?? row['Selling Price'] ?? '0'))
+
+        if (isNaN(costPrice) || isNaN(unitPrice)) {
+          errors.push(`Row ${rowNum}: invalid cost_price or unit_price for "${name}"`)
+          continue
+        }
+
+        try {
+          inventory.createProduct({
+            name,
+            generic_name: String(row['generic_name'] ?? row['Generic Name'] ?? '').trim() || undefined,
+            barcode: String(row['barcode'] ?? row['Barcode'] ?? '').trim() || undefined,
+            sku: String(row['sku'] ?? row['SKU'] ?? '').trim() || undefined,
+            cost_price: costPrice,
+            unit_price: unitPrice,
+            tax_rate: parseFloat(String(row['tax_rate'] ?? row['Tax Rate'] ?? '0')) || 0,
+            reorder_level: parseInt(String(row['reorder_level'] ?? row['Reorder Level'] ?? '5')) || 5,
+            unit: String(row['unit'] ?? row['Unit'] ?? 'pcs').trim() || 'pcs'
+          })
+          imported++
+        } catch (err: any) {
+          errors.push(`Row ${rowNum} "${name}": ${err.message}`)
+        }
+      }
+
+      logAudit({
+        userId,
+        action: 'PRODUCTS_IMPORTED_EXCEL',
+        entityType: 'product',
+        details: { file: filePaths[0], imported, errors: errors.length }
+      })
+
+      return { canceled: false, imported, errors }
+    })
   })
 }

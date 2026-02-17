@@ -40,6 +40,13 @@ const electronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.SALE_GET_TODAY_TOTAL, shiftId),
   void: (params: { userId: string; saleId: string; reason: string }) =>
     ipcRenderer.invoke(IPC_CHANNELS.SALE_VOID, params),
+  refund: (params: {
+    userId: string
+    saleId: string
+    items: Array<{ product_id: string; product_name: string; quantity: number; unit_price: number; line_total: number }>
+    reason?: string
+    restock?: boolean
+  }) => ipcRenderer.invoke(IPC_CHANNELS.SALE_REFUND, params),
 
   // Stock
   checkStockAvailability: (productId: string) =>
@@ -104,6 +111,10 @@ const electronAPI = {
   exportProductsCSV: (userId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_EXPORT_CSV, { userId }),
 
+  // Inventory - Excel Import (opens native file dialog in main process)
+  importProductsExcel: (userId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_IMPORT_CSV, { userId }),
+
   // Analytics
   analytics: {
     getDailyMetrics: (userId: string, date: string) =>
@@ -132,11 +143,14 @@ const electronAPI = {
 
   // AI
   ai: {
-    getReorderSuggestions: () => ipcRenderer.invoke(IPC_CHANNELS.AI_REORDER_SUGGESTIONS),
-    getSalesForecast: (productId: string, days: number) =>
-      ipcRenderer.invoke(IPC_CHANNELS.AI_SALES_FORECAST, { productId, days }),
-    getDeadStockDetection: () => ipcRenderer.invoke(IPC_CHANNELS.AI_DEAD_STOCK_DETECTION),
-    naturalQuery: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.AI_NATURAL_QUERY, query)
+    getReorderSuggestions: (userId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_REORDER_SUGGESTIONS, { userId }),
+    getSalesForecast: (userId: string, productId: string, days: number) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_SALES_FORECAST, { userId, productId, days }),
+    getDeadStockDetection: (userId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_DEAD_STOCK_DETECTION, { userId }),
+    naturalQuery: (userId: string, query: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AI_NATURAL_QUERY, { userId, query })
   },
 
   // Backup
@@ -209,9 +223,11 @@ const electronAPI = {
     list: (search?: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_LIST, search),
     get: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_GET, id),
     getByPhone: (phone: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_GET_BY_PHONE, phone),
-    create: (data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_CREATE, data),
-    update: (id: string, data: unknown) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_UPDATE, { id, data }),
-    delete: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_DELETE, id),
+    create: (userId: string, data: unknown) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_CREATE, { userId, ...(data as object) }),
+    update: (userId: string, id: string, data: unknown) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_UPDATE, { userId, id, data }),
+    delete: (userId: string, id: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_DELETE, { userId, id }),
     purchaseHistory: (customerId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_PURCHASE_HISTORY, customerId)
   },

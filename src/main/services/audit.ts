@@ -22,6 +22,7 @@ export type AuditAction =
   | 'BACKUP_CREATED'
   | 'BACKUP_RESTORED'
   | 'PRICE_CHANGED'
+  | 'PRODUCTS_IMPORTED_EXCEL'
 
 export type AuditEntityType =
   | 'sale'

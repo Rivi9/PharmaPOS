@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Plus, Download, Search } from 'lucide-react'
+import { Plus, Download, Upload, Search } from 'lucide-react'
 import { useInventoryStore } from '@renderer/stores/inventoryStore'
 import type { Product, Category, Supplier, StockBatch } from '@renderer/stores/inventoryStore'
 import { useAuthStore } from '@renderer/stores/authStore'
@@ -21,6 +21,12 @@ import { StockBatchFormDialog } from '@renderer/components/inventory/StockBatchF
 
 // Alerts
 import { LowStockAlert } from '@renderer/components/inventory/LowStockAlert'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle
+} from '@renderer/components/ui/dialog'
 
 export function InventoryPage(): React.JSX.Element {
   const { user } = useAuthStore()
@@ -247,6 +253,22 @@ export function InventoryPage(): React.JSX.Element {
     }
   }
 
+  // Excel Import
+  const [importResult, setImportResult] = useState<{ imported: number; errors: string[] } | null>(null)
+
+  const handleImportExcel = async () => {
+    try {
+      const result = await window.electron.importProductsExcel(userId)
+      if (!result.canceled) {
+        await loadProducts()
+        await loadLowStockProducts()
+        setImportResult({ imported: result.imported, errors: result.errors })
+      }
+    } catch (error: any) {
+      alert(`Import failed: ${error.message}`)
+    }
+  }
+
   // CSV Export
   const handleExportProducts = async () => {
     const result = await window.electron.exportProductsCSV(userId)
@@ -345,6 +367,10 @@ export function InventoryPage(): React.JSX.Element {
               </div>
             </div>
             <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={handleImportExcel}>
+                <Upload className="h-4 w-4 mr-2" />
+                Import Excel
+              </Button>
               <Button variant="outline" size="sm" onClick={handleExportProducts}>
                 <Download className="h-4 w-4 mr-2" />
                 Export CSV
@@ -524,6 +550,37 @@ export function InventoryPage(): React.JSX.Element {
         products={products}
         suppliers={suppliers}
       />
+
+      {/* Import Result Dialog */}
+      <Dialog open={!!importResult} onOpenChange={() => setImportResult(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excel Import Complete</DialogTitle>
+          </DialogHeader>
+          {importResult && (
+            <div className="space-y-3">
+              <p className="text-sm text-green-700 font-medium">
+                {importResult.imported} product{importResult.imported !== 1 ? 's' : ''} imported successfully.
+              </p>
+              {importResult.errors.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium text-destructive mb-1">
+                    {importResult.errors.length} row{importResult.errors.length !== 1 ? 's' : ''} skipped:
+                  </p>
+                  <ul className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-y-auto">
+                    {importResult.errors.map((e, i) => (
+                      <li key={i}>{e}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <Button className="w-full" onClick={() => setImportResult(null)}>
+                Close
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

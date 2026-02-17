@@ -181,7 +181,7 @@ export async function printShiftReport(
     ended_at: string
     opening_cash: number
     closing_cash: number
-    expected_cash: number
+    expected_cash?: number
     total_sales: number
     cash_sales: number
     card_sales: number
@@ -217,14 +217,14 @@ export async function printShiftReport(
   ])
   printer.tableCustom([
     { text: 'Expected Cash:', align: 'LEFT', width: 0.6 },
-    { text: `${currency}${shiftData.expected_cash.toFixed(2)}`, align: 'RIGHT', width: 0.4 }
+    { text: `${currency}${(shiftData.expected_cash ?? 0).toFixed(2)}`, align: 'RIGHT', width: 0.4 }
   ])
   printer.tableCustom([
     { text: 'Actual Cash:', align: 'LEFT', width: 0.6 },
     { text: `${currency}${shiftData.closing_cash.toFixed(2)}`, align: 'RIGHT', width: 0.4 }
   ])
 
-  const difference = shiftData.closing_cash - shiftData.expected_cash
+  const difference = shiftData.closing_cash - (shiftData.expected_cash ?? 0)
   printer.bold(true)
   printer.tableCustom([
     { text: 'Difference:', align: 'LEFT', width: 0.6 },

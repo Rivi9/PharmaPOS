@@ -5,6 +5,7 @@ import { Input } from '@renderer/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Label } from '@renderer/components/ui/label'
+import { useAuthStore } from '@renderer/stores/authStore'
 
 interface Customer {
   id: string
@@ -31,6 +32,7 @@ interface PurchaseHistoryData {
 }
 
 export function CustomersPage(): React.JSX.Element {
+  const userId = useAuthStore((s) => s.user?.id ?? '')
   const [customers, setCustomers] = useState<Customer[]>([])
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Customer | null>(null)
@@ -110,9 +112,9 @@ export function CustomersPage(): React.JSX.Element {
     }
 
     if (editCustomer) {
-      await window.electron.customers.update(editCustomer.id, data)
+      await window.electron.customers.update(userId, editCustomer.id, data)
     } else {
-      await window.electron.customers.create(data)
+      await window.electron.customers.create(userId, data)
     }
 
     setShowForm(false)
@@ -121,7 +123,7 @@ export function CustomersPage(): React.JSX.Element {
 
   const handleDelete = async (customer: Customer) => {
     if (!confirm(`Delete customer "${customer.name}"?`)) return
-    await window.electron.customers.delete(customer.id)
+    await window.electron.customers.delete(userId, customer.id)
     if (selected?.id === customer.id) setSelected(null)
     loadCustomers()
   }

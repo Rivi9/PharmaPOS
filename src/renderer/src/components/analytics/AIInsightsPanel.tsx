@@ -4,8 +4,10 @@ import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
 import { Sparkles, TrendingDown, MessageSquare, RefreshCw } from 'lucide-react'
+import { useAuthStore } from '@renderer/stores/authStore'
 
 export function AIInsightsPanel(): React.JSX.Element {
+  const userId = useAuthStore((s) => s.user?.id ?? '')
   const [isLoading, setIsLoading] = useState(false)
   const [reorderSuggestions, setReorderSuggestions] = useState<any[]>([])
   const [deadStock, setDeadStock] = useState<any[]>([])
@@ -15,7 +17,7 @@ export function AIInsightsPanel(): React.JSX.Element {
   const loadReorderSuggestions = async () => {
     setIsLoading(true)
     try {
-      const suggestions = await window.electron.ai.getReorderSuggestions()
+      const suggestions = await window.electron.ai.getReorderSuggestions(userId)
       setReorderSuggestions(suggestions)
     } catch (error: any) {
       alert(error.message)
@@ -27,7 +29,7 @@ export function AIInsightsPanel(): React.JSX.Element {
   const loadDeadStock = async () => {
     setIsLoading(true)
     try {
-      const items = await window.electron.ai.getDeadStockDetection()
+      const items = await window.electron.ai.getDeadStockDetection(userId)
       setDeadStock(items)
     } catch (error: any) {
       alert(error.message)
@@ -41,7 +43,7 @@ export function AIInsightsPanel(): React.JSX.Element {
 
     setIsLoading(true)
     try {
-      const response = await window.electron.ai.naturalQuery(query)
+      const response = await window.electron.ai.naturalQuery(userId, query)
       setQueryResponse(response)
     } catch (error: any) {
       setQueryResponse(`Error: ${error.message}`)

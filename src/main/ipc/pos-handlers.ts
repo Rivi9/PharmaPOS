@@ -7,7 +7,7 @@ import {
   getQuickItems,
   checkStockAvailability
 } from '../services/products'
-import { createSale, getReceipt, getTodaySalesTotal, voidSale, computeShiftExpectedCash } from '../services/sales'
+import { createSale, getReceipt, getTodaySalesTotal, voidSale, computeShiftExpectedCash, createRefund } from '../services/sales'
 import { getCustomerPurchaseHistory } from '../services/customers'
 import { logAudit } from '../services/audit'
 
@@ -69,6 +69,24 @@ export function registerPOSHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.SALE_VOID, async (_event, { userId, saleId, reason }) => {
     return withPermission(userId, 'sales:void', () => voidSale(saleId, userId, reason))
   })
+
+  // Refund sale — requires sales:refund permission
+  ipcMain.handle(
+    IPC_CHANNELS.SALE_REFUND,
+    async (_event, { userId, saleId, items, reason, restock }) => {
+      return withPermission(userId, 'sales:refund', () => {
+        const result = createRefund(saleId, userId, items, reason ?? '', restock ?? false)
+        logAudit({
+          userId,
+          action: 'SALE_REFUNDED',
+          entityType: 'sale',
+          entityId: saleId,
+          details: { refund_id: result.refund_id, total_refunded: items.reduce((s: number, i: any) => s + i.line_total, 0) }
+        })
+        return result
+      })
+    }
+  )
 
   // Customer purchase history — no permission gate (cashier needs this)
   ipcMain.handle(IPC_CHANNELS.CUSTOMER_PURCHASE_HISTORY, async (_event, customerId: string) => {

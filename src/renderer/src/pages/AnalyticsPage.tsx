@@ -130,7 +130,7 @@ export function AnalyticsPage(): React.JSX.Element {
   )
 }
 
-function AIInsightsPanel({ userId: _userId }: { userId: string }): React.JSX.Element {
+function AIInsightsPanel({ userId }: { userId: string }): React.JSX.Element {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [results, setResults] = useState<{
@@ -143,8 +143,8 @@ function AIInsightsPanel({ userId: _userId }: { userId: string }): React.JSX.Ele
     setError(null)
     try {
       const [reorderSuggestions, deadStock] = await Promise.all([
-        window.electron.ai.getReorderSuggestions(),
-        window.electron.ai.getDeadStockDetection()
+        window.electron.ai.getReorderSuggestions(userId),
+        window.electron.ai.getDeadStockDetection(userId)
       ])
       setResults({
         reorderSuggestions: reorderSuggestions ?? [],
