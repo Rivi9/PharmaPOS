@@ -1,12 +1,14 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from './channels'
+import { withPermission } from './middleware'
 import {
   searchProducts,
   getProductByBarcode,
   getQuickItems,
   checkStockAvailability
 } from '../services/products'
-import { createSale, getReceipt, getTodaySalesTotal } from '../services/sales'
+import { createSale, getReceipt, getTodaySalesTotal, voidSale, computeShiftExpectedCash } from '../services/sales'
+import { getCustomerPurchaseHistory } from '../services/customers'
 import { logAudit } from '../services/audit'
 
 export function registerPOSHandlers(): void {
@@ -60,6 +62,24 @@ export function registerPOSHandlers(): void {
       // Note: Stock deduction is handled by createSale with FEFO logic
       // This handler is for manual stock checks if needed
       throw new Error('Stock deduction should be done via createSale')
+    }
+  )
+
+  // Void sale — requires sales:void permission
+  ipcMain.handle(IPC_CHANNELS.SALE_VOID, async (_event, { userId, saleId, reason }) => {
+    return withPermission(userId, 'sales:void', () => voidSale(saleId, userId, reason))
+  })
+
+  // Customer purchase history — no permission gate (cashier needs this)
+  ipcMain.handle(IPC_CHANNELS.CUSTOMER_PURCHASE_HISTORY, async (_event, customerId: string) => {
+    return getCustomerPurchaseHistory(customerId)
+  })
+
+  // Shift expected cash — no permission gate
+  ipcMain.handle(
+    IPC_CHANNELS.SHIFT_COMPUTE_EXPECTED_CASH,
+    async (_event, { shiftId, openingCash }: { shiftId: string; openingCash: number }) => {
+      return computeShiftExpectedCash(shiftId, openingCash)
     }
   )
 }

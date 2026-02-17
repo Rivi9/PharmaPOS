@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from './channels'
+import { withPermission } from './middleware'
 import { createBackup, restoreBackup, listBackups } from '../services/backup/database-backup'
 import {
   uploadBackupToDrive,
@@ -19,14 +20,17 @@ import fs from 'fs'
 
 export function registerBackupHandlers(): void {
   // Local backup operations
-  ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE, async (_event, password?: string) => {
-    return await createBackup(password)
+  ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE, async (_event, { userId, password }: { userId: string; password?: string }) => {
+    return withPermission(userId, 'backup:create', () => createBackup(password))
   })
 
   ipcMain.handle(
     IPC_CHANNELS.BACKUP_RESTORE,
-    async (_event, { backupPath, password }: { backupPath: string; password?: string }) => {
-      return await restoreBackup(backupPath, password)
+    async (
+      _event,
+      { userId, backupPath, password }: { userId: string; backupPath: string; password?: string }
+    ) => {
+      return withPermission(userId, 'backup:restore', () => restoreBackup(backupPath, password))
     }
   )
 

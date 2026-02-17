@@ -2,27 +2,33 @@ import { ipcMain } from 'electron'
 import { dialog } from 'electron'
 import fs from 'fs'
 import { IPC_CHANNELS } from './channels'
+import { withPermission } from './middleware'
 import { queryAuditLog, exportAuditLogCsv, type AuditQueryOptions } from '../services/audit'
 
 export function registerAuditHandlers(): void {
-  ipcMain.handle(IPC_CHANNELS.AUDIT_LOG_QUERY, (_event, options: AuditQueryOptions) => {
-    return queryAuditLog(options)
+  ipcMain.handle(IPC_CHANNELS.AUDIT_LOG_QUERY, (_event, { userId, ...options }: AuditQueryOptions & { userId: string }) => {
+    return withPermission(userId, 'reports:view', () => queryAuditLog(options))
   })
 
-  ipcMain.handle(IPC_CHANNELS.AUDIT_LOG_EXPORT_CSV, async (event, options: AuditQueryOptions) => {
-    const csv = exportAuditLogCsv(options)
+  ipcMain.handle(
+    IPC_CHANNELS.AUDIT_LOG_EXPORT_CSV,
+    async (event, { userId, ...options }: AuditQueryOptions & { userId: string }) => {
+      return withPermission(userId, 'reports:view', async () => {
+        const csv = exportAuditLogCsv(options)
 
-    const win = require('electron').BrowserWindow.fromWebContents(event.sender)
-    const result = await dialog.showSaveDialog(win!, {
-      defaultPath: `audit-log-${new Date().toISOString().split('T')[0]}.csv`,
-      filters: [{ name: 'CSV Files', extensions: ['csv'] }]
-    })
+        const win = require('electron').BrowserWindow.fromWebContents(event.sender)
+        const result = await dialog.showSaveDialog(win!, {
+          defaultPath: `audit-log-${new Date().toISOString().split('T')[0]}.csv`,
+          filters: [{ name: 'CSV Files', extensions: ['csv'] }]
+        })
 
-    if (result.canceled || !result.filePath) {
-      return { success: false, cancelled: true }
+        if (result.canceled || !result.filePath) {
+          return { success: false, cancelled: true }
+        }
+
+        fs.writeFileSync(result.filePath, csv, 'utf-8')
+        return { success: true, filePath: result.filePath }
+      })
     }
-
-    fs.writeFileSync(result.filePath, csv, 'utf-8')
-    return { success: true, filePath: result.filePath }
-  })
+  )
 }
