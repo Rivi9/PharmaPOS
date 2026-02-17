@@ -19,16 +19,34 @@ import {
   type Permission,
   type Role
 } from '../services/users/permissions'
+import type { User } from '../db/schema'
+
+/** Map Drizzle camelCase User to the snake_case shape the renderer expects. */
+function mapUser(u: User) {
+  return {
+    id: u.id,
+    username: u.username,
+    full_name: u.fullName,
+    role: u.role,
+    pin_code: u.pinCode,
+    is_active: u.isActive,
+    created_at: u.createdAt,
+    updated_at: u.updatedAt
+  }
+}
 
 export function registerUserHandlers(): void {
   // User management
 
   ipcMain.handle(IPC_CHANNELS.USER_LIST, async (_event, { userId }) => {
-    return withPermission(userId, 'users:view', () => listUsers())
+    return withPermission(userId, 'users:view', () => listUsers().map(mapUser))
   })
 
   ipcMain.handle(IPC_CHANNELS.USER_GET, async (_event, { userId, id }: { userId: string; id: string }) => {
-    return withPermission(userId, 'users:view', () => getUserById(id))
+    return withPermission(userId, 'users:view', () => {
+      const u = getUserById(id)
+      return u ? mapUser(u) : null
+    })
   })
 
   ipcMain.handle(IPC_CHANNELS.USER_CREATE, async (_event, { userId, ...data }) => {
@@ -57,11 +75,13 @@ export function registerUserHandlers(): void {
   // Login flow — no permission check required
 
   ipcMain.handle(IPC_CHANNELS.USER_VERIFY_PASSWORD, async (_event, { username, password }) => {
-    return verifyUserPassword(username, password)
+    const u = await verifyUserPassword(username, password)
+    return u ? mapUser(u) : null
   })
 
   ipcMain.handle(IPC_CHANNELS.USER_VERIFY_PIN, async (_event, pin: string) => {
-    return verifyPinCode(pin)
+    const u = await verifyPinCode(pin)
+    return u ? mapUser(u) : null
   })
 
   ipcMain.handle(IPC_CHANNELS.USER_STATS, () => {

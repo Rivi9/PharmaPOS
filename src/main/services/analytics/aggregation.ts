@@ -13,9 +13,8 @@ export function aggregateDailySales(date?: string): { processed: number } {
 
   // Aggregate sales by product for the date
   const stmt = db.prepare(`
-    INSERT INTO product_sales_daily (id, date, product_id, quantity_sold, revenue, cost, profit)
+    INSERT INTO product_sales_daily (date, product_id, quantity_sold, revenue, cost, profit)
     SELECT
-      lower(hex(randomblob(16))) as id,
       date(s.created_at) as date,
       si.product_id,
       SUM(si.quantity) as quantity_sold,
