@@ -9,7 +9,6 @@ import { SalesTrendChart } from '@renderer/components/analytics/SalesTrendChart'
 import { TopProductsList } from '@renderer/components/analytics/TopProductsList'
 import { CategoryBreakdownChart } from '@renderer/components/analytics/CategoryBreakdownChart'
 import { AlertsPanel } from '@renderer/components/analytics/AlertsPanel'
-import { AIInsightsPanel } from '@renderer/components/analytics/AIInsightsPanel'
 import { ReportsPanel } from '@renderer/components/analytics/ReportsPanel'
 
 export function AnalyticsPage(): React.JSX.Element {
@@ -116,7 +115,7 @@ export function AnalyticsPage(): React.JSX.Element {
         </TabsContent>
 
         <TabsContent value="ai" className="flex-1">
-          <AIInsightsPanel />
+          <AIInsightsPanel userId={userId} />
         </TabsContent>
 
         <TabsContent value="alerts" className="flex-1">
@@ -127,6 +126,87 @@ export function AnalyticsPage(): React.JSX.Element {
           />
         </TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+function AIInsightsPanel({ userId: _userId }: { userId: string }): React.JSX.Element {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [results, setResults] = useState<{
+    reorderSuggestions: any[]
+    deadStock: any[]
+  } | null>(null)
+
+  const generate = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const [reorderSuggestions, deadStock] = await Promise.all([
+        window.electron.ai.getReorderSuggestions(),
+        window.electron.ai.getDeadStockDetection()
+      ])
+      setResults({
+        reorderSuggestions: reorderSuggestions ?? [],
+        deadStock: deadStock ?? []
+      })
+    } catch (err: any) {
+      setError(err.message || 'Failed to generate insights')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">AI Insights</h3>
+          <p className="text-sm text-muted-foreground">
+            Analyse inventory with AI-powered recommendations
+          </p>
+        </div>
+        <Button onClick={generate} disabled={loading}>
+          {loading ? 'Generating...' : 'Generate Insights'}
+        </Button>
+      </div>
+
+      {error && <p className="text-destructive text-sm">{error}</p>}
+
+      {!results && !loading && (
+        <div className="text-center py-12 text-muted-foreground">
+          Click Generate Insights to analyse inventory with AI
+        </div>
+      )}
+
+      {results && (
+        <div className="space-y-6">
+          <InsightSection title="Reorder Suggestions" items={results.reorderSuggestions} />
+          <InsightSection title="Dead Stock Detection" items={results.deadStock} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function InsightSection({ title, items }: { title: string; items: any[] }): React.JSX.Element {
+  if (items.length === 0)
+    return (
+      <div>
+        <h4 className="font-medium mb-2">{title}</h4>
+        <p className="text-sm text-muted-foreground">No items flagged.</p>
+      </div>
+    )
+  return (
+    <div>
+      <h4 className="font-medium mb-2">{title}</h4>
+      <div className="space-y-2">
+        {items.map((item, i) => (
+          <div key={i} className="border rounded-md p-3 text-sm">
+            <pre className="whitespace-pre-wrap font-sans">{JSON.stringify(item, null, 2)}</pre>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
