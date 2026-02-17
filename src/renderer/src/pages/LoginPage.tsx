@@ -4,6 +4,7 @@ import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { PinPad } from '@renderer/components/auth/PinPad'
 import { useAuthStore } from '@renderer/stores/authStore'
+import { useShiftStore } from '@renderer/stores/shiftStore'
 
 interface User {
   id: string
@@ -21,6 +22,8 @@ export function LoginPage(): React.JSX.Element {
   const [loading, setLoading] = useState(true)
 
   const login = useAuthStore((state) => state.login)
+  const setCurrentShift = useShiftStore((state) => state.setCurrentShift)
+  const setTodaySalesTotal = useShiftStore((state) => state.setTodaySalesTotal)
 
   useEffect(() => {
     loadUsers()
@@ -53,6 +56,16 @@ export function LoginPage(): React.JSX.Element {
     })
   }
 
+  /** Load an existing active shift and restore its sales total from the DB. */
+  const resumeShift = async (userId: string): Promise<void> => {
+    const shift = await window.electron.getActiveShift(userId)
+    setCurrentShift(shift)
+    if (shift) {
+      const total = await window.electron.getTodaySalesTotal(shift.id)
+      setTodaySalesTotal(typeof total === 'number' ? total : 0)
+    }
+  }
+
   const handlePinSubmit = async (pin: string): Promise<void> => {
     if (!selectedUser) return
     setError('')
@@ -60,6 +73,7 @@ export function LoginPage(): React.JSX.Element {
     const result = await window.electron.login({ userId: selectedUser.id, pin })
 
     if (result.success) {
+      await resumeShift(result.user.id)
       login(result.user)
     } else {
       setError(result.error || 'Invalid PIN')
@@ -73,6 +87,7 @@ export function LoginPage(): React.JSX.Element {
     const result = await window.electron.login({ userId: selectedUser.id, password })
 
     if (result.success) {
+      await resumeShift(result.user.id)
       login(result.user)
     } else {
       setError(result.error || 'Invalid password')

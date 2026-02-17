@@ -130,7 +130,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
             : paymentMethod === 'mixed'
               ? cashReceivedNum
               : 0,
-        card_amount:
+        card_received:
           paymentMethod === 'card' ? total : paymentMethod === 'mixed' ? cardAmountNum : 0,
         change_given: change,
         customer_name: customerName.trim() || undefined,

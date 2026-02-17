@@ -20,7 +20,7 @@ interface SaleData {
   total: number
   payment_method: 'cash' | 'card' | 'mixed'
   cash_received: number
-  card_amount: number
+  card_received: number
   change_given: number
   customer_name?: string
   customer_phone?: string
@@ -130,10 +130,10 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
         id, receipt_number, shift_id, user_id,
         subtotal, discount_amount, discount_type, discount_value,
         tax_amount, total,
-        payment_method, cash_received, card_amount, change_given,
+        payment_method, cash_received, card_received, change_given,
         customer_name, customer_phone,
-        created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
     ).run(
       saleId,
@@ -148,11 +148,10 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
       saleData.total,
       saleData.payment_method,
       saleData.cash_received,
-      saleData.card_amount,
+      saleData.card_received,
       saleData.change_given,
       saleData.customer_name || null,
       saleData.customer_phone || null,
-      now,
       now
     )
 
@@ -163,12 +162,19 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
       // Deduct stock using FEFO
       const batches = deductStockFEFO(item.product_id, item.quantity)
 
+      // Get cost_price before INSERT (cost_price NOT NULL in schema)
+      const product = db
+        .prepare('SELECT cost_price FROM products WHERE id = ?')
+        .get(item.product_id) as { cost_price: number } | undefined
+
+      const costPrice = product?.cost_price || 0
+
       // Insert sale item (record first batch used)
       db.prepare(
         `
         INSERT INTO sale_items (
-          id, sale_id, product_id, product_name,
-          quantity, unit_price, line_total,
+          id, sale_id, product_id,
+          quantity, unit_price, cost_price, line_total,
           batch_id
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `
@@ -176,9 +182,9 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
         itemId,
         saleId,
         item.product_id,
-        item.product_name,
         item.quantity,
         item.unit_price,
+        costPrice,
         item.line_total,
         batches[0].batch_id
       )
@@ -186,12 +192,7 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
       // Update product_sales_daily
       const today = new Date().toISOString().split('T')[0]
 
-      // Get product cost_price
-      const product = db
-        .prepare('SELECT cost_price FROM products WHERE id = ?')
-        .get(item.product_id) as { cost_price: number } | undefined
-
-      const cost = (product?.cost_price || 0) * item.quantity
+      const cost = costPrice * item.quantity
       const profit = item.line_total - cost
 
       const existing = db

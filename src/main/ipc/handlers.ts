@@ -179,9 +179,10 @@ export function registerIpcHandlers(): void {
     const shift = db
       .prepare(
         `
-      SELECT * FROM shifts
-      WHERE user_id = ? AND status = 'active'
-      ORDER BY started_at DESC LIMIT 1
+      SELECT s.*, u.full_name as user_name FROM shifts s
+      JOIN users u ON s.user_id = u.id
+      WHERE s.user_id = ? AND s.status = 'active'
+      ORDER BY s.started_at DESC LIMIT 1
     `
       )
       .get(userId)
