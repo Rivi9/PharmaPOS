@@ -13,8 +13,14 @@ export function getDb(): DB {
 }
 
 export function initDb(sqlite: import('better-sqlite3').Database): DB {
-  // Apply migration SQL (same pattern as old schema.sql?raw)
-  sqlite.exec(migrationSql)
+  // Only run migration SQL if the schema hasn't been applied yet.
+  // Probe sqlite_master for a sentinel table to detect first-run.
+  const schemaExists = sqlite
+    .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_log'`)
+    .get()
+  if (!schemaExists) {
+    sqlite.exec(migrationSql)
+  }
   _db = drizzle(sqlite, { schema })
   return _db
 }
