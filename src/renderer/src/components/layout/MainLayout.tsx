@@ -24,8 +24,6 @@ export function MainLayout({ user, onLogout }: MainLayoutProps): React.JSX.Eleme
         return <InventoryPage />
       case 'analytics':
         return <AnalyticsPage />
-      case 'ai':
-        return <AnalyticsPage />
       case 'users':
         return <UsersPage />
       case 'customers':
