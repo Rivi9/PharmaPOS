@@ -27,6 +27,8 @@ export const IPC_CHANNELS = {
   SALE_CREATE: 'sale:create',
   SALE_GET_RECEIPT: 'sale:getReceipt',
   SALE_GET_TODAY_TOTAL: 'sale:getTodayTotal',
+  SALE_VOID: 'sale:void',
+  SALE_REFUND: 'sale:refund',
 
   // Stock
   STOCK_CHECK_AVAILABILITY: 'stock:checkAvailability',
@@ -156,7 +158,8 @@ export const IPC_CHANNELS = {
   CUSTOMER_CREATE: 'customer:create',
   CUSTOMER_UPDATE: 'customer:update',
   CUSTOMER_DELETE: 'customer:delete',
-  CUSTOMER_PURCHASE_HISTORY: 'customer:purchaseHistory'
+  CUSTOMER_PURCHASE_HISTORY: 'customer:purchase-history',
+  SHIFT_COMPUTE_EXPECTED_CASH: 'shift:compute-expected-cash'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
