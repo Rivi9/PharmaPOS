@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { LogOut, Clock, ShoppingBag, Banknote, Delete } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
@@ -37,16 +37,35 @@ export function EndShiftModal({ open, onClose }: EndShiftModalProps): React.JSX.
   const [closingCash, setClosingCash] = useState('')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
+  const [computedExpectedCash, setComputedExpectedCash] = useState<number | null>(null)
+  const [loadingExpectedCash, setLoadingExpectedCash] = useState(false)
 
   const currentShift = useShiftStore((s) => s.currentShift)
-  const todaySalesTotal = useShiftStore((s) => s.todaySalesTotal)
   const setCurrentShift = useShiftStore((s) => s.setCurrentShift)
   const logout = useAuthStore((s) => s.logout)
   const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
 
-  const closingCashNum = parseFloat(closingCash) || 0
   const openingCash = (currentShift as any)?.opening_cash ?? 0
-  const expectedCash = openingCash + todaySalesTotal
+
+  useEffect(() => {
+    if (!open || !currentShift) return
+
+    setLoadingExpectedCash(true)
+    window.electron.shifts
+      .computeExpectedCash(currentShift.id, (currentShift as any).opening_cash ?? 0)
+      .then((cash: number) => {
+        setComputedExpectedCash(cash)
+      })
+      .catch(() => {
+        setComputedExpectedCash((currentShift as any).opening_cash ?? 0)
+      })
+      .finally(() => {
+        setLoadingExpectedCash(false)
+      })
+  }, [open, currentShift])
+
+  const closingCashNum = parseFloat(closingCash) || 0
+  const expectedCash = computedExpectedCash ?? 0
   const cashDifference = closingCashNum - expectedCash
 
   const handleNumpadKey = (key: string) => {
@@ -98,8 +117,12 @@ export function EndShiftModal({ open, onClose }: EndShiftModalProps): React.JSX.
             </div>
             <div className="border rounded-lg p-3 text-center space-y-1">
               <ShoppingBag className="h-4 w-4 mx-auto text-muted-foreground" />
-              <p className="text-xs text-muted-foreground">Sales Total</p>
-              <p className="text-base font-bold">{formatCurrency(todaySalesTotal)}</p>
+              <p className="text-xs text-muted-foreground">Cash Sales</p>
+              <p className="text-base font-bold">
+                {loadingExpectedCash
+                  ? 'Calc…'
+                  : formatCurrency(computedExpectedCash !== null ? computedExpectedCash - openingCash : 0)}
+              </p>
             </div>
             <div className="border rounded-lg p-3 text-center space-y-1">
               <Banknote className="h-4 w-4 mx-auto text-muted-foreground" />
@@ -113,7 +136,9 @@ export function EndShiftModal({ open, onClose }: EndShiftModalProps): React.JSX.
             <div className="flex justify-between">
               <span className="text-muted-foreground">Expected in drawer</span>
               <span className="font-semibold">
-                {currencySymbol} {expectedCash.toFixed(2)}
+                {loadingExpectedCash
+                  ? 'Calculating…'
+                  : `${currencySymbol} ${expectedCash.toFixed(2)}`}
               </span>
             </div>
             {closingCashNum > 0 && (
