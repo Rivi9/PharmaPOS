@@ -1,4 +1,14 @@
+import { eq, sql, asc } from 'drizzle-orm'
+import { getDb } from '../db/index'
 import { getDatabase, generateId } from './database'
+import {
+  categories,
+  suppliers,
+  stockBatches,
+  products,
+  inventoryAdjustments
+} from '../db/schema'
+import type { Category, Supplier, StockBatch } from '../db/schema'
 
 // =====================
 // PRODUCTS
@@ -25,7 +35,7 @@ export interface ProductData {
 export function listProducts(): any[] {
   const db = getDatabase()
 
-  const products = db
+  const productList = db
     .prepare(
       `
     SELECT
@@ -43,7 +53,7 @@ export function listProducts(): any[] {
     )
     .all()
 
-  return products
+  return productList
 }
 
 export function createProduct(data: ProductData): { id: string } {
@@ -182,7 +192,7 @@ export function deleteProduct(id: string): void {
 export function getLowStockProducts(): any[] {
   const db = getDatabase()
 
-  const products = db
+  const lowStock = db
     .prepare(
       `
     SELECT
@@ -198,7 +208,7 @@ export function getLowStockProducts(): any[] {
     )
     .all()
 
-  return products
+  return lowStock
 }
 
 // =====================
@@ -211,10 +221,69 @@ export interface CategoryData {
   parent_id?: string
 }
 
+export function getCategories(): Category[] {
+  const drizzleDb = getDb()
+  return drizzleDb.select().from(categories).orderBy(asc(categories.name)).all()
+}
+
+export function getCategoryById(id: string): Category | undefined {
+  const drizzleDb = getDb()
+  return drizzleDb.select().from(categories).where(eq(categories.id, id)).get()
+}
+
+export function createCategory(data: CategoryData): { id: string } {
+  const drizzleDb = getDb()
+  const id = crypto.randomUUID()
+  const now = new Date().toISOString()
+
+  drizzleDb
+    .insert(categories)
+    .values({
+      id,
+      name: data.name,
+      description: data.description ?? null,
+      parentId: data.parent_id ?? null,
+      createdAt: now
+    })
+    .run()
+
+  return { id }
+}
+
+export function updateCategory(id: string, name: string, description?: string): void {
+  const drizzleDb = getDb()
+
+  drizzleDb
+    .update(categories)
+    .set({
+      name,
+      description: description ?? null
+    })
+    .where(eq(categories.id, id))
+    .run()
+}
+
+export function deleteCategory(id: string): void {
+  const drizzleDb = getDb()
+
+  // Check if any active products use this category
+  const activeProducts = drizzleDb
+    .select({ count: sql<number>`COUNT(*)` })
+    .from(products)
+    .where(eq(products.categoryId, id))
+    .get()
+
+  if (activeProducts && activeProducts.count > 0) {
+    throw new Error('Cannot delete category with products')
+  }
+
+  drizzleDb.delete(categories).where(eq(categories.id, id)).run()
+}
+
 export function listCategories(): any[] {
   const db = getDatabase()
 
-  const categories = db
+  const cats = db
     .prepare(
       `
     SELECT
@@ -230,26 +299,10 @@ export function listCategories(): any[] {
     )
     .all()
 
-  return categories
+  return cats
 }
 
-export function createCategory(data: CategoryData): { id: string } {
-  const db = getDatabase()
-  const id = generateId()
-  const now = new Date().toISOString()
-
-  db.prepare(
-    `
-    INSERT INTO categories (
-      id, name, description, parent_id, created_at
-    ) VALUES (?, ?, ?, ?, ?)
-  `
-  ).run(id, data.name, data.description || null, data.parent_id || null, now)
-
-  return { id }
-}
-
-export function updateCategory(id: string, data: Partial<CategoryData>): void {
+export function updateCategoryLegacy(id: string, data: Partial<CategoryData>): void {
   const db = getDatabase()
 
   const fields: string[] = []
@@ -279,30 +332,6 @@ export function updateCategory(id: string, data: Partial<CategoryData>): void {
   ).run(...values)
 }
 
-export function deleteCategory(id: string): void {
-  const db = getDatabase()
-
-  // Check if category has products
-  const count = db
-    .prepare('SELECT COUNT(*) as count FROM products WHERE category_id = ?')
-    .get(id) as { count: number }
-
-  if (count.count > 0) {
-    throw new Error('Cannot delete category with products')
-  }
-
-  // Check if category has child categories
-  const childCount = db
-    .prepare('SELECT COUNT(*) as count FROM categories WHERE parent_id = ?')
-    .get(id) as { count: number }
-
-  if (childCount.count > 0) {
-    throw new Error('Cannot delete category with sub-categories')
-  }
-
-  db.prepare('DELETE FROM categories WHERE id = ?').run(id)
-}
-
 // =====================
 // SUPPLIERS
 // =====================
@@ -317,10 +346,62 @@ export interface SupplierData {
   is_active?: number
 }
 
+export function getSuppliers(): Supplier[] {
+  const drizzleDb = getDb()
+  return drizzleDb.select().from(suppliers).orderBy(asc(suppliers.name)).all()
+}
+
+export function createSupplier(data: SupplierData): { id: string } {
+  const drizzleDb = getDb()
+  const id = crypto.randomUUID()
+  const now = new Date().toISOString()
+
+  drizzleDb
+    .insert(suppliers)
+    .values({
+      id,
+      name: data.name,
+      contactPerson: data.contact_person ?? null,
+      phone: data.phone ?? null,
+      email: data.email ?? null,
+      address: data.address ?? null,
+      leadTimeDays: data.lead_time_days ?? 3,
+      isActive: data.is_active ?? 1,
+      createdAt: now
+    })
+    .run()
+
+  return { id }
+}
+
+export function updateSupplier(id: string, data: Partial<SupplierData>): void {
+  const drizzleDb = getDb()
+
+  const updates: Partial<{
+    name: string
+    contactPerson: string | null
+    phone: string | null
+    email: string | null
+    address: string | null
+    leadTimeDays: number
+    isActive: number
+  }> = {}
+
+  if (data.name !== undefined) updates.name = data.name
+  if (data.contact_person !== undefined) updates.contactPerson = data.contact_person ?? null
+  if (data.phone !== undefined) updates.phone = data.phone ?? null
+  if (data.email !== undefined) updates.email = data.email ?? null
+  if (data.address !== undefined) updates.address = data.address ?? null
+  if (data.lead_time_days !== undefined) updates.leadTimeDays = data.lead_time_days
+  if (data.is_active !== undefined) updates.isActive = data.is_active
+
+  drizzleDb.update(suppliers).set(updates).where(eq(suppliers.id, id)).run()
+}
+
 export function listSuppliers(): any[] {
   const db = getDatabase()
 
-  const suppliers = db
+  const supplierList = db
     .prepare(
       `
     SELECT
@@ -336,80 +417,7 @@ export function listSuppliers(): any[] {
     )
     .all()
 
-  return suppliers
-}
-
-export function createSupplier(data: SupplierData): { id: string } {
-  const db = getDatabase()
-  const id = generateId()
-  const now = new Date().toISOString()
-
-  db.prepare(
-    `
-    INSERT INTO suppliers (
-      id, name, contact_person, phone, email, address,
-      lead_time_days, is_active, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `
-  ).run(
-    id,
-    data.name,
-    data.contact_person || null,
-    data.phone || null,
-    data.email || null,
-    data.address || null,
-    data.lead_time_days ?? 3,
-    data.is_active ?? 1,
-    now
-  )
-
-  return { id }
-}
-
-export function updateSupplier(id: string, data: Partial<SupplierData>): void {
-  const db = getDatabase()
-
-  const fields: string[] = []
-  const values: any[] = []
-
-  if (data.name !== undefined) {
-    fields.push('name = ?')
-    values.push(data.name)
-  }
-  if (data.contact_person !== undefined) {
-    fields.push('contact_person = ?')
-    values.push(data.contact_person || null)
-  }
-  if (data.phone !== undefined) {
-    fields.push('phone = ?')
-    values.push(data.phone || null)
-  }
-  if (data.email !== undefined) {
-    fields.push('email = ?')
-    values.push(data.email || null)
-  }
-  if (data.address !== undefined) {
-    fields.push('address = ?')
-    values.push(data.address || null)
-  }
-  if (data.lead_time_days !== undefined) {
-    fields.push('lead_time_days = ?')
-    values.push(data.lead_time_days)
-  }
-  if (data.is_active !== undefined) {
-    fields.push('is_active = ?')
-    values.push(data.is_active)
-  }
-
-  values.push(id)
-
-  db.prepare(
-    `
-    UPDATE suppliers
-    SET ${fields.join(', ')}
-    WHERE id = ?
-  `
-  ).run(...values)
+  return supplierList
 }
 
 export function deleteSupplier(id: string): void {
@@ -439,6 +447,45 @@ export interface StockBatchData {
   supplier_id?: string
 }
 
+export function getStockBatches(productId: string): StockBatch[] {
+  const drizzleDb = getDb()
+  return drizzleDb
+    .select()
+    .from(stockBatches)
+    .where(eq(stockBatches.productId, productId))
+    .orderBy(asc(stockBatches.expiryDate))
+    .all()
+}
+
+export function getStockBatchById(id: string): StockBatch | undefined {
+  const drizzleDb = getDb()
+  return drizzleDb.select().from(stockBatches).where(eq(stockBatches.id, id)).get()
+}
+
+export function createStockBatch(data: StockBatchData): { id: string } {
+  const drizzleDb = getDb()
+  const id = crypto.randomUUID()
+  const now = new Date().toISOString()
+  const receivedDate = data.received_date || new Date().toISOString().split('T')[0]
+
+  drizzleDb
+    .insert(stockBatches)
+    .values({
+      id,
+      productId: data.product_id,
+      batchNumber: data.batch_number ?? null,
+      quantity: data.quantity,
+      costPrice: data.cost_price,
+      expiryDate: data.expiry_date ?? null,
+      receivedDate,
+      supplierId: data.supplier_id ?? null,
+      createdAt: now
+    })
+    .run()
+
+  return { id }
+}
+
 export function listStockBatches(): any[] {
   const db = getDatabase()
 
@@ -460,34 +507,6 @@ export function listStockBatches(): any[] {
     .all()
 
   return batches
-}
-
-export function createStockBatch(data: StockBatchData): { id: string } {
-  const db = getDatabase()
-  const id = generateId()
-  const now = new Date().toISOString()
-  const receivedDate = data.received_date || new Date().toISOString().split('T')[0]
-
-  db.prepare(
-    `
-    INSERT INTO stock_batches (
-      id, product_id, batch_number, quantity, cost_price,
-      expiry_date, received_date, supplier_id, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `
-  ).run(
-    id,
-    data.product_id,
-    data.batch_number || null,
-    data.quantity,
-    data.cost_price,
-    data.expiry_date || null,
-    receivedDate,
-    data.supplier_id || null,
-    now
-  )
-
-  return { id }
 }
 
 export function updateStockBatch(id: string, data: Partial<StockBatchData>): void {
@@ -529,12 +548,9 @@ export function updateStockBatch(id: string, data: Partial<StockBatchData>): voi
 }
 
 export function deleteStockBatch(id: string): void {
-  const db = getDatabase()
+  const drizzleDb = getDb()
 
-  // Hard delete - only allow if quantity is 0
-  const batch = db.prepare('SELECT quantity FROM stock_batches WHERE id = ?').get(id) as {
-    quantity: number
-  } | undefined
+  const batch = drizzleDb.select().from(stockBatches).where(eq(stockBatches.id, id)).get()
 
   if (!batch) {
     throw new Error('Stock batch not found')
@@ -544,67 +560,44 @@ export function deleteStockBatch(id: string): void {
     throw new Error('Cannot delete batch with remaining stock')
   }
 
-  db.prepare('DELETE FROM stock_batches WHERE id = ?').run(id)
+  drizzleDb.delete(stockBatches).where(eq(stockBatches.id, id)).run()
 }
 
-export function adjustStockBatch(
-  batchId: string,
-  quantityChange: number,
-  reason: string,
+export function adjustStockBatch(params: {
+  batchId: string
+  productId: string
+  adjustmentType: 'add' | 'remove' | 'correction'
+  quantityChange: number
+  reason?: string
   userId: string
-): void {
+}): void {
   const db = getDatabase()
+  const drizzleDb = getDb()
+  const now = new Date().toISOString()
 
-  // Get current batch
-  const batch = db.prepare('SELECT * FROM stock_batches WHERE id = ?').get(batchId) as any
+  db.transaction(() => {
+    // Update the batch quantity
+    drizzleDb
+      .update(stockBatches)
+      .set({ quantity: sql`quantity + ${params.quantityChange}` })
+      .where(eq(stockBatches.id, params.batchId))
+      .run()
 
-  if (!batch) {
-    throw new Error('Stock batch not found')
-  }
-
-  const newQuantity = batch.quantity + quantityChange
-
-  if (newQuantity < 0) {
-    throw new Error('Insufficient stock in batch')
-  }
-
-  // Update batch quantity
-  db.prepare('UPDATE stock_batches SET quantity = ? WHERE id = ?').run(newQuantity, batchId)
-
-  // Record adjustment in inventory_adjustments table (if exists)
-  // Note: This table is not in the schema yet, but we'll prepare for it
-  try {
-    const adjustmentType =
-      quantityChange > 0
-        ? 'received'
-        : reason.includes('sold')
-          ? 'sold'
-          : reason.includes('damaged')
-            ? 'damaged'
-            : reason.includes('expired')
-              ? 'expired'
-              : 'correction'
-
-    db.prepare(
-      `
-      INSERT INTO inventory_adjustments (
-        id, product_id, batch_id, user_id, adjustment_type, quantity, reason, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `
-    ).run(
-      generateId(),
-      batch.product_id,
-      batchId,
-      userId,
-      adjustmentType,
-      quantityChange,
-      reason,
-      new Date().toISOString()
-    )
-  } catch (error) {
-    // Table doesn't exist yet - skip logging for now
-    console.log('Note: inventory_adjustments table not found, skipping adjustment log')
-  }
+    // Record the adjustment (NO try/catch — let it fail loudly)
+    drizzleDb
+      .insert(inventoryAdjustments)
+      .values({
+        id: crypto.randomUUID(),
+        productId: params.productId,
+        batchId: params.batchId,
+        adjustmentType: params.adjustmentType,
+        quantityChange: params.quantityChange,
+        reason: params.reason ?? null,
+        userId: params.userId,
+        createdAt: now
+      })
+      .run()
+  })()
 }
 
 // =====================
@@ -612,7 +605,7 @@ export function adjustStockBatch(
 // =====================
 
 export function exportProductsToCSV(): string {
-  const products = listProducts()
+  const prods = listProducts()
 
   // Create CSV header
   const headers = [
@@ -632,7 +625,7 @@ export function exportProductsToCSV(): string {
   ]
 
   // Create CSV rows
-  const rows = products.map((p) => [
+  const rows = prods.map((p) => [
     p.sku || '',
     p.name,
     p.generic_name || '',
@@ -649,7 +642,9 @@ export function exportProductsToCSV(): string {
   ])
 
   // Combine headers and rows
-  const csvContent = [headers, ...rows].map((row) => row.map((cell) => `"${cell}"`).join(',')).join('\n')
+  const csvContent = [headers, ...rows]
+    .map((row) => row.map((cell) => `"${cell}"`).join(','))
+    .join('\n')
 
   return csvContent
 }

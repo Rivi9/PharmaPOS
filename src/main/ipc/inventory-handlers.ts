@@ -173,9 +173,9 @@ export function registerInventoryHandlers(): void {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_ADJUST, (_, { batchId, quantityChange, reason, userId }) => {
+  ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_ADJUST, (_, { batchId, productId, adjustmentType, quantityChange, reason, userId }) => {
     try {
-      inventory.adjustStockBatch(batchId, quantityChange, reason, userId)
+      inventory.adjustStockBatch({ batchId, productId, adjustmentType: adjustmentType ?? 'correction', quantityChange, reason, userId })
       logAudit({
         userId,
         action: 'STOCK_ADJUSTED',
