@@ -146,7 +146,7 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const W = doc.internal.pageSize.getWidth()
 
-  const subtitle = `${data.start_date}  →  ${data.end_date}`
+  const subtitle = `${data.start_date}  to  ${data.end_date}`
   let y = drawHeader(doc, 'Sales Report', subtitle, businessName)
 
   // KPI row
@@ -322,7 +322,7 @@ function buildProfitLossPdf(data: ProfitLossData, businessName: string, sym: str
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const W = doc.internal.pageSize.getWidth()
 
-  const subtitle = `${data.start_date}  →  ${data.end_date}`
+  const subtitle = `${data.start_date}  to  ${data.end_date}`
   let y = drawHeader(doc, 'Profit & Loss Statement', subtitle, businessName)
 
   // KPI row
