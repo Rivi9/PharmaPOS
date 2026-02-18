@@ -5,29 +5,39 @@ import { withPermission } from './middleware'
 import * as inventory from '../services/inventory'
 import { logAudit } from '../services/audit'
 
+/** Wraps a handler in a { success, data } / { success, error } envelope. */
+async function wrap<T>(fn: () => Promise<T> | T): Promise<{ success: true; data: T } | { success: false; error: string }> {
+  try {
+    const data = await fn()
+    return { success: true, data }
+  } catch (err: any) {
+    return { success: false, error: err.message }
+  }
+}
+
 export function registerInventoryHandlers(): void {
   // =====================
   // PRODUCTS
   // =====================
 
   ipcMain.handle(IPC_CHANNELS.PRODUCT_LIST, async (_event, { userId }) => {
-    return withPermission(userId, 'inventory:view', () => inventory.listProducts())
+    return wrap(() => withPermission(userId, 'inventory:view', () => inventory.listProducts()))
   })
 
   ipcMain.handle(IPC_CHANNELS.PRODUCT_CREATE, async (_event, { userId, ...data }) => {
-    return withPermission(userId, 'inventory:create', () => inventory.createProduct(data))
+    return wrap(() => withPermission(userId, 'inventory:create', () => inventory.createProduct(data)))
   })
 
   ipcMain.handle(IPC_CHANNELS.PRODUCT_UPDATE, async (_event, { userId, id, data }) => {
-    return withPermission(userId, 'inventory:update', () => inventory.updateProduct(id, data))
+    return wrap(() => withPermission(userId, 'inventory:update', () => inventory.updateProduct(id, data)))
   })
 
   ipcMain.handle(IPC_CHANNELS.PRODUCT_DELETE, async (_event, { userId, id }) => {
-    return withPermission(userId, 'inventory:delete', () => inventory.deleteProduct(id))
+    return wrap(() => withPermission(userId, 'inventory:delete', () => inventory.deleteProduct(id)))
   })
 
   ipcMain.handle(IPC_CHANNELS.PRODUCT_LOW_STOCK, async (_event, { userId }) => {
-    return withPermission(userId, 'inventory:view', () => inventory.getLowStockProducts())
+    return wrap(() => withPermission(userId, 'inventory:view', () => inventory.getLowStockProducts()))
   })
 
   // =====================
@@ -35,19 +45,19 @@ export function registerInventoryHandlers(): void {
   // =====================
 
   ipcMain.handle(IPC_CHANNELS.CATEGORY_LIST, async (_event, { userId }) => {
-    return withPermission(userId, 'inventory:view', () => inventory.listCategories())
+    return wrap(() => withPermission(userId, 'inventory:view', () => inventory.listCategories()))
   })
 
   ipcMain.handle(IPC_CHANNELS.CATEGORY_CREATE, async (_event, { userId, ...data }) => {
-    return withPermission(userId, 'inventory:create', () => inventory.createCategory(data))
+    return wrap(() => withPermission(userId, 'inventory:create', () => inventory.createCategory(data)))
   })
 
   ipcMain.handle(IPC_CHANNELS.CATEGORY_UPDATE, async (_event, { userId, id, data }) => {
-    return withPermission(userId, 'inventory:update', () => inventory.updateCategory(id, data))
+    return wrap(() => withPermission(userId, 'inventory:update', () => inventory.updateCategory(id, data)))
   })
 
   ipcMain.handle(IPC_CHANNELS.CATEGORY_DELETE, async (_event, { userId, id }) => {
-    return withPermission(userId, 'inventory:delete', () => inventory.deleteCategory(id))
+    return wrap(() => withPermission(userId, 'inventory:delete', () => inventory.deleteCategory(id)))
   })
 
   // =====================
@@ -55,19 +65,19 @@ export function registerInventoryHandlers(): void {
   // =====================
 
   ipcMain.handle(IPC_CHANNELS.SUPPLIER_LIST, async (_event, { userId }) => {
-    return withPermission(userId, 'inventory:view', () => inventory.listSuppliers())
+    return wrap(() => withPermission(userId, 'inventory:view', () => inventory.listSuppliers()))
   })
 
   ipcMain.handle(IPC_CHANNELS.SUPPLIER_CREATE, async (_event, { userId, ...data }) => {
-    return withPermission(userId, 'inventory:create', () => inventory.createSupplier(data))
+    return wrap(() => withPermission(userId, 'inventory:create', () => inventory.createSupplier(data)))
   })
 
   ipcMain.handle(IPC_CHANNELS.SUPPLIER_UPDATE, async (_event, { userId, id, data }) => {
-    return withPermission(userId, 'inventory:update', () => inventory.updateSupplier(id, data))
+    return wrap(() => withPermission(userId, 'inventory:update', () => inventory.updateSupplier(id, data)))
   })
 
   ipcMain.handle(IPC_CHANNELS.SUPPLIER_DELETE, async (_event, { userId, id }) => {
-    return withPermission(userId, 'inventory:delete', () => inventory.deleteSupplier(id))
+    return wrap(() => withPermission(userId, 'inventory:delete', () => inventory.deleteSupplier(id)))
   })
 
   // =====================
@@ -75,19 +85,19 @@ export function registerInventoryHandlers(): void {
   // =====================
 
   ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_LIST, async (_event, { userId }) => {
-    return withPermission(userId, 'inventory:view', () => inventory.listStockBatches())
+    return wrap(() => withPermission(userId, 'inventory:view', () => inventory.listStockBatches()))
   })
 
   ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_CREATE, async (_event, { userId, ...data }) => {
-    return withPermission(userId, 'inventory:create', () => inventory.createStockBatch(data))
+    return wrap(() => withPermission(userId, 'inventory:create', () => inventory.createStockBatch(data)))
   })
 
   ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_UPDATE, async (_event, { userId, id, data }) => {
-    return withPermission(userId, 'inventory:update', () => inventory.updateStockBatch(id, data))
+    return wrap(() => withPermission(userId, 'inventory:update', () => inventory.updateStockBatch(id, data)))
   })
 
   ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_DELETE, async (_event, { userId, id }) => {
-    return withPermission(userId, 'inventory:delete', () => inventory.deleteStockBatch(id))
+    return wrap(() => withPermission(userId, 'inventory:delete', () => inventory.deleteStockBatch(id)))
   })
 
   ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_ADJUST, async (_event, { userId, ...params }) => {
@@ -117,7 +127,7 @@ export function registerInventoryHandlers(): void {
   // =====================
 
   ipcMain.handle(IPC_CHANNELS.PRODUCT_EXPORT_CSV, async (_event, { userId }) => {
-    return withPermission(userId, 'inventory:import_export', () => inventory.exportProductsToCSV())
+    return wrap(() => withPermission(userId, 'inventory:import_export', () => inventory.exportProductsToCSV()))
   })
 
   // =====================
