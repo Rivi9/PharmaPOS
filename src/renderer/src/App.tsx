@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useAuthStore } from './stores/authStore'
 import { useShiftStore } from './stores/shiftStore'
+import { useSettingsStore } from './stores/settingsStore'
 import { MainLayout } from './components/layout'
 import { LoginPage } from './pages/LoginPage'
 import { SetupWizardPage } from './pages/SetupWizardPage'
@@ -18,6 +19,7 @@ function App(): React.JSX.Element {
       setIsFirstRun(firstRun)
     }
     checkFirstRun()
+    useSettingsStore.getState().loadSettings()
   }, [])
 
   // Plain logout: clears shift from memory (shift stays open in DB, resumed on next login)

@@ -1,5 +1,6 @@
 import { ShoppingCart as ShoppingCartIcon } from 'lucide-react'
 import { usePOSStore } from '@renderer/stores/posStore'
+import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { CartItem } from './CartItem'
 import { CartTotals } from './CartTotals'
 import { CartActions } from './CartActions'
@@ -22,6 +23,7 @@ export function ShoppingCart({ onPayment }: ShoppingCartProps): React.JSX.Elemen
   const discountAmount = usePOSStore((state) => state.discountAmount())
   const taxAmount = usePOSStore((state) => state.taxAmount())
   const total = usePOSStore((state) => state.total())
+  const vatRate = useSettingsStore((state) => state.settings.vat_rate)
 
   const hasItems = items.length > 0
   const hasHeldSale = heldSale !== null
@@ -61,6 +63,7 @@ export function ShoppingCart({ onPayment }: ShoppingCartProps): React.JSX.Elemen
           discountAmount={discountAmount}
           taxAmount={taxAmount}
           total={total}
+          vatRate={vatRate}
         />
 
         {/* Actions */}

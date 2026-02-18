@@ -165,7 +165,12 @@ export function CustomersPage(): React.JSX.Element {
               >
                 <div className="font-medium">{c.name}</div>
                 <div className="text-sm text-muted-foreground flex items-center gap-3 mt-0.5">
-                  {c.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{c.phone}</span>}
+                  {c.phone && (
+                    <span className="flex items-center gap-1">
+                      <Phone className="w-3 h-3" />
+                      {c.phone}
+                    </span>
+                  )}
                 </div>
               </button>
             ))
@@ -183,9 +188,9 @@ export function CustomersPage(): React.JSX.Element {
           <div className="space-y-6 max-w-2xl">
             {/* Customer Info */}
             <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>{selected.name}</CardTitle>
+              <CardContent className="pt-5 space-y-3">
+                <div className="flex items-start justify-between">
+                  <h2 className="text-lg font-semibold">{selected.name}</h2>
                   <div className="flex gap-2">
                     <Button variant="outline" size="sm" onClick={() => openEditForm(selected)}>
                       Edit
@@ -200,30 +205,34 @@ export function CustomersPage(): React.JSX.Element {
                     </Button>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4 text-sm">
-                {selected.phone && (
-                  <div>
-                    <p className="text-muted-foreground text-xs uppercase font-medium">Phone</p>
-                    <p className="flex items-center gap-1 mt-0.5"><Phone className="w-3 h-3" />{selected.phone}</p>
-                  </div>
-                )}
-                {selected.email && (
-                  <div>
-                    <p className="text-muted-foreground text-xs uppercase font-medium">Email</p>
-                    <p className="flex items-center gap-1 mt-0.5"><Mail className="w-3 h-3" />{selected.email}</p>
-                  </div>
-                )}
-                {selected.address && (
-                  <div className="col-span-2">
-                    <p className="text-muted-foreground text-xs uppercase font-medium">Address</p>
-                    <p className="mt-0.5">{selected.address}</p>
-                  </div>
-                )}
-                <div>
-                  <p className="text-muted-foreground text-xs uppercase font-medium">Customer Since</p>
-                  <p className="mt-0.5">{new Date(selected.created_at).toLocaleDateString()}</p>
+
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted-foreground">
+                  {selected.phone && (
+                    <span className="flex items-center gap-1.5">
+                      <Phone className="w-3.5 h-3.5" />
+                      {selected.phone}
+                    </span>
+                  )}
+                  {selected.email && (
+                    <span className="flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5" />
+                      {selected.email}
+                    </span>
+                  )}
+                  <span className="text-xs">
+                    Customer since {new Date(selected.created_at).toLocaleDateString()}
+                  </span>
                 </div>
+
+                {selected.address && (
+                  <p className="text-sm text-muted-foreground">{selected.address}</p>
+                )}
+
+                {selected.notes && (
+                  <div className="bg-muted/50 rounded-md px-3 py-2 text-sm text-muted-foreground italic border border-muted">
+                    {selected.notes}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -247,16 +256,29 @@ export function CustomersPage(): React.JSX.Element {
                 ) : history.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No purchases yet</p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {history.map((sale) => (
-                      <div key={sale.id} className="flex items-center justify-between py-2 border-b last:border-0 text-sm">
-                        <div>
+                      <div key={sale.id} className="py-2 border-b last:border-0 text-sm">
+                        <div className="flex items-center justify-between">
                           <p className="font-medium">{sale.receiptNumber}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(sale.createdAt).toLocaleDateString()} · {sale.items.length} items · {sale.paymentMethod}
-                          </p>
+                          <p className="font-semibold">Rs. {sale.total.toFixed(2)}</p>
                         </div>
-                        <p className="font-semibold">Rs. {sale.total.toFixed(2)}</p>
+                        <p className="text-xs text-muted-foreground mb-1.5">
+                          {new Date(sale.createdAt).toLocaleDateString()} · {sale.paymentMethod}
+                        </p>
+                        <div className="space-y-0.5 pl-2 border-l-2 border-muted">
+                          {sale.items.map((item, i) => (
+                            <div
+                              key={i}
+                              className="flex items-center justify-between text-xs text-muted-foreground"
+                            >
+                              <span>
+                                {item.productName} × {item.quantity}
+                              </span>
+                              <span>Rs. {item.lineTotal.toFixed(2)}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -274,34 +296,52 @@ export function CustomersPage(): React.JSX.Element {
             <DialogTitle>{editCustomer ? 'Edit Customer' : 'New Customer'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 pt-2">
-            {formError && (
-              <p className="text-sm text-destructive">{formError}</p>
-            )}
+            {formError && <p className="text-sm text-destructive">{formError}</p>}
             <div className="space-y-1">
               <Label>Name *</Label>
-              <Input value={formName} onChange={(e) => setFormName(e.target.value)} placeholder="Full name" />
+              <Input
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                placeholder="Full name"
+              />
             </div>
             <div className="space-y-1">
               <Label>Phone</Label>
-              <Input value={formPhone} onChange={(e) => setFormPhone(e.target.value)} placeholder="07X XXX XXXX" />
+              <Input
+                value={formPhone}
+                onChange={(e) => setFormPhone(e.target.value)}
+                placeholder="07X XXX XXXX"
+              />
             </div>
             <div className="space-y-1">
               <Label>Email</Label>
-              <Input value={formEmail} onChange={(e) => setFormEmail(e.target.value)} placeholder="email@example.com" />
+              <Input
+                value={formEmail}
+                onChange={(e) => setFormEmail(e.target.value)}
+                placeholder="email@example.com"
+              />
             </div>
             <div className="space-y-1">
               <Label>Address</Label>
-              <Input value={formAddress} onChange={(e) => setFormAddress(e.target.value)} placeholder="Address" />
+              <Input
+                value={formAddress}
+                onChange={(e) => setFormAddress(e.target.value)}
+                placeholder="Address"
+              />
             </div>
             <div className="space-y-1">
               <Label>Notes</Label>
-              <Input value={formNotes} onChange={(e) => setFormNotes(e.target.value)} placeholder="Any notes..." />
+              <Input
+                value={formNotes}
+                onChange={(e) => setFormNotes(e.target.value)}
+                placeholder="Any notes..."
+              />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
-              <Button onClick={handleSaveCustomer}>
-                {editCustomer ? 'Update' : 'Create'}
+              <Button variant="outline" onClick={() => setShowForm(false)}>
+                Cancel
               </Button>
+              <Button onClick={handleSaveCustomer}>{editCustomer ? 'Update' : 'Create'}</Button>
             </div>
           </div>
         </DialogContent>

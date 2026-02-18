@@ -1,7 +1,5 @@
 import type { CartItem, SaleDiscount } from './types'
 
-const TAX_RATE = 0.18 // 18% VAT
-
 export function calculateLineTotal(unitPrice: number, quantity: number): number {
   return unitPrice * quantity
 }
@@ -22,8 +20,8 @@ export function calculateSaleDiscountAmount(
   return discount.value
 }
 
-export function calculateTax(taxableAmount: number): number {
-  return taxableAmount * TAX_RATE
+export function calculateTax(taxableAmount: number, ratePercent: number): number {
+  return taxableAmount * (ratePercent / 100)
 }
 
 export function calculateTotal(

@@ -7,6 +7,7 @@ import {
   calculateTax,
   calculateTotal
 } from '../lib/calculations'
+import { useSettingsStore } from './settingsStore'
 
 interface CartState {
   items: CartItem[]
@@ -132,11 +133,12 @@ export const usePOSStore = create<POSStore>((set, get) => ({
     return calculateSaleDiscountAmount(subtotal, get().saleDiscount)
   },
 
-  // Computed: Tax amount
+  // Computed: Tax amount — reads rate from settings (0 if not loaded yet)
   taxAmount: () => {
     const subtotal = get().subtotal()
     const discount = get().discountAmount()
-    return calculateTax(subtotal - discount)
+    const ratePercent = parseFloat(useSettingsStore.getState().settings.vat_rate) || 0
+    return calculateTax(subtotal - discount, ratePercent)
   },
 
   // Computed: Total

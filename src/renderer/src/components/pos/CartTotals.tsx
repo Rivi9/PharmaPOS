@@ -5,13 +5,15 @@ interface CartTotalsProps {
   discountAmount: number
   taxAmount: number
   total: number
+  vatRate: string
 }
 
 export function CartTotals({
   subtotal,
   discountAmount,
   taxAmount,
-  total
+  total,
+  vatRate
 }: CartTotalsProps): React.JSX.Element {
   return (
     <div className="space-y-2">
@@ -28,7 +30,7 @@ export function CartTotals({
       )}
 
       <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Tax (18%):</span>
+        <span className="text-muted-foreground">Tax ({vatRate}%):</span>
         <span className="font-medium">{formatCurrency(taxAmount)}</span>
       </div>
 

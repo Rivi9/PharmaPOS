@@ -295,7 +295,10 @@ export function getReceipt(saleId: string) {
   const items = db
     .prepare(
       `
-    SELECT * FROM sale_items WHERE sale_id = ?
+    SELECT si.*, p.name as product_name
+    FROM sale_items si
+    LEFT JOIN products p ON si.product_id = p.id
+    WHERE si.sale_id = ?
   `
     )
     .all(saleId)
