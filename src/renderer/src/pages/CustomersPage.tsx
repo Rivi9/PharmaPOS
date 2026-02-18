@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Search, UserPlus, Phone, Mail, Star, History } from 'lucide-react'
+import { Search, UserPlus, Phone, Mail, History } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
@@ -13,22 +13,17 @@ interface Customer {
   phone: string | null
   email: string | null
   address: string | null
-  loyalty_points: number
   notes: string | null
   created_at: string
 }
 
-interface PurchaseHistoryData {
-  sales: Array<{
-    id: string
-    receipt_number: string
-    total: number
-    payment_method: string
-    created_at: string
-    item_count: number
-  }>
-  total_spent: number
-  visit_count: number
+interface PurchaseHistoryEntry {
+  id: string
+  receiptNumber: string
+  total: number
+  paymentMethod: string
+  createdAt: string
+  items: { productName: string; quantity: number; lineTotal: number }[]
 }
 
 export function CustomersPage(): React.JSX.Element {
@@ -36,7 +31,7 @@ export function CustomersPage(): React.JSX.Element {
   const [customers, setCustomers] = useState<Customer[]>([])
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Customer | null>(null)
-  const [history, setHistory] = useState<PurchaseHistoryData | null>(null)
+  const [history, setHistory] = useState<PurchaseHistoryEntry[] | null>(null)
   const [showForm, setShowForm] = useState(false)
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -171,7 +166,6 @@ export function CustomersPage(): React.JSX.Element {
                 <div className="font-medium">{c.name}</div>
                 <div className="text-sm text-muted-foreground flex items-center gap-3 mt-0.5">
                   {c.phone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{c.phone}</span>}
-                  <span className="flex items-center gap-1"><Star className="w-3 h-3 text-yellow-500" />{c.loyalty_points} pts</span>
                 </div>
               </button>
             ))
@@ -227,12 +221,6 @@ export function CustomersPage(): React.JSX.Element {
                   </div>
                 )}
                 <div>
-                  <p className="text-muted-foreground text-xs uppercase font-medium">Loyalty Points</p>
-                  <p className="flex items-center gap-1 mt-0.5 font-semibold text-yellow-600">
-                    <Star className="w-3 h-3" />{selected.loyalty_points} pts
-                  </p>
-                </div>
-                <div>
                   <p className="text-muted-foreground text-xs uppercase font-medium">Customer Since</p>
                   <p className="mt-0.5">{new Date(selected.created_at).toLocaleDateString()}</p>
                 </div>
@@ -245,9 +233,10 @@ export function CustomersPage(): React.JSX.Element {
                 <CardTitle className="text-base flex items-center gap-2">
                   <History className="w-4 h-4" />
                   Purchase History
-                  {history && (
+                  {history && history.length > 0 && (
                     <span className="ml-auto text-sm text-muted-foreground font-normal">
-                      {history.visit_count} visits · Total: Rs. {history.total_spent.toFixed(2)}
+                      {history.length} visits · Total: Rs.{' '}
+                      {history.reduce((s, h) => s + h.total, 0).toFixed(2)}
                     </span>
                   )}
                 </CardTitle>
@@ -255,16 +244,16 @@ export function CustomersPage(): React.JSX.Element {
               <CardContent>
                 {!history ? (
                   <p className="text-sm text-muted-foreground">Loading...</p>
-                ) : history.sales.length === 0 ? (
+                ) : history.length === 0 ? (
                   <p className="text-sm text-muted-foreground">No purchases yet</p>
                 ) : (
                   <div className="space-y-2">
-                    {history.sales.map((sale) => (
+                    {history.map((sale) => (
                       <div key={sale.id} className="flex items-center justify-between py-2 border-b last:border-0 text-sm">
                         <div>
-                          <p className="font-medium">{sale.receipt_number}</p>
+                          <p className="font-medium">{sale.receiptNumber}</p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(sale.created_at).toLocaleDateString()} · {sale.item_count} items · {sale.payment_method}
+                            {new Date(sale.createdAt).toLocaleDateString()} · {sale.items.length} items · {sale.paymentMethod}
                           </p>
                         </div>
                         <p className="font-semibold">Rs. {sale.total.toFixed(2)}</p>
