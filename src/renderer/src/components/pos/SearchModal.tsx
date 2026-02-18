@@ -104,7 +104,8 @@ export function SearchModal({ open, onClose, onSelect, initialQuery }: SearchMod
                   <button
                     key={product.id}
                     onClick={() => handleSelect(product)}
-                    className="w-full p-5 text-left hover:bg-muted/50 active:bg-muted transition-colors min-h-[72px]"
+                    disabled={!product.total_stock || product.total_stock === 0}
+                    className="w-full p-5 text-left hover:bg-muted/50 active:bg-muted transition-colors min-h-[72px] disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <div className="flex items-center justify-between gap-4">
                       <div className="flex-1 min-w-0">

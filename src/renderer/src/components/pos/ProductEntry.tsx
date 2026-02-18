@@ -133,8 +133,17 @@ export function ProductEntry({
         onClose={() => setSearchOpen(false)}
         initialQuery={modalQuery}
         onSelect={(product) => {
-          // Check near-expiry when selecting via search
+          setError('')
           setExpiryWarning('')
+
+          // Block 0-stock products
+          if (!product.total_stock || product.total_stock === 0) {
+            setError('No stock available')
+            setSearchOpen(false)
+            return
+          }
+
+          // Check near-expiry when selecting via search
           if (product.nearest_expiry) {
             const expiry = new Date(product.nearest_expiry)
             const today = new Date()

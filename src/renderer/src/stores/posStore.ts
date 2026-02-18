@@ -45,21 +45,29 @@ export const usePOSStore = create<POSStore>((set, get) => ({
   saleDiscount: null,
   heldSale: null,
 
-  // Add item to cart
+  // Add item to cart — stacks quantity if product already present
   addItem: (product, quantity) => {
-    const unitPrice = product.unit_price
-    const lineTotal = calculateLineTotal(unitPrice, quantity)
-
-    const newItem: CartItem = {
-      product,
-      quantity,
-      unit_price: unitPrice,
-      line_total: lineTotal
-    }
-
-    set((state) => ({
-      items: [...state.items, newItem]
-    }))
+    set((state) => {
+      const existingIndex = state.items.findIndex((i) => i.product.id === product.id)
+      if (existingIndex !== -1) {
+        const items = [...state.items]
+        const existing = items[existingIndex]
+        const newQty = existing.quantity + quantity
+        items[existingIndex] = {
+          ...existing,
+          quantity: newQty,
+          line_total: calculateLineTotal(existing.unit_price, newQty)
+        }
+        return { items }
+      }
+      const unitPrice = product.unit_price
+      return {
+        items: [
+          ...state.items,
+          { product, quantity, unit_price: unitPrice, line_total: calculateLineTotal(unitPrice, quantity) }
+        ]
+      }
+    })
   },
 
   // Update quantity
