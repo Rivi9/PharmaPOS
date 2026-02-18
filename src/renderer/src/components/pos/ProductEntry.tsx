@@ -16,6 +16,7 @@ export function ProductEntry({
 }: ProductEntryProps = {}): React.JSX.Element {
   const [barcode, setBarcode] = useState('')
   const [internalSearchOpen, setInternalSearchOpen] = useState(false)
+  const [modalQuery, setModalQuery] = useState('')
   const [error, setError] = useState('')
   const [expiryWarning, setExpiryWarning] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -38,7 +39,26 @@ export function ProductEntry({
     setExpiryWarning('')
 
     try {
-      const product = await window.electron.getProductByBarcode(barcode.trim())
+      // First try exact barcode match (fast path for barcode scanners)
+      let product = await window.electron.getProductByBarcode(barcode.trim())
+
+      // Fallback: search by name/SKU so staff can also type product names
+      if (!product) {
+        const matches = await window.electron.searchProducts(barcode.trim())
+        if (matches.length === 0) {
+          setError('Product not found')
+          setBarcode('')
+          return
+        }
+        if (matches.length > 1) {
+          // Multiple matches — open search modal pre-filled with the query
+          setModalQuery(barcode.trim())
+          setBarcode('')
+          setSearchOpen(true)
+          return
+        }
+        product = matches[0]
+      }
 
       if (!product) {
         setError('Product not found')
@@ -92,7 +112,7 @@ export function ProductEntry({
           <Button
             type="button"
             variant="outline"
-            onClick={() => setSearchOpen(true)}
+            onClick={() => { setModalQuery(''); setSearchOpen(true) }}
             className="h-12 w-12 shrink-0"
           >
             <Search className="h-5 w-5" />
@@ -111,6 +131,7 @@ export function ProductEntry({
       <SearchModal
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
+        initialQuery={modalQuery}
         onSelect={(product) => {
           // Check near-expiry when selecting via search
           setExpiryWarning('')

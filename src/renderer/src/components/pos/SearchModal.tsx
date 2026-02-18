@@ -8,22 +8,23 @@ interface SearchModalProps {
   open: boolean
   onClose: () => void
   onSelect: (product: Product) => void
+  initialQuery?: string
 }
 
-export function SearchModal({ open, onClose, onSelect }: SearchModalProps): React.JSX.Element {
+export function SearchModal({ open, onClose, onSelect, initialQuery }: SearchModalProps): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Product[]>([])
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Focus input when modal opens
+  // Focus input when modal opens; pre-fill query if provided
   useEffect(() => {
     if (open) {
       setTimeout(() => inputRef.current?.focus(), 100)
-      setQuery('')
+      setQuery(initialQuery ?? '')
       setResults([])
     }
-  }, [open])
+  }, [open, initialQuery])
 
   // Search on query change (debounced)
   useEffect(() => {
