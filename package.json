@@ -50,6 +50,7 @@
     "extract-zip": "^2.0.1",
     "googleapis": "^171.2.0",
     "jspdf": "^4.1.0",
+    "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.562.0",
     "node-schedule": "^2.1.1",
     "node-thermal-printer": "^4.6.0",
