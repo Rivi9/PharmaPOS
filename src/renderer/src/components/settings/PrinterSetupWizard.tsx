@@ -154,7 +154,7 @@ export function PrinterSetupWizard(): React.JSX.Element {
                   <Label htmlFor="printer-path">Printer</Label>
                   <button
                     type="button"
-                    onClick={loadUsbPrinters}
+                    onClick={() => loadUsbPrinters()}
                     disabled={usbListLoading}
                     className="text-xs text-primary underline disabled:opacity-50"
                   >
