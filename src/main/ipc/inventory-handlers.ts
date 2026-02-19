@@ -1,5 +1,4 @@
 import { ipcMain, dialog } from 'electron'
-import * as XLSX from 'xlsx'
 import { IPC_CHANNELS } from './channels'
 import { withPermission } from './middleware'
 import * as inventory from '../services/inventory'
@@ -139,7 +138,7 @@ export function registerInventoryHandlers(): void {
     return withPermission(userId, 'inventory:import_export', async () => {
       const { canceled, filePaths } = await dialog.showOpenDialog({
         title: 'Import Products from Excel',
-        filters: [{ name: 'Excel Files', extensions: ['xlsx', 'xls'] }],
+        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
         properties: ['openFile']
       })
 
@@ -147,31 +146,79 @@ export function registerInventoryHandlers(): void {
         return { canceled: true, imported: 0, errors: [] }
       }
 
-      const workbook = XLSX.readFile(filePaths[0])
-      const sheetName = workbook.SheetNames[0]
-      const rows: Record<string, unknown>[] = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName])
+      const normalizeHeader = (value: unknown): string =>
+        String(value ?? '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '')
+
+      let sheetRows: unknown[][]
+      try {
+        // Preferred parser.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const readXlsxFile = require('read-excel-file/node') as (filePath: string) => Promise<unknown[][]>
+        sheetRows = await readXlsxFile(filePaths[0])
+      } catch (error: any) {
+        // Temporary compatibility fallback if read-excel-file is not installed yet.
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-require-imports
+          const XLSX = require('xlsx') as any
+          const workbook = XLSX.readFile(filePaths[0])
+          const sheetName = workbook.SheetNames[0]
+          sheetRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+            header: 1
+          }) as unknown[][]
+        } catch {
+          if (String(error?.message || '').includes("Cannot find module 'read-excel-file/node'")) {
+            throw new Error(
+              'Excel import dependency missing. Run "npm install" (or "npm ci") and restart the app.'
+            )
+          }
+          throw error
+        }
+      }
+      if (sheetRows.length < 1) {
+        return { canceled: false, imported: 0, errors: ['Excel file is empty'] }
+      }
+
+      const [headerRow, ...dataRows] = sheetRows
+      const headerIndexes = new Map<string, number>()
+      ;(headerRow ?? []).forEach((cell, index) => {
+        const key = normalizeHeader(cell)
+        if (key && !headerIndexes.has(key)) {
+          headerIndexes.set(key, index)
+        }
+      })
+
+      const getCell = (row: unknown[], aliases: string[]): unknown => {
+        for (const alias of aliases) {
+          const idx = headerIndexes.get(normalizeHeader(alias))
+          if (idx !== undefined) {
+            return row[idx]
+          }
+        }
+        return undefined
+      }
 
       const errors: string[] = []
       let imported = 0
 
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i]
+      for (let i = 0; i < dataRows.length; i++) {
+        const row = dataRows[i] ?? []
         const rowNum = i + 2 // 1-indexed + header row
 
-        const name = String(row['name'] ?? row['Name'] ?? '').trim()
+        const name = String(getCell(row, ['name']) ?? '').trim()
         if (!name) {
           errors.push(`Row ${rowNum}: missing "name"`)
           continue
         }
 
-        const costPrice = parseFloat(String(row['cost_price'] ?? row['Cost Price'] ?? '0'))
-        const unitPrice = parseFloat(String(row['unit_price'] ?? row['Unit Price'] ?? row['Selling Price'] ?? '0'))
+        const costPrice = parseFloat(String(getCell(row, ['cost_price', 'Cost Price']) ?? '0'))
+        const unitPrice = parseFloat(
+          String(getCell(row, ['unit_price', 'Unit Price', 'Selling Price']) ?? '0')
+        )
         const rawCurrentStock =
-          row['current_stock'] ??
-          row['Current Stock'] ??
-          row['current stock'] ??
-          row['stock'] ??
-          row['Stock'] ??
+          getCell(row, ['current_stock', 'Current Stock', 'current stock', 'stock', 'Stock']) ??
           ''
         const currentStockText = String(rawCurrentStock).trim()
         const currentStock = currentStockText === '' ? 0 : parseFloat(currentStockText)
@@ -190,14 +237,15 @@ export function registerInventoryHandlers(): void {
           db.transaction(() => {
             const created = inventory.createProduct({
               name,
-              generic_name: String(row['generic_name'] ?? row['Generic Name'] ?? '').trim() || undefined,
-              barcode: String(row['barcode'] ?? row['Barcode'] ?? '').trim() || undefined,
-              sku: String(row['sku'] ?? row['SKU'] ?? '').trim() || undefined,
+              generic_name: String(getCell(row, ['generic_name', 'Generic Name']) ?? '').trim() || undefined,
+              barcode: String(getCell(row, ['barcode', 'Barcode']) ?? '').trim() || undefined,
+              sku: String(getCell(row, ['sku', 'SKU']) ?? '').trim() || undefined,
               cost_price: costPrice,
               unit_price: unitPrice,
-              tax_rate: parseFloat(String(row['tax_rate'] ?? row['Tax Rate'] ?? '0')) || 0,
-              reorder_level: parseInt(String(row['reorder_level'] ?? row['Reorder Level'] ?? '5')) || 5,
-              unit: String(row['unit'] ?? row['Unit'] ?? 'pcs').trim() || 'pcs'
+              tax_rate: parseFloat(String(getCell(row, ['tax_rate', 'Tax Rate']) ?? '0')) || 0,
+              reorder_level:
+                parseInt(String(getCell(row, ['reorder_level', 'Reorder Level']) ?? '5')) || 5,
+              unit: String(getCell(row, ['unit', 'Unit']) ?? 'pcs').trim() || 'pcs'
             })
             if (currentStock > 0) {
               inventory.createStockBatch({

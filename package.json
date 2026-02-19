@@ -54,12 +54,12 @@
     "lucide-react": "^0.562.0",
     "node-schedule": "^2.1.1",
     "node-thermal-printer": "^4.6.0",
+    "read-excel-file": "^6.0.1",
     "react-hook-form": "^7.71.1",
     "recharts": "^3.7.0",
     "tailwind-merge": "^3.4.0",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "xlsx": "^0.18.5",
     "zod": "^4.3.6",
     "zustand": "^5.0.10"
   },
