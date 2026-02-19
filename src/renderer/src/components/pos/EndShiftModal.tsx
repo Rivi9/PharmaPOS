@@ -12,6 +12,8 @@ import { formatCurrency } from '@renderer/lib/calculations'
 interface EndShiftModalProps {
   open: boolean
   onClose: () => void
+  /** Called after the shift is successfully ended and the user is logged out. */
+  onShiftEnded?: () => void
 }
 
 /** Parse a SQLite datetime string (UTC, no timezone marker) into a Date object. */
@@ -33,7 +35,7 @@ function formatDuration(startedAt: string): string {
  * Shows a shift summary (duration, total sales) and asks for
  * the closing cash count before closing the shift and logging out.
  */
-export function EndShiftModal({ open, onClose }: EndShiftModalProps): React.JSX.Element {
+export function EndShiftModal({ open, onClose, onShiftEnded }: EndShiftModalProps): React.JSX.Element {
   const [closingCash, setClosingCash] = useState('')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
@@ -90,6 +92,7 @@ export function EndShiftModal({ open, onClose }: EndShiftModalProps): React.JSX.
       })
       setCurrentShift(null)
       logout()
+      onShiftEnded?.()
     } finally {
       setLoading(false)
     }

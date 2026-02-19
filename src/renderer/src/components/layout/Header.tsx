@@ -1,13 +1,12 @@
-import { useState } from 'react'
 import { Button } from '@renderer/components/ui/button'
 import { Settings, LogOut, Clock } from 'lucide-react'
 import { useShiftStore } from '@renderer/stores/shiftStore'
-import { EndShiftModal } from '@renderer/components/pos/EndShiftModal'
 import { formatCurrency } from '@renderer/lib/calculations'
 
 interface HeaderProps {
   user: { full_name: string; role: string } | null
-  onLogout: () => void
+  onEndShift: () => void
+  onSettings: () => void
 }
 
 /** Parse a SQLite datetime string (UTC, no timezone marker) into a Date. */
@@ -22,66 +21,51 @@ function shiftStartTime(startedAt: string): string {
   })
 }
 
-export function Header({ user, onLogout }: HeaderProps): React.JSX.Element {
-  const [endShiftOpen, setEndShiftOpen] = useState(false)
-
+export function Header({ user, onEndShift, onSettings }: HeaderProps): React.JSX.Element {
   const currentShift = useShiftStore((s) => s.currentShift)
   const todaySalesTotal = useShiftStore((s) => s.todaySalesTotal)
 
   return (
-    <>
-      <header className="h-14 border-b bg-background flex items-center justify-between px-4 shrink-0">
-        <div className="flex items-center gap-4">
-          <h1 className="text-lg font-bold text-primary">PharmaPOS</h1>
+    <header className="h-14 border-b bg-background flex items-center justify-between px-4 shrink-0">
+      <div className="flex items-center gap-4">
+        <h1 className="text-lg font-bold text-primary">PharmaPOS</h1>
 
-          {currentShift && (
-            <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground border rounded-md px-3 py-1">
-              <Clock className="h-3.5 w-3.5" />
-              <span>{shiftStartTime(currentShift.started_at)}</span>
-              <span className="mx-1 text-border">|</span>
-              <span className="font-medium text-foreground">
-                {formatCurrency(todaySalesTotal)}
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {user && (
-            <span className="hidden sm:block text-sm text-muted-foreground">
-              {user.full_name}
+        {currentShift && (
+          <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground border rounded-md px-3 py-1">
+            <Clock className="h-3.5 w-3.5" />
+            <span>{shiftStartTime(currentShift.started_at)}</span>
+            <span className="mx-1 text-border">|</span>
+            <span className="font-medium text-foreground">
+              {formatCurrency(todaySalesTotal)}
             </span>
-          )}
+          </div>
+        )}
+      </div>
 
-          {currentShift && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-destructive border-destructive/30 hover:bg-destructive/5 gap-1.5"
-              onClick={() => setEndShiftOpen(true)}
-              title="End Shift"
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">End Shift</span>
-            </Button>
-          )}
+      <div className="flex items-center gap-2">
+        {user && (
+          <span className="hidden sm:block text-sm text-muted-foreground">
+            {user.full_name}
+          </span>
+        )}
 
-          <Button variant="ghost" size="icon" title="Settings">
-            <Settings className="w-5 h-5" />
-          </Button>
+        <Button variant="ghost" size="icon" onClick={onSettings} title="Settings">
+          <Settings className="w-5 h-5" />
+        </Button>
 
+        {currentShift && (
           <Button
-            variant="ghost"
-            size="icon"
-            onClick={onLogout}
-            title="Logout (keeps shift open)"
+            variant="outline"
+            size="sm"
+            className="text-destructive border-destructive/30 hover:bg-destructive/5 gap-1.5"
+            onClick={onEndShift}
+            title="End Shift & Logout"
           >
-            <LogOut className="w-5 h-5" />
+            <LogOut className="h-4 w-4" />
+            <span className="hidden sm:inline">End Shift</span>
           </Button>
-        </div>
-      </header>
-
-      <EndShiftModal open={endShiftOpen} onClose={() => setEndShiftOpen(false)} />
-    </>
+        )}
+      </div>
+    </header>
   )
 }

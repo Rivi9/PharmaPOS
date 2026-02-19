@@ -159,7 +159,11 @@ export const IPC_CHANNELS = {
   CUSTOMER_UPDATE: 'customer:update',
   CUSTOMER_DELETE: 'customer:delete',
   CUSTOMER_PURCHASE_HISTORY: 'customer:purchase-history',
-  SHIFT_COMPUTE_EXPECTED_CASH: 'shift:compute-expected-cash'
+  SHIFT_COMPUTE_EXPECTED_CASH: 'shift:compute-expected-cash',
+
+  // App lifecycle
+  APP_CLOSE_REQUESTED: 'app:close-requested',
+  APP_CONFIRM_CLOSE: 'app:confirm-close'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

@@ -7,11 +7,15 @@ import { LoginPage } from './pages/LoginPage'
 import { SetupWizardPage } from './pages/SetupWizardPage'
 import { UpdateNotification } from './components/UpdateNotification'
 import { StartShiftModal } from './components/pos/StartShiftModal'
+import { EndShiftModal } from './components/pos/EndShiftModal'
 
 function App(): React.JSX.Element {
-  const { user, isAuthenticated, logout } = useAuthStore()
-  const { currentShift, setCurrentShift } = useShiftStore()
+  const { user, isAuthenticated } = useAuthStore()
+  const { currentShift } = useShiftStore()
   const [isFirstRun, setIsFirstRun] = useState<boolean | null>(null)
+  const [endShiftOpen, setEndShiftOpen] = useState(false)
+  // True when the modal was triggered by the OS close button / Alt+F4
+  const [closeWindowOnEnd, setCloseWindowOnEnd] = useState(false)
 
   useEffect(() => {
     const checkFirstRun = async () => {
@@ -22,10 +26,35 @@ function App(): React.JSX.Element {
     useSettingsStore.getState().loadSettings()
   }, [])
 
-  // Plain logout: clears shift from memory (shift stays open in DB, resumed on next login)
-  const handleLogout = () => {
-    setCurrentShift(null)
-    logout()
+  // Intercept OS window-close (Alt+F4, title-bar X).
+  // The main process sends APP_CLOSE_REQUESTED instead of closing immediately.
+  // We show the EndShift modal; when the shift ends we send APP_CONFIRM_CLOSE.
+  useEffect(() => {
+    const handler = () => {
+      if (currentShift) {
+        setCloseWindowOnEnd(true)
+        setEndShiftOpen(true)
+      } else {
+        // No active shift — safe to close immediately
+        window.electron.ipcRenderer.send('app:confirm-close')
+      }
+    }
+    window.electron.ipcRenderer.on('app:close-requested', handler)
+    return () => {
+      window.electron.ipcRenderer.removeListener('app:close-requested', handler)
+    }
+  }, [currentShift])
+
+  const handleEndShiftClose = () => {
+    setEndShiftOpen(false)
+    setCloseWindowOnEnd(false)
+  }
+
+  const handleShiftEnded = () => {
+    if (closeWindowOnEnd) {
+      window.electron.ipcRenderer.send('app:confirm-close')
+    }
+    handleEndShiftClose()
   }
 
   if (isFirstRun === null) {
@@ -67,7 +96,12 @@ function App(): React.JSX.Element {
 
   return (
     <>
-      <MainLayout user={user} onLogout={handleLogout} />
+      <MainLayout user={user} onEndShift={() => setEndShiftOpen(true)} />
+      <EndShiftModal
+        open={endShiftOpen}
+        onClose={handleEndShiftClose}
+        onShiftEnded={handleShiftEnded}
+      />
       <UpdateNotification />
     </>
   )

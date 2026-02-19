@@ -178,6 +178,9 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
     bodyStyles: { fontSize: 8, textColor: [...DARK] },
     alternateRowStyles: { fillColor: [...SURFACE] },
     columnStyles: { 0: { halign: 'left' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    didParseCell: ({ cell, column }: any) => {
+      if (column.index > 0) cell.styles.halign = 'right'
+    },
     margin: { left: 14, right: 14 }
   })
 
@@ -200,6 +203,9 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
     bodyStyles: { fontSize: 8, textColor: [...DARK] },
     alternateRowStyles: { fillColor: [...SURFACE] },
     columnStyles: { 0: { halign: 'left' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    didParseCell: ({ cell, column }: any) => {
+      if (column.index > 0) cell.styles.halign = 'right'
+    },
     margin: { left: 14, right: 14 }
   })
 
@@ -221,6 +227,9 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
     bodyStyles: { fontSize: 8, textColor: [...DARK] },
     alternateRowStyles: { fillColor: [...SURFACE] },
     columnStyles: { 0: { halign: 'left' }, 1: { halign: 'right' }, 2: { halign: 'right' } },
+    didParseCell: ({ cell, column }: any) => {
+      if (column.index > 0) cell.styles.halign = 'right'
+    },
     margin: { left: 14, right: 14 }
   })
 
@@ -278,6 +287,9 @@ function buildInventoryPdf(data: InventoryValuationData, businessName: string, s
       3: { halign: 'right' },
       4: { halign: 'right' }
     },
+    didParseCell: ({ cell, column }: any) => {
+      if (column.index > 0) cell.styles.halign = 'right'
+    },
     margin: { left: 14, right: 14 }
   })
 
@@ -308,6 +320,9 @@ function buildInventoryPdf(data: InventoryValuationData, businessName: string, s
       3: { halign: 'right' },
       4: { halign: 'right' },
       5: { halign: 'right' }
+    },
+    didParseCell: ({ cell, column }: any) => {
+      if (column.index > 0) cell.styles.halign = 'right'
     },
     margin: { left: 14, right: 14 }
   })
@@ -364,6 +379,9 @@ function buildProfitLossPdf(data: ProfitLossData, businessName: string, sym: str
       2: { halign: 'right' },
       3: { halign: 'right' },
       4: { halign: 'right' }
+    },
+    didParseCell: ({ cell, column }: any) => {
+      if (column.index > 0) cell.styles.halign = 'right'
     },
     margin: { left: 14, right: 14 }
   })

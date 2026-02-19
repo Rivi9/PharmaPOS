@@ -85,6 +85,22 @@ app.whenReady().then(() => {
 
   const mainWindow = createWindow()
 
+  // ── Window close interception ──────────────────────────────────────────────
+  // Prevent Alt+F4 / OS close from killing the app immediately.
+  // Instead, send a signal to the renderer so it can show the EndShift modal.
+  // The renderer sends APP_CONFIRM_CLOSE when the user has finished the modal.
+  let allowClose = false
+  mainWindow.on('close', (event) => {
+    if (!allowClose) {
+      event.preventDefault()
+      mainWindow.webContents.send(IPC_CHANNELS.APP_CLOSE_REQUESTED)
+    }
+  })
+  ipcMain.on(IPC_CHANNELS.APP_CONFIRM_CLOSE, () => {
+    allowClose = true
+    mainWindow.close()
+  })
+
   // ── Web Serial API — grant port access automatically ──────────────────────
   // This intercepts navigator.serial.requestPort() calls from the renderer.
   // The pole-display module uses it to list ports and to auto-select by name.

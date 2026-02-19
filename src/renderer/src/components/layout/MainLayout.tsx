@@ -8,10 +8,10 @@ import { CustomersPage } from '@renderer/pages/CustomersPage'
 
 interface MainLayoutProps {
   user: { full_name: string; role: string } | null
-  onLogout: () => void
+  onEndShift: () => void
 }
 
-export function MainLayout({ user, onLogout }: MainLayoutProps): React.JSX.Element {
+export function MainLayout({ user, onEndShift }: MainLayoutProps): React.JSX.Element {
   const [currentPage, setCurrentPage] = useState('pos')
 
   const renderPage = (): React.JSX.Element => {
@@ -41,7 +41,11 @@ export function MainLayout({ user, onLogout }: MainLayoutProps): React.JSX.Eleme
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      <Header user={user} onLogout={onLogout} />
+      <Header
+        user={user}
+        onEndShift={onEndShift}
+        onSettings={() => setCurrentPage('settings')}
+      />
       <div className="flex-1 flex overflow-hidden">
         <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
         <main className="flex-1 overflow-auto">{renderPage()}</main>
