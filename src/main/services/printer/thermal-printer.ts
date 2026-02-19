@@ -85,6 +85,18 @@ export function initializePrinter(config?: PrinterConfig): ThermalPrinter {
     }
   } else if (config.interface === 'usb' && config.path) {
     printerConfig.interface = 'printer:' + config.path
+    if (process.platform === 'win32') {
+      try {
+        // Windows spooler interface in node-thermal-printer requires the "printer" driver module.
+        // Without this, constructor fails with "No driver set!".
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        printerConfig.driver = require('printer')
+      } catch {
+        throw new Error(
+          'USB printer driver module is not available. On Windows, install and bundle the "printer" native dependency, or use Network (TCP/IP) printing.'
+        )
+      }
+    }
   } else if (config.interface === 'serial' && config.path) {
     printerConfig.interface = config.path
   } else {

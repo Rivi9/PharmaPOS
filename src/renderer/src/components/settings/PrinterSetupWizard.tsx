@@ -77,7 +77,12 @@ export function PrinterSetupWizard(): React.JSX.Element {
 
     try {
       // Initialize with current config
-      await window.electron.printer.initialize(config)
+      const initResult = (await window.electron.printer.initialize(config)) as
+        | { success?: boolean; error?: string }
+        | undefined
+      if (initResult && initResult.success === false) {
+        throw new Error(initResult.error || 'Failed to initialize printer')
+      }
 
       // Test print
       const result = await window.electron.printer.test()
@@ -97,7 +102,12 @@ export function PrinterSetupWizard(): React.JSX.Element {
   const handleSaveConfig = async () => {
     setIsLoading(true)
     try {
-      await window.electron.printer.saveConfig(config)
+      const saveResult = (await window.electron.printer.saveConfig(config)) as
+        | { success?: boolean; error?: string }
+        | undefined
+      if (saveResult && saveResult.success === false) {
+        throw new Error(saveResult.error || 'Failed to save printer configuration')
+      }
       alert('Printer configuration saved successfully!')
       setStep(1)
     } catch (error: any) {
