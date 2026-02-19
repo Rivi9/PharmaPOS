@@ -1,21 +1,73 @@
-MIT License
-
+COMMERCIAL SOFTWARE LICENSE AGREEMENT
+ 
 Copyright (c) 2025 PharmaPOS
+All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+IMPORTANT: This is proprietary software. By installing, copying, or using this
+software, you agree to be bound by the terms of this Commercial Software
+License Agreement (the "Agreement"). If you do not agree, do not install, copy,
+or use the software.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. DEFINITIONS
+  "Software" means the PharmaPOS software, including any updates, upgrades,
+  enhancements, modifications, and accompanying documentation.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2. LICENSE GRANT
+  Subject to your ongoing compliance with this Agreement and payment of any
+  applicable fees, PharmaPOS grants you a limited, non-exclusive,
+  non-transferable, non-sublicensable license to install and use the Software
+  solely for your internal business purposes.
+
+3. RESTRICTIONS
+  You must not, and must not permit any third party to:
+  a) copy the Software except as strictly necessary for backup purposes;
+  b) modify, adapt, translate, or create derivative works of the Software;
+  c) reverse engineer, decompile, disassemble, or otherwise attempt to
+     discover the source code or underlying ideas or algorithms of the
+     Software, except to the extent such restriction is prohibited by
+     applicable law;
+  d) rent, lease, lend, sell, redistribute, sublicense, assign, transfer, or
+     otherwise make the Software available to any third party;
+  e) remove, alter, or obscure any proprietary notices on the Software.
+
+4. OWNERSHIP
+  The Software is licensed, not sold. PharmaPOS and its licensors retain all
+  right, title, and interest in and to the Software, including all
+  intellectual property rights.
+
+5. SUPPORT AND UPDATES
+  Support, maintenance, and updates, if any, are provided only if purchased or
+  otherwise expressly agreed in writing by PharmaPOS.
+
+6. TERMINATION
+  This Agreement is effective until terminated. It will terminate
+  automatically without notice if you fail to comply with any term. Upon
+  termination, you must cease all use of the Software and destroy all copies.
+
+7. DISCLAIMER OF WARRANTIES
+  TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED
+  "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND. PHARMAPOS
+  DISCLAIMS ALL WARRANTIES, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE,
+  INCLUDING IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+  PURPOSE, TITLE, AND NON-INFRINGEMENT.
+
+8. LIMITATION OF LIABILITY
+  TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT WILL
+  PHARMAPOS BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR
+  PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS, REVENUE, DATA, OR BUSINESS
+  INTERRUPTION, ARISING OUT OF OR RELATED TO THE SOFTWARE OR THIS AGREEMENT,
+  EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. PHARMAPOS'S TOTAL
+  LIABILITY ARISING OUT OF OR RELATED TO THIS AGREEMENT WILL NOT EXCEED THE
+  AMOUNT PAID BY YOU FOR THE SOFTWARE IN THE TWELVE (12) MONTHS PRECEDING THE
+  EVENT GIVING RISE TO THE CLAIM.
+
+9. EXPORT COMPLIANCE
+  You agree to comply with all applicable export control and sanctions laws.
+
+10. GOVERNING LAW
+  This Agreement is governed by the laws of the jurisdiction where PharmaPOS
+  is established, without regard to conflict of law principles.
+
+11. ENTIRE AGREEMENT
+  This Agreement constitutes the entire agreement regarding the Software and
+  supersedes any prior or contemporaneous agreements or understandings.
