@@ -14,6 +14,7 @@ import { registerSetupHandlers } from './setup-handlers'
 import { registerUpdateHandlers } from './update-handlers'
 import { registerAuditHandlers } from './audit-handlers'
 import { registerCustomerHandlers } from './customer-handlers'
+import { computeShiftExpectedCash } from '../services/sales'
 
 export function registerIpcHandlers(): void {
   // Register POS handlers
@@ -81,7 +82,17 @@ export function registerIpcHandlers(): void {
         : user.pin_code === pin
       if (pinValid) {
         const { password_hash, ...safeUser } = user
-        logAudit({ userId: user.id, userName: user.full_name, action: 'USER_LOGIN', entityType: 'user', entityId: user.id })
+        const activeShift = db
+          .prepare(`SELECT opening_cash FROM shifts WHERE user_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`)
+          .get(user.id) as { opening_cash: number } | undefined
+        logAudit({
+          userId: user.id,
+          userName: user.full_name,
+          action: 'USER_LOGIN',
+          entityType: 'user',
+          entityId: user.id,
+          details: activeShift ? { opening_cash: activeShift.opening_cash } : undefined
+        })
         return { success: true, user: safeUser }
       }
     }
@@ -91,7 +102,17 @@ export function registerIpcHandlers(): void {
       const valid = await bcrypt.compare(password, user.password_hash)
       if (valid) {
         const { password_hash, ...safeUser } = user
-        logAudit({ userId: user.id, userName: user.full_name, action: 'USER_LOGIN', entityType: 'user', entityId: user.id })
+        const activeShift = db
+          .prepare(`SELECT opening_cash FROM shifts WHERE user_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`)
+          .get(user.id) as { opening_cash: number } | undefined
+        logAudit({
+          userId: user.id,
+          userName: user.full_name,
+          action: 'USER_LOGIN',
+          entityType: 'user',
+          entityId: user.id,
+          details: activeShift ? { opening_cash: activeShift.opening_cash } : undefined
+        })
         return { success: true, user: safeUser }
       }
     }
@@ -162,12 +183,39 @@ export function registerIpcHandlers(): void {
     `
     ).run(id, userId, openingCash)
 
+    const user = db.prepare('SELECT id, full_name FROM users WHERE id = ?').get(userId) as
+      | { id: string; full_name: string }
+      | undefined
+
+    logAudit({
+      userId,
+      userName: user?.full_name,
+      action: 'SHIFT_STARTED',
+      entityType: 'shift',
+      entityId: id,
+      details: { opening_cash: openingCash }
+    })
+
     return { success: true, shiftId: id }
   })
 
   // End shift
   ipcMain.handle(IPC_CHANNELS.SHIFT_END, (_, { shiftId, closingCash, notes }) => {
     const db = getDatabase()
+    const shift = db
+      .prepare(
+        `
+        SELECT s.id, s.user_id, s.opening_cash, u.full_name as user_name
+        FROM shifts s
+        JOIN users u ON s.user_id = u.id
+        WHERE s.id = ?
+      `
+      )
+      .get(shiftId) as { id: string; user_id: string; opening_cash: number; user_name: string } | undefined
+
+    const openingCash = shift?.opening_cash ?? 0
+    const expectedCash = computeShiftExpectedCash(shiftId, openingCash)
+    const cashDifference = closingCash - expectedCash
 
     db.prepare(
       `
@@ -176,6 +224,34 @@ export function registerIpcHandlers(): void {
       WHERE id = ?
     `
     ).run(closingCash, notes || null, shiftId)
+
+    if (shift) {
+      const cashDetails = {
+        opening_cash: openingCash,
+        expected_cash: expectedCash,
+        closing_cash: closingCash,
+        cash_difference: cashDifference,
+        notes: notes || null
+      }
+
+      logAudit({
+        userId: shift.user_id,
+        userName: shift.user_name,
+        action: 'SHIFT_ENDED',
+        entityType: 'shift',
+        entityId: shiftId,
+        details: cashDetails
+      })
+
+      logAudit({
+        userId: shift.user_id,
+        userName: shift.user_name,
+        action: 'USER_LOGOUT',
+        entityType: 'user',
+        entityId: shift.user_id,
+        details: { shift_id: shiftId, ...cashDetails }
+      })
+    }
 
     return { success: true }
   })

@@ -24,6 +24,9 @@ export function CartItem({
   onUpdateQuantity,
   onRemove
 }: CartItemProps): React.JSX.Element {
+  const maxStock = item.product.total_stock != null ? Math.max(0, Math.floor(item.product.total_stock)) : undefined
+  const isAtStockLimit = maxStock !== undefined && item.quantity >= maxStock
+
   const handleQuantityChange = (delta: number) => {
     const newQty = item.quantity + delta
     if (newQty < 1) return
@@ -80,12 +83,14 @@ export function CartItem({
           onChange={(e) => handleManualQuantityChange(e.target.value)}
           className="w-16 h-11 text-center text-base"
           min="1"
+          max={maxStock}
         />
         <Button
           size="icon"
           variant="outline"
           className="h-11 w-11"
           onClick={() => handleQuantityChange(1)}
+          disabled={isAtStockLimit}
         >
           <Plus className="h-4 w-4" />
         </Button>

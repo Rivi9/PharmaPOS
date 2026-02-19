@@ -49,11 +49,14 @@ export const usePOSStore = create<POSStore>((set, get) => ({
   // Add item to cart — stacks quantity if product already present
   addItem: (product, quantity) => {
     set((state) => {
+      const maxStock = product.total_stock != null ? Math.max(0, Math.floor(product.total_stock)) : Number.POSITIVE_INFINITY
+      const safeQty = Math.max(1, Math.floor(quantity))
       const existingIndex = state.items.findIndex((i) => i.product.id === product.id)
       if (existingIndex !== -1) {
         const items = [...state.items]
         const existing = items[existingIndex]
-        const newQty = existing.quantity + quantity
+        const newQty = Math.min(existing.quantity + safeQty, maxStock)
+        if (newQty === existing.quantity) return state
         items[existingIndex] = {
           ...existing,
           quantity: newQty,
@@ -62,10 +65,17 @@ export const usePOSStore = create<POSStore>((set, get) => ({
         return { items }
       }
       const unitPrice = product.unit_price
+      const initialQty = Math.min(safeQty, maxStock)
+      if (initialQty < 1) return state
       return {
         items: [
           ...state.items,
-          { product, quantity, unit_price: unitPrice, line_total: calculateLineTotal(unitPrice, quantity) }
+          {
+            product,
+            quantity: initialQty,
+            unit_price: unitPrice,
+            line_total: calculateLineTotal(unitPrice, initialQty)
+          }
         ]
       }
     })
@@ -77,11 +87,18 @@ export const usePOSStore = create<POSStore>((set, get) => ({
       const items = [...state.items]
       const item = items[index]
       if (!item) return state
+      const maxStock =
+        item.product.total_stock != null
+          ? Math.max(0, Math.floor(item.product.total_stock))
+          : Number.POSITIVE_INFINITY
+      const safeQty = Math.max(1, Math.floor(quantity))
+      const clampedQty = Math.min(safeQty, maxStock)
+      if (clampedQty < 1) return state
 
       items[index] = {
         ...item,
-        quantity,
-        line_total: calculateLineTotal(item.unit_price, quantity)
+        quantity: clampedQty,
+        line_total: calculateLineTotal(item.unit_price, clampedQty)
       }
 
       return { items }
