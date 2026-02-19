@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from './channels'
 import {
   initializePrinter,
+  getPrinterConfig,
   savePrinterConfig,
   testPrinter,
   openCashDrawer,
@@ -12,9 +13,18 @@ import {
 import { printReceipt, printShiftReport } from '../services/printer/receipt-formatter'
 
 export function registerPrinterHandlers(): void {
+  ipcMain.handle(IPC_CHANNELS.PRINTER_GET_CONFIG, () => {
+    return getPrinterConfig()
+  })
+
   ipcMain.handle(IPC_CHANNELS.PRINTER_INITIALIZE, (_event, config?: PrinterConfig) => {
-    initializePrinter(config)
-    return { success: true }
+    try {
+      initializePrinter(config)
+      return { success: true }
+    } catch (error) {
+      console.warn('Printer initialize failed:', (error as Error).message)
+      return { success: false, error: (error as Error).message }
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.PRINTER_TEST, async () => {
@@ -22,8 +32,13 @@ export function registerPrinterHandlers(): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.PRINTER_SAVE_CONFIG, (_event, config: PrinterConfig) => {
-    savePrinterConfig(config)
-    return { success: true }
+    try {
+      savePrinterConfig(config)
+      return { success: true }
+    } catch (error) {
+      console.warn('Printer save config failed:', (error as Error).message)
+      return { success: false, error: (error as Error).message }
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.PRINTER_LIST_USB, async () => {
@@ -31,19 +46,34 @@ export function registerPrinterHandlers(): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.PRINTER_PRINT_RECEIPT, async (_event, data) => {
-    const printer = getPrinter()
-    await printReceipt(printer, data)
-    return { success: true }
+    try {
+      const printer = getPrinter()
+      await printReceipt(printer, data)
+      return { success: true }
+    } catch (error) {
+      console.warn('Print receipt failed:', (error as Error).message)
+      return { success: false, error: (error as Error).message }
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.PRINTER_PRINT_SHIFT_REPORT, async (_event, data) => {
-    const printer = getPrinter()
-    await printShiftReport(printer, data)
-    return { success: true }
+    try {
+      const printer = getPrinter()
+      await printShiftReport(printer, data)
+      return { success: true }
+    } catch (error) {
+      console.warn('Print shift report failed:', (error as Error).message)
+      return { success: false, error: (error as Error).message }
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.PRINTER_OPEN_DRAWER, async () => {
-    await openCashDrawer()
-    return { success: true }
+    try {
+      await openCashDrawer()
+      return { success: true }
+    } catch (error) {
+      console.warn('Open cash drawer failed:', (error as Error).message)
+      return { success: false, error: (error as Error).message }
+    }
   })
 }

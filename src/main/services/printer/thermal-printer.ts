@@ -87,10 +87,36 @@ export function initializePrinter(config?: PrinterConfig): ThermalPrinter {
     printerConfig.interface = 'printer:' + config.path
   } else if (config.interface === 'serial' && config.path) {
     printerConfig.interface = config.path
+  } else {
+    const detail =
+      config.interface === 'usb'
+        ? 'No printer name/path configured for USB interface'
+        : config.interface === 'tcp'
+          ? 'No IP address configured for TCP interface'
+          : 'No path configured for Serial interface'
+    throw new Error(`${detail}. Please configure your printer in Settings.`)
   }
 
   printer = new ThermalPrinter(printerConfig)
   return printer
+}
+
+/**
+ * Read saved printer configuration from database
+ */
+export function getPrinterConfig(): PrinterConfig {
+  const db = getDatabase()
+  const get = (key: string) =>
+    (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value
+
+  return {
+    type: (get('printer_type') as PrinterConfig['type']) || 'epson',
+    interface: (get('printer_interface') as PrinterConfig['interface']) || 'usb',
+    path: get('printer_path'),
+    ip: get('printer_ip'),
+    port: get('printer_port') ? parseInt(get('printer_port')!) : 9100,
+    width: get('printer_width') ? parseInt(get('printer_width')!) : 42
+  }
 }
 
 /**

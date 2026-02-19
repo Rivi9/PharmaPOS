@@ -1,5 +1,11 @@
-import { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import { useState, useEffect } from 'react'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
@@ -13,10 +19,57 @@ export function PrinterSetupWizard(): React.JSX.Element {
     path: '',
     ip: '',
     port: 9100,
-    width: 48
+    width: 42
   })
   const [testResult, setTestResult] = useState<boolean | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [usbPrinters, setUsbPrinters] = useState<Array<{ name: string; path: string }>>([])
+  const [usbListLoading, setUsbListLoading] = useState(false)
+
+  const loadUsbPrinters = async (currentPath?: string) => {
+    setUsbListLoading(true)
+    try {
+      const list = await window.electron.printer.listUSB()
+      setUsbPrinters(list as Array<{ name: string; path: string }>)
+      if (list.length > 0 && !currentPath) {
+        setConfig((prev) => ({ ...prev, path: (list[0] as any).path }))
+      }
+    } catch {
+      setUsbPrinters([])
+    } finally {
+      setUsbListLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    window.electron.printer
+      .getConfig()
+      .then((saved: any) => {
+        if (saved) {
+          setConfig({
+            type: saved.type || 'epson',
+            interface: saved.interface || 'usb',
+            path: saved.path || '',
+            ip: saved.ip || '',
+            port: saved.port || 9100,
+            width: saved.width || 42
+          })
+          if (saved.interface === 'usb') {
+            loadUsbPrinters(saved.path)
+          }
+        }
+      })
+      .catch(() => {
+        /* no saved config yet */
+      })
+  }, [])
+
+  const handleInterfaceChange = (value: 'tcp' | 'usb' | 'serial') => {
+    setConfig({ ...config, interface: value, path: '' })
+    if (value === 'usb') {
+      loadUsbPrinters()
+    }
+  }
 
   const handleTestPrinter = async () => {
     setIsLoading(true)
@@ -86,7 +139,7 @@ export function PrinterSetupWizard(): React.JSX.Element {
               <select
                 id="printer-interface"
                 value={config.interface}
-                onChange={(e) => setConfig({ ...config, interface: e.target.value as any })}
+                onChange={(e) => handleInterfaceChange(e.target.value as any)}
                 className="w-full border rounded-md px-3 py-2"
               >
                 <option value="usb">USB</option>
@@ -97,15 +150,40 @@ export function PrinterSetupWizard(): React.JSX.Element {
 
             {config.interface === 'usb' && (
               <div>
-                <Label htmlFor="printer-path">USB Path</Label>
-                <Input
-                  id="printer-path"
-                  value={config.path}
-                  onChange={(e) => setConfig({ ...config, path: e.target.value })}
-                  placeholder="/dev/usb/lp0 or COM1"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <Label htmlFor="printer-path">Printer</Label>
+                  <button
+                    type="button"
+                    onClick={loadUsbPrinters}
+                    disabled={usbListLoading}
+                    className="text-xs text-primary underline disabled:opacity-50"
+                  >
+                    {usbListLoading ? 'Loading...' : 'Refresh list'}
+                  </button>
+                </div>
+                {usbPrinters.length > 0 ? (
+                  <select
+                    id="printer-path"
+                    value={config.path}
+                    onChange={(e) => setConfig({ ...config, path: e.target.value })}
+                    className="w-full border rounded-md px-3 py-2"
+                  >
+                    {usbPrinters.map((p) => (
+                      <option key={p.path} value={p.path}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <Input
+                    id="printer-path"
+                    value={config.path}
+                    onChange={(e) => setConfig({ ...config, path: e.target.value })}
+                    placeholder="Enter printer name (e.g. EPSON TM-T81III)"
+                  />
+                )}
                 <p className="text-xs text-muted-foreground mt-1">
-                  Common: /dev/usb/lp0 (Linux), COM1 (Windows), /dev/tty.usbserial (Mac)
+                  On Windows, this is the printer name shown in Devices &amp; Printers
                 </p>
               </div>
             )}
@@ -154,7 +232,7 @@ export function PrinterSetupWizard(): React.JSX.Element {
                 onChange={(e) => setConfig({ ...config, width: parseInt(e.target.value) })}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Common: 32 (58mm), 42 (76mm), 48 (80mm)
+                Common: 32 (58mm), 42 (80mm Font A), 56 (80mm Font B)
               </p>
             </div>
 

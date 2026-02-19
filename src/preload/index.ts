@@ -202,6 +202,7 @@ const electronAPI = {
 
   // Printer
   printer: {
+    getConfig: () => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_GET_CONFIG),
     initialize: (config?: unknown) => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_INITIALIZE, config),
     test: () => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_TEST),
     saveConfig: (config: unknown) => ipcRenderer.invoke(IPC_CHANNELS.PRINTER_SAVE_CONFIG, config),

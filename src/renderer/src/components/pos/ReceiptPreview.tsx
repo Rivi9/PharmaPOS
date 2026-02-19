@@ -78,12 +78,34 @@ export function ReceiptPreview({
     const dateStr = date.toLocaleDateString('en-LK')
     const timeStr = date.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' })
 
-    const LINE = '════════════════════════════════'
-    const line = '────────────────────────────────'
+    const W = 42
+    const LINE = '═'.repeat(W)
+    const line = '─'.repeat(W)
+
+    const centered = (s: string): string => {
+      if (s.length <= W) {
+        return s.padStart(Math.floor((W + s.length) / 2)).padEnd(W)
+      }
+      // Word-wrap long strings onto multiple centered lines
+      const words = s.split(' ')
+      const lines: string[] = []
+      let current = ''
+      for (const word of words) {
+        const candidate = current ? `${current} ${word}` : word
+        if (candidate.length <= W) {
+          current = candidate
+        } else {
+          if (current) lines.push(current)
+          current = word.length <= W ? word : word.slice(0, W)
+        }
+      }
+      if (current) lines.push(current)
+      return lines
+        .map((l) => l.padStart(Math.floor((W + l.length) / 2)).padEnd(W))
+        .join('\n')
+    }
 
     let text = `\n${LINE}\n`
-    // Center business name (32 char line)
-    const centered = (s: string) => s.slice(0, 32).padStart(Math.floor((32 + s.length) / 2)).padEnd(32)
     text += `${centered(businessName)}\n`
     if (businessAddress) text += `${centered(businessAddress)}\n`
     if (businessPhone) text += `${centered('Tel: ' + businessPhone)}\n`
@@ -167,22 +189,22 @@ export function ReceiptPreview({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md max-h-[90vh]">
-        <DialogHeader>
+      <DialogContent className="max-w-md flex flex-col" style={{ maxHeight: '90vh' }}>
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>Receipt - {receiptNumber}</DialogTitle>
         </DialogHeader>
 
         {loading && <div className="p-8 text-center text-muted-foreground">Loading receipt...</div>}
 
         {!loading && receipt && (
-          <div className="space-y-4">
+          <div className="flex flex-col gap-4 flex-1 min-h-0">
             {/* Receipt Display */}
-            <div className="border rounded-lg p-4 bg-white text-black overflow-auto max-h-[55vh]">
+            <div className="border rounded-lg p-4 bg-white text-black overflow-auto flex-1 min-h-0">
               <pre className="font-mono text-xs whitespace-pre">{formatReceiptText()}</pre>
             </div>
 
             {/* Actions */}
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-shrink-0">
               <Button
                 variant="outline"
                 onClick={handleCopyToClipboard}
@@ -206,7 +228,7 @@ export function ReceiptPreview({
               </Button>
             </div>
 
-            <p className="text-xs text-center text-muted-foreground">
+            <p className="text-xs text-center text-muted-foreground flex-shrink-0">
               Business info is configured in Settings
             </p>
           </div>

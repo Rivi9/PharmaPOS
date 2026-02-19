@@ -120,6 +120,7 @@ export const IPC_CHANNELS = {
   USER_GET_PERMISSIONS: 'user:get-permissions',
 
   // Printer
+  PRINTER_GET_CONFIG: 'printer:get-config',
   PRINTER_INITIALIZE: 'printer:initialize',
   PRINTER_TEST: 'printer:test',
   PRINTER_SAVE_CONFIG: 'printer:save-config',

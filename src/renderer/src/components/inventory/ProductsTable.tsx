@@ -22,7 +22,14 @@ export function ProductsTable({ products, onEdit, onDelete }: ProductsTableProps
     () => [
       columnHelper.accessor('sku', {
         header: 'SKU',
-        cell: (info) => info.getValue() || '-'
+        cell: (info) => {
+          const v = info.getValue()
+          return (
+            <div className="max-w-[120px] truncate" title={v || undefined}>
+              {v || '-'}
+            </div>
+          )
+        }
       }),
       columnHelper.accessor('name', {
         header: 'Product Name',
@@ -37,7 +44,14 @@ export function ProductsTable({ products, onEdit, onDelete }: ProductsTableProps
       }),
       columnHelper.accessor('barcode', {
         header: 'Barcode',
-        cell: (info) => info.getValue() || '-'
+        cell: (info) => {
+          const v = info.getValue()
+          return (
+            <div className="max-w-[140px] truncate font-mono text-xs" title={v || undefined}>
+              {v || '-'}
+            </div>
+          )
+        }
       }),
       columnHelper.accessor('category_name', {
         header: 'Category',
@@ -106,7 +120,7 @@ export function ProductsTable({ products, onEdit, onDelete }: ProductsTableProps
 
   return (
     <div className="rounded-md border">
-      <table className="w-full">
+      <table className="w-full table-fixed">
         <thead className="bg-muted">
           {table.getHeaderGroups().map((headerGroup) => (
             <tr key={headerGroup.id}>
