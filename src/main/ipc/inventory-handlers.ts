@@ -4,6 +4,7 @@ import { IPC_CHANNELS } from './channels'
 import { withPermission } from './middleware'
 import * as inventory from '../services/inventory'
 import { logAudit } from '../services/audit'
+import { getDatabase } from '../services/database'
 
 /** Wraps a handler in a { success, data } / { success, error } envelope. */
 async function wrap<T>(fn: () => Promise<T> | T): Promise<{ success: true; data: T } | { success: false; error: string }> {
@@ -165,24 +166,47 @@ export function registerInventoryHandlers(): void {
 
         const costPrice = parseFloat(String(row['cost_price'] ?? row['Cost Price'] ?? '0'))
         const unitPrice = parseFloat(String(row['unit_price'] ?? row['Unit Price'] ?? row['Selling Price'] ?? '0'))
+        const rawCurrentStock =
+          row['current_stock'] ??
+          row['Current Stock'] ??
+          row['current stock'] ??
+          row['stock'] ??
+          row['Stock'] ??
+          ''
+        const currentStockText = String(rawCurrentStock).trim()
+        const currentStock = currentStockText === '' ? 0 : parseFloat(currentStockText)
 
         if (isNaN(costPrice) || isNaN(unitPrice)) {
           errors.push(`Row ${rowNum}: invalid cost_price or unit_price for "${name}"`)
           continue
         }
+        if (isNaN(currentStock) || currentStock < 0) {
+          errors.push(`Row ${rowNum}: invalid current_stock for "${name}"`)
+          continue
+        }
 
         try {
-          inventory.createProduct({
-            name,
-            generic_name: String(row['generic_name'] ?? row['Generic Name'] ?? '').trim() || undefined,
-            barcode: String(row['barcode'] ?? row['Barcode'] ?? '').trim() || undefined,
-            sku: String(row['sku'] ?? row['SKU'] ?? '').trim() || undefined,
-            cost_price: costPrice,
-            unit_price: unitPrice,
-            tax_rate: parseFloat(String(row['tax_rate'] ?? row['Tax Rate'] ?? '0')) || 0,
-            reorder_level: parseInt(String(row['reorder_level'] ?? row['Reorder Level'] ?? '5')) || 5,
-            unit: String(row['unit'] ?? row['Unit'] ?? 'pcs').trim() || 'pcs'
-          })
+          const db = getDatabase()
+          db.transaction(() => {
+            const created = inventory.createProduct({
+              name,
+              generic_name: String(row['generic_name'] ?? row['Generic Name'] ?? '').trim() || undefined,
+              barcode: String(row['barcode'] ?? row['Barcode'] ?? '').trim() || undefined,
+              sku: String(row['sku'] ?? row['SKU'] ?? '').trim() || undefined,
+              cost_price: costPrice,
+              unit_price: unitPrice,
+              tax_rate: parseFloat(String(row['tax_rate'] ?? row['Tax Rate'] ?? '0')) || 0,
+              reorder_level: parseInt(String(row['reorder_level'] ?? row['Reorder Level'] ?? '5')) || 5,
+              unit: String(row['unit'] ?? row['Unit'] ?? 'pcs').trim() || 'pcs'
+            })
+            if (currentStock > 0) {
+              inventory.createStockBatch({
+                product_id: created.id,
+                quantity: currentStock,
+                cost_price: costPrice
+              })
+            }
+          })()
           imported++
         } catch (err: any) {
           errors.push(`Row ${rowNum} "${name}": ${err.message}`)

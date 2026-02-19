@@ -261,6 +261,7 @@ export function InventoryPage(): React.JSX.Element {
       const result = await window.electron.importProductsExcel(userId)
       if (!result.canceled) {
         await loadProducts()
+        await loadStockBatches()
         await loadLowStockProducts()
         setImportResult({ imported: result.imported, errors: result.errors })
       }
