@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuthStore } from './stores/authStore'
 import { useShiftStore } from './stores/shiftStore'
 import { useSettingsStore } from './stores/settingsStore'
@@ -17,6 +17,12 @@ function App(): React.JSX.Element {
   // True when the modal was triggered by the OS close button / Alt+F4
   const [closeWindowOnEnd, setCloseWindowOnEnd] = useState(false)
 
+  // Keep a ref so the IPC handler registered once on mount always sees the latest shift.
+  const currentShiftRef = useRef(currentShift)
+  useEffect(() => {
+    currentShiftRef.current = currentShift
+  }, [currentShift])
+
   useEffect(() => {
     const checkFirstRun = async () => {
       const firstRun = await window.electron.setup.isFirstRun()
@@ -27,11 +33,11 @@ function App(): React.JSX.Element {
   }, [])
 
   // Intercept OS window-close (Alt+F4, title-bar X).
-  // The main process sends APP_CLOSE_REQUESTED instead of closing immediately.
-  // We show the EndShift modal; when the shift ends we send APP_CONFIRM_CLOSE.
+  // Register once on mount (empty deps) — the ref ensures we always read the current shift.
+  // Main process sends APP_CLOSE_REQUESTED; we show EndShift or confirm close immediately.
   useEffect(() => {
     const handler = () => {
-      if (currentShift) {
+      if (currentShiftRef.current) {
         setCloseWindowOnEnd(true)
         setEndShiftOpen(true)
       } else {
@@ -43,7 +49,7 @@ function App(): React.JSX.Element {
     return () => {
       window.electron.ipcRenderer.removeListener('app:close-requested', handler)
     }
-  }, [currentShift])
+  }, []) // empty: register once, never re-register
 
   const handleEndShiftClose = () => {
     setEndShiftOpen(false)

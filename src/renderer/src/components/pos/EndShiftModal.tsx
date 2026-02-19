@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { LogOut, Clock, ShoppingBag, Banknote, Delete } from 'lucide-react'
+import { LogOut, Clock, ShoppingBag, Banknote } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
 import { Label } from '@renderer/components/ui/label'
 import { Input } from '@renderer/components/ui/input'
+import { CashNumpad } from '@renderer/components/ui/cash-numpad'
 import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useAuthStore } from '@renderer/stores/authStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
@@ -70,17 +71,6 @@ export function EndShiftModal({ open, onClose, onShiftEnded }: EndShiftModalProp
   const expectedCash = computedExpectedCash ?? 0
   const cashDifference = closingCashNum - expectedCash
 
-  const handleNumpadKey = (key: string) => {
-    if (key === 'backspace') {
-      setClosingCash((v) => v.slice(0, -1))
-      return
-    }
-    if (key === '.' && closingCash.includes('.')) return
-    const dotIndex = closingCash.indexOf('.')
-    if (dotIndex !== -1 && closingCash.length - dotIndex > 2) return
-    setClosingCash((v) => v + key)
-  }
-
   const handleEndShift = async () => {
     if (!currentShift) return
     setLoading(true)
@@ -102,7 +92,7 @@ export function EndShiftModal({ open, onClose, onShiftEnded }: EndShiftModalProp
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="text-xl flex items-center gap-2">
             <LogOut className="h-5 w-5" />
@@ -177,18 +167,7 @@ export function EndShiftModal({ open, onClose, onShiftEnded }: EndShiftModalProp
                 {currencySymbol}&nbsp;{closingCash || '0.00'}
               </p>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', 'backspace'].map((key) => (
-                <Button
-                  key={key}
-                  variant="outline"
-                  className="h-11 text-lg font-semibold"
-                  onClick={() => handleNumpadKey(key)}
-                >
-                  {key === 'backspace' ? <Delete className="h-4 w-4" /> : key}
-                </Button>
-              ))}
-            </div>
+            <CashNumpad value={closingCash} onChange={setClosingCash} onSubmit={handleEndShift} buttonClassName="h-11" />
           </div>
 
           {/* Notes */}

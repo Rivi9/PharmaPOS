@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { CreditCard, Banknote, Split, Delete } from 'lucide-react'
+import { CreditCard, Banknote, Split } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
 import { Label } from '@renderer/components/ui/label'
+import { CashNumpad } from '@renderer/components/ui/cash-numpad'
 import { usePOSStore } from '@renderer/stores/posStore'
 import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
@@ -102,19 +103,6 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
       const remaining = Math.max(0, total - cash)
       setCardAmount(remaining.toFixed(2))
     }
-  }
-
-  // Numpad key handler — builds cash string digit by digit
-  const handleNumpadKey = (key: string) => {
-    if (key === 'backspace') {
-      updateCash(cashReceived.slice(0, -1))
-      return
-    }
-    if (key === '.' && cashReceived.includes('.')) return
-    // Limit to 2 decimal places
-    const dotIndex = cashReceived.indexOf('.')
-    if (dotIndex !== -1 && cashReceived.length - dotIndex > 2) return
-    updateCash(cashReceived + key)
   }
 
   const validatePayment = (): boolean => {
@@ -281,20 +269,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
               </div>
 
               {/* Touch Numpad */}
-              <div className="grid grid-cols-3 gap-2">
-                {['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', 'backspace'].map(
-                  (key) => (
-                    <Button
-                      key={key}
-                      variant="outline"
-                      className="h-14 text-xl font-semibold"
-                      onClick={() => handleNumpadKey(key)}
-                    >
-                      {key === 'backspace' ? <Delete className="h-5 w-5" /> : key}
-                    </Button>
-                  )
-                )}
-              </div>
+              <CashNumpad value={cashReceived} onChange={updateCash} onSubmit={handleComplete} buttonClassName="h-14 text-xl" />
 
               {/* Change display */}
               {paymentMethod === 'cash' && cashReceivedNum > 0 && (

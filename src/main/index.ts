@@ -16,6 +16,11 @@ import { getDatabase } from './services/database'
 initializeErrorTracking()
 setupGlobalErrorHandlers()
 
+// Module-level flag: set to true once the user has confirmed close via EndShift.
+// Shared between the 'close' event handler and the 'before-quit' backup layer.
+let closingConfirmed = false
+let mainWindowRef: BrowserWindow | null = null
+
 // Log app start
 logInfo('Application starting', {
   version: app.getVersion(),
@@ -84,21 +89,24 @@ app.whenReady().then(() => {
   ipcMain.on('ping', () => console.log('pong'))
 
   const mainWindow = createWindow()
+  mainWindowRef = mainWindow
 
   // ── Window close interception ──────────────────────────────────────────────
-  // Prevent Alt+F4 / OS close from killing the app immediately.
-  // Instead, send a signal to the renderer so it can show the EndShift modal.
-  // The renderer sends APP_CONFIRM_CLOSE when the user has finished the modal.
-  let allowClose = false
+  // Dual-layer protection against Alt+F4 / OS close button.
+  // Layer 1: mainWindow 'close' event — preventDefault() stops normal close.
+  // Layer 2: app 'before-quit' — catches app.quit() if layer 1 fails on Windows.
+  // The renderer sends APP_CONFIRM_CLOSE when the user completes End Shift
+  // (or when there is no active shift). Only then do we allow the app to exit.
   mainWindow.on('close', (event) => {
-    if (!allowClose) {
+    if (!closingConfirmed) {
       event.preventDefault()
       mainWindow.webContents.send(IPC_CHANNELS.APP_CLOSE_REQUESTED)
     }
   })
+
   ipcMain.on(IPC_CHANNELS.APP_CONFIRM_CLOSE, () => {
-    allowClose = true
-    mainWindow.close()
+    closingConfirmed = true
+    mainWindow.destroy()
   })
 
   // ── Web Serial API — grant port access automatically ──────────────────────
@@ -213,8 +221,25 @@ app.on('window-all-closed', () => {
   }
 })
 
-// Close database and pole display before quitting
-app.on('before-quit', () => {
+// Before-quit fires when app.quit() is called (triggered by window-all-closed on Windows).
+// Layer 2: if closingConfirmed is still false here, the OS forced a quit without going
+// through our EndShift flow. Intercept, restore the window, and re-send the close signal.
+// If closingConfirmed is true, the window is already destroyed — just run cleanup.
+app.on('before-quit', (event) => {
+  if (!closingConfirmed) {
+    event.preventDefault()
+    const win = mainWindowRef
+    if (win && !win.isDestroyed()) {
+      win.show()
+      win.focus()
+      win.webContents.send(IPC_CHANNELS.APP_CLOSE_REQUESTED)
+    } else {
+      // No window to restore — nothing we can do, allow quit
+      closingConfirmed = true
+    }
+    return
+  }
+  // Confirmed — run cleanup before the process exits
   poleDisplay.closeDisplay().catch(() => {})
   closeDatabase()
 })

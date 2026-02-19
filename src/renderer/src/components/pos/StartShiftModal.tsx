@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { LogIn, Delete } from 'lucide-react'
+import { LogIn } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
+import { CashNumpad } from '@renderer/components/ui/cash-numpad'
 import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useAuthStore } from '@renderer/stores/authStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
@@ -21,17 +22,6 @@ export function StartShiftModal(): React.JSX.Element {
   const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
 
   const cashAmount = parseFloat(openingCash) || 0
-
-  const handleNumpadKey = (key: string) => {
-    if (key === 'backspace') {
-      setOpeningCash((v) => v.slice(0, -1))
-      return
-    }
-    if (key === '.' && openingCash.includes('.')) return
-    const dotIndex = openingCash.indexOf('.')
-    if (dotIndex !== -1 && openingCash.length - dotIndex > 2) return
-    setOpeningCash((v) => v + key)
-  }
 
   const handleStartShift = async () => {
     if (!user) return
@@ -78,18 +68,7 @@ export function StartShiftModal(): React.JSX.Element {
         </div>
 
         {/* Numpad */}
-        <div className="grid grid-cols-3 gap-2">
-          {['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', 'backspace'].map((key) => (
-            <Button
-              key={key}
-              variant="outline"
-              className="h-14 text-xl font-semibold"
-              onClick={() => handleNumpadKey(key)}
-            >
-              {key === 'backspace' ? <Delete className="h-5 w-5" /> : key}
-            </Button>
-          ))}
-        </div>
+        <CashNumpad value={openingCash} onChange={setOpeningCash} onSubmit={handleStartShift} buttonClassName="h-14 text-xl" />
 
         {/* Start shift */}
         <Button
