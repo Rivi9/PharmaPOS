@@ -193,7 +193,19 @@ export function PrinterSetupWizard(): React.JSX.Element {
                   />
                 )}
                 <p className="text-xs text-muted-foreground mt-1">
-                  On Windows, this is the printer name shown in Devices &amp; Printers
+                  USB printing requires the <strong>WinUSB</strong> driver.{' '}
+                  Download{' '}
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      window.open('https://zadig.akeo.ie')
+                    }}
+                    className="underline"
+                  >
+                    Zadig
+                  </a>
+                  , select your printer, and install WinUSB. Then click Refresh.
                 </p>
               </div>
             )}
