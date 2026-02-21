@@ -73,6 +73,7 @@ export async function printReceipt(
         return
       }
 
+      try {
       const p = instance.printer
 
       // Header
@@ -116,6 +117,9 @@ export async function printReceipt(
         .style('NORMAL')
 
       // Items
+      if (data.items.length === 0) {
+        p.text('(no items)\n')
+      }
       for (const item of data.items) {
         p.text(
           tableRow(
@@ -238,6 +242,10 @@ export async function printReceipt(
           if (closeErr) reject(closeErr)
           else resolve()
         })
+      } catch (e) {
+        instance.device.close?.()
+        reject(e)
+      }
     })
   })
 }
@@ -277,6 +285,7 @@ export async function printShiftReport(
         return
       }
 
+      try {
       const p = instance.printer
       const row = (left: string, right: string): string =>
         tableRow(
@@ -328,6 +337,10 @@ export async function printShiftReport(
           if (closeErr) reject(closeErr)
           else resolve()
         })
+      } catch (e) {
+        instance.device.close?.()
+        reject(e)
+      }
     })
   })
 }
