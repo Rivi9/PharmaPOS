@@ -64,6 +64,6 @@ npmRebuild: false
 
 publish:
   provider: github
-  owner: your-org
+  owner: Rivi9
   repo: pharmapos
   releaseType: release
