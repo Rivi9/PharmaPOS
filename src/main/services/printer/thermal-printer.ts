@@ -86,15 +86,21 @@ export function getPrinter(): EscposPrinterInstance {
     device = new Network(config.ip, config.port || 9100)
   } else if (config.interface === 'usb') {
     if (config.path) {
-      // path format: "vid:pid" (decimal, e.g. "1224:3586")
+      // path format: "vid:pid" (decimal integers, e.g. "1208:3598")
       const [vidStr, pidStr] = config.path.split(':')
-      const vid = parseInt(vidStr)
-      const pid = parseInt(pidStr)
-      if (!isNaN(vid) && !isNaN(pid)) {
+      const vid = parseInt(vidStr, 10)
+      const pid = parseInt(pidStr, 10)
+      if (
+        !isNaN(vid) &&
+        !isNaN(pid) &&
+        vidStr.trim() === String(vid) &&
+        pidStr.trim() === String(pid)
+      ) {
         device = new USB(vid, pid)
       } else {
-        // Fallback: auto-detect first available USB printer
-        device = new USB()
+        throw new Error(
+          `Invalid USB path format "${config.path}". Expected decimal "vid:pid", e.g. "1208:3598". Reconfigure printer in Settings.`
+        )
       }
     } else {
       // Auto-detect first available USB printer
