@@ -9,8 +9,8 @@ import { getDatabase } from '../database'
 
 export interface PrinterConfig {
   type: 'epson' | 'star' | 'generic'
-  interface: 'tcp' | 'usb' | 'serial'
-  path?: string // USB: "vid:pid" e.g. "1224:3586"; serial: "COM3"
+  interface: 'tcp' | 'usb'
+  path?: string // USB: "vid:pid" decimal e.g. "1208:3598"
   ip?: string // TCP only
   port?: number // TCP only (default: 9100)
   width?: number // receipt width in chars (default: 42)
@@ -36,8 +36,11 @@ export function initializePrinter(config?: PrinterConfig): void {
 
   const db = getDatabase()
   const get = (key: string): string | undefined =>
-    (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)
-      ?.value
+    (
+      db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+        | { value: string }
+        | undefined
+    )?.value
 
   storedConfig = {
     type: (get('printer_type') as PrinterConfig['type']) || 'epson',
@@ -53,8 +56,11 @@ export function initializePrinter(config?: PrinterConfig): void {
 export function getPrinterConfig(): PrinterConfig {
   const db = getDatabase()
   const get = (key: string): string | undefined =>
-    (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)
-      ?.value
+    (
+      db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+        | { value: string }
+        | undefined
+    )?.value
 
   return {
     type: (get('printer_type') as PrinterConfig['type']) || 'epson',

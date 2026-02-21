@@ -15,7 +15,7 @@ export function PrinterSetupWizard(): React.JSX.Element {
   const [step, setStep] = useState(1)
   const [config, setConfig] = useState({
     type: 'epson' as 'epson' | 'star' | 'generic',
-    interface: 'usb' as 'tcp' | 'usb' | 'serial',
+    interface: 'usb' as 'tcp' | 'usb',
     path: '',
     ip: '',
     port: 9100,
@@ -64,7 +64,7 @@ export function PrinterSetupWizard(): React.JSX.Element {
       })
   }, [])
 
-  const handleInterfaceChange = (value: 'tcp' | 'usb' | 'serial') => {
+  const handleInterfaceChange = (value: 'tcp' | 'usb') => {
     setConfig({ ...config, interface: value, path: '' })
     if (value === 'usb') {
       loadUsbPrinters()
@@ -149,12 +149,11 @@ export function PrinterSetupWizard(): React.JSX.Element {
               <select
                 id="printer-interface"
                 value={config.interface}
-                onChange={(e) => handleInterfaceChange(e.target.value as any)}
+                onChange={(e) => handleInterfaceChange(e.target.value as 'tcp' | 'usb')}
                 className="w-full border rounded-md px-3 py-2"
               >
                 <option value="usb">USB</option>
                 <option value="tcp">Network (TCP/IP)</option>
-                <option value="serial">Serial Port</option>
               </select>
             </div>
 
@@ -193,8 +192,7 @@ export function PrinterSetupWizard(): React.JSX.Element {
                   />
                 )}
                 <p className="text-xs text-muted-foreground mt-1">
-                  USB printing requires the <strong>WinUSB</strong> driver.{' '}
-                  Download{' '}
+                  USB printing requires the <strong>WinUSB</strong> driver. Download{' '}
                   <a
                     href="#"
                     onClick={(e) => {
@@ -231,18 +229,6 @@ export function PrinterSetupWizard(): React.JSX.Element {
                   />
                 </div>
               </>
-            )}
-
-            {config.interface === 'serial' && (
-              <div>
-                <Label htmlFor="printer-serial">Serial Port</Label>
-                <Input
-                  id="printer-serial"
-                  value={config.path}
-                  onChange={(e) => setConfig({ ...config, path: e.target.value })}
-                  placeholder="/dev/ttyS0 or COM1"
-                />
-              </div>
             )}
 
             <div>

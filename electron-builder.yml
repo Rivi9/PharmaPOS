@@ -60,6 +60,9 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 
+# Native modules (better-sqlite3, usb) are rebuilt manually via `npm run rebuild-native`
+# which runs before electron-builder in the `npm run build` script.
+# Always build via `npm run build` — never invoke electron-builder directly.
 npmRebuild: false
 
 publish:
