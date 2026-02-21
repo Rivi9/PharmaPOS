@@ -1,125 +1,60 @@
-import { ThermalPrinter, PrinterTypes } from 'node-thermal-printer'
-import { getDatabase } from '../database'
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const escpos = require('escpos')
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const USB = require('escpos-usb')
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const Network = require('escpos-network')
 
-let printer: ThermalPrinter | null = null
+import { getDatabase } from '../database'
 
 export interface PrinterConfig {
   type: 'epson' | 'star' | 'generic'
   interface: 'tcp' | 'usb' | 'serial'
-  path?: string
-  ip?: string
-  port?: number
-  characterSet?: string
-  removeSpecialCharacters?: boolean
-  lineCharacter?: string
-  width?: number
+  path?: string // USB: "vid:pid" e.g. "1224:3586"; serial: "COM3"
+  ip?: string // TCP only
+  port?: number // TCP only (default: 9100)
+  width?: number // receipt width in chars (default: 42)
 }
 
-/**
- * Initialize printer with configuration
- */
-export function initializePrinter(config?: PrinterConfig): ThermalPrinter {
+/** Returned by getPrinter() — passed to receipt-formatter functions */
+export interface EscposPrinterInstance {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  device: any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  printer: any
+  width: number
+}
+
+let storedConfig: PrinterConfig | null = null
+
+/** Load config from DB, validate, store in module state */
+export function initializePrinter(config?: PrinterConfig): void {
+  if (config) {
+    storedConfig = config
+    return
+  }
+
   const db = getDatabase()
+  const get = (key: string): string | undefined =>
+    (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)
+      ?.value
 
-  // Load config from database if not provided
-  if (!config) {
-    const settings = {
-      type: db.prepare('SELECT value FROM settings WHERE key = ?').get('printer_type') as
-        | { value: string }
-        | undefined,
-      interface: db.prepare('SELECT value FROM settings WHERE key = ?').get('printer_interface') as
-        | { value: string }
-        | undefined,
-      path: db.prepare('SELECT value FROM settings WHERE key = ?').get('printer_path') as
-        | { value: string }
-        | undefined,
-      ip: db.prepare('SELECT value FROM settings WHERE key = ?').get('printer_ip') as
-        | { value: string }
-        | undefined,
-      port: db.prepare('SELECT value FROM settings WHERE key = ?').get('printer_port') as
-        | { value: string }
-        | undefined,
-      width: db.prepare('SELECT value FROM settings WHERE key = ?').get('printer_width') as
-        | { value: string }
-        | undefined
-    }
-
-    config = {
-      type: (settings.type?.value as 'epson' | 'star' | 'generic') || 'epson',
-      interface: (settings.interface?.value as 'tcp' | 'usb' | 'serial') || 'usb',
-      path: settings.path?.value,
-      ip: settings.ip?.value,
-      port: settings.port?.value ? parseInt(settings.port.value) : 9100,
-      width: settings.width?.value ? parseInt(settings.width.value) : 42
-    }
+  storedConfig = {
+    type: (get('printer_type') as PrinterConfig['type']) || 'epson',
+    interface: (get('printer_interface') as PrinterConfig['interface']) || 'usb',
+    path: get('printer_path'),
+    ip: get('printer_ip'),
+    port: get('printer_port') ? parseInt(get('printer_port')!) : 9100,
+    width: get('printer_width') ? parseInt(get('printer_width')!) : 42
   }
-
-  // Map printer types
-  let printerType: PrinterTypes
-  switch (config.type) {
-    case 'epson':
-      printerType = PrinterTypes.EPSON
-      break
-    case 'star':
-      printerType = PrinterTypes.STAR
-      break
-    default:
-      printerType = PrinterTypes.EPSON
-  }
-
-  // Create printer instance
-  const printerConfig: any = {
-    type: printerType,
-    characterSet: config.characterSet || 'SLOVENIA',
-    removeSpecialCharacters: config.removeSpecialCharacters ?? false,
-    lineCharacter: config.lineCharacter || '=',
-    width: config.width || 42
-  }
-
-  if (config.interface === 'tcp' && config.ip) {
-    printerConfig.interface = 'tcp'
-    printerConfig.options = {
-      host: config.ip,
-      port: config.port || 9100,
-      timeout: 3000
-    }
-  } else if (config.interface === 'usb' && config.path) {
-    printerConfig.interface = 'printer:' + config.path
-    if (process.platform === 'win32') {
-      try {
-        // Windows spooler interface in node-thermal-printer requires the "printer" driver module.
-        // Without this, constructor fails with "No driver set!".
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        printerConfig.driver = require('printer')
-      } catch {
-        throw new Error(
-          'USB printer driver module is not available. On Windows, install and bundle the "printer" native dependency, or use Network (TCP/IP) printing.'
-        )
-      }
-    }
-  } else if (config.interface === 'serial' && config.path) {
-    printerConfig.interface = config.path
-  } else {
-    const detail =
-      config.interface === 'usb'
-        ? 'No printer name/path configured for USB interface'
-        : config.interface === 'tcp'
-          ? 'No IP address configured for TCP interface'
-          : 'No path configured for Serial interface'
-    throw new Error(`${detail}. Please configure your printer in Settings.`)
-  }
-
-  printer = new ThermalPrinter(printerConfig)
-  return printer
 }
 
-/**
- * Read saved printer configuration from database
- */
+/** Read saved printer configuration from database */
 export function getPrinterConfig(): PrinterConfig {
   const db = getDatabase()
-  const get = (key: string) =>
-    (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)?.value
+  const get = (key: string): string | undefined =>
+    (db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string } | undefined)
+      ?.value
 
   return {
     type: (get('printer_type') as PrinterConfig['type']) || 'epson',
@@ -131,84 +66,96 @@ export function getPrinterConfig(): PrinterConfig {
   }
 }
 
-/**
- * Get current printer instance
- */
-export function getPrinter(): ThermalPrinter {
-  if (!printer) {
-    printer = initializePrinter()
+/** Create a fresh device + printer instance from stored (or DB) config */
+export function getPrinter(): EscposPrinterInstance {
+  if (!storedConfig) {
+    initializePrinter()
   }
-  return printer
+
+  const config = storedConfig!
+  const width = config.width || 42
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let device: any
+
+  if (config.interface === 'tcp') {
+    if (!config.ip) {
+      throw new Error(
+        'No IP address configured for TCP interface. Please configure your printer in Settings.'
+      )
+    }
+    device = new Network(config.ip, config.port || 9100)
+  } else if (config.interface === 'usb') {
+    if (config.path) {
+      // path format: "vid:pid" (decimal, e.g. "1224:3586")
+      const [vidStr, pidStr] = config.path.split(':')
+      const vid = parseInt(vidStr)
+      const pid = parseInt(pidStr)
+      if (!isNaN(vid) && !isNaN(pid)) {
+        device = new USB(vid, pid)
+      } else {
+        // Fallback: auto-detect first available USB printer
+        device = new USB()
+      }
+    } else {
+      // Auto-detect first available USB printer
+      device = new USB()
+    }
+  } else {
+    throw new Error(`Interface "${config.interface}" is not supported. Use USB or TCP.`)
+  }
+
+  const printer = new escpos.Printer(device, { encoding: 'GB18030', width })
+  return { device, printer, width }
 }
 
-/**
- * Save printer configuration to database
- */
+/** Save printer configuration to database and store in module state */
 export function savePrinterConfig(config: PrinterConfig): void {
   const db = getDatabase()
+  const set = (key: string, value: string) =>
+    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value)
 
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
-    'printer_type',
-    config.type
-  )
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
-    'printer_interface',
-    config.interface
-  )
+  set('printer_type', config.type)
+  set('printer_interface', config.interface)
+  if (config.path) set('printer_path', config.path)
+  if (config.ip) set('printer_ip', config.ip)
+  if (config.port) set('printer_port', config.port.toString())
+  if (config.width) set('printer_width', config.width.toString())
 
-  if (config.path) {
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
-      'printer_path',
-      config.path
-    )
-  }
-
-  if (config.ip) {
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
-      'printer_ip',
-      config.ip
-    )
-  }
-
-  if (config.port) {
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
-      'printer_port',
-      config.port.toString()
-    )
-  }
-
-  if (config.width) {
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
-      'printer_width',
-      config.width.toString()
-    )
-  }
-
-  // Reinitialize printer with new config
-  initializePrinter(config)
+  storedConfig = config
 }
 
-/**
- * Test printer connection
- */
+/** Print a test page */
 export async function testPrinter(): Promise<boolean> {
   try {
-    const p = getPrinter()
+    const instance = getPrinter()
+    const line = '─'.repeat(instance.width)
 
-    p.alignCenter()
-    p.setTextSize(1, 1)
-    p.bold(true)
-    p.println('PRINTER TEST')
-    p.bold(false)
-    p.drawLine()
-    p.alignLeft()
-    p.println('If you can read this,')
-    p.println('your printer is working!')
-    p.drawLine()
-    p.newLine()
-    p.cut()
-
-    await p.execute()
+    await new Promise<void>((resolve, reject) => {
+      instance.device.open((err: Error | null) => {
+        if (err) {
+          reject(err)
+          return
+        }
+        instance.printer
+          .align('CT')
+          .style('B')
+          .size(2, 2)
+          .text('PRINTER TEST\n')
+          .style('NORMAL')
+          .size(1, 1)
+          .text(line + '\n')
+          .align('LT')
+          .text('If you can read this,\n')
+          .text('your printer is working!\n')
+          .text(line + '\n')
+          .feed(2)
+          .cut()
+          .close((closeErr: Error | null) => {
+            if (closeErr) reject(closeErr)
+            else resolve()
+          })
+      })
+    })
     return true
   } catch (error) {
     console.error('Printer test failed:', error)
@@ -216,53 +163,48 @@ export async function testPrinter(): Promise<boolean> {
   }
 }
 
-/**
- * Open cash drawer (if connected)
- */
+/** Open the cash drawer (pin 2) */
 export async function openCashDrawer(): Promise<void> {
-  const p = getPrinter()
-  p.openCashDrawer()
-  await p.execute()
+  const instance = getPrinter()
+  await new Promise<void>((resolve, reject) => {
+    instance.device.open((err: Error | null) => {
+      if (err) {
+        reject(err)
+        return
+      }
+      instance.printer.cashdraw(2).close((closeErr: Error | null) => {
+        if (closeErr) reject(closeErr)
+        else resolve()
+      })
+    })
+  })
 }
 
-/**
- * List available printers.
- * On Windows, node-thermal-printer uses the Windows print spooler — the path
- * must be the printer name exactly as shown in "Devices and Printers".
- * We enumerate installed printers via PowerShell Get-Printer.
- */
-export async function listUSBPrinters(): Promise<Array<{ name: string; path: string }>> {
-  if (process.platform === 'win32') {
-    try {
-      const { execFile } = await import('child_process')
-      const output = await new Promise<string>((resolve, reject) => {
-        execFile(
-          'powershell',
-          ['-NoProfile', '-Command', 'Get-Printer | Select-Object -ExpandProperty Name'],
-          { timeout: 5000 },
-          (err, stdout) => (err ? reject(err) : resolve(stdout))
-        )
-      })
-      const names = output
-        .split('\n')
-        .map((l) => l.trim())
-        .filter(Boolean)
-      if (names.length > 0) {
-        return names.map((name) => ({ name, path: name }))
-      }
-    } catch {
-      // PowerShell unavailable — fall through to defaults
-    }
-    // Well-known Epson TM-T81III Windows printer names as fallback
-    return [
-      { name: 'EPSON TM-T81III', path: 'EPSON TM-T81III' },
-      { name: 'EPSON TM-T81III Receipt', path: 'EPSON TM-T81III Receipt' }
-    ]
-  }
+const KNOWN_VENDORS: Record<number, string> = {
+  0x04b8: 'Epson',
+  0x0519: 'Star Micronics',
+  0x154f: 'POSIFLEX',
+  0x1504: 'Microcom'
+}
 
-  // Linux/macOS
-  return ['/dev/usb/lp0', '/dev/usb/lp1', '/dev/ttyUSB0'].map((path) => ({
-    name: `USB Printer (${path})`,
-    path
-  }))
+/** List available USB printers using libusb (requires WinUSB driver on Windows) */
+export async function listUSBPrinters(): Promise<Array<{ name: string; path: string }>> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const devices: any[] = USB.findPrinter()
+    if (!devices || devices.length === 0) return []
+
+    return devices.map((device) => {
+      const vid: number = device.deviceDescriptor.idVendor
+      const pid: number = device.deviceDescriptor.idProduct
+      const vendorName = KNOWN_VENDORS[vid] || 'USB Printer'
+      const name = `${vendorName} (${vid.toString(16).padStart(4, '0')}:${pid.toString(16).padStart(4, '0')})`
+      const path = `${vid}:${pid}`
+      return { name, path }
+    })
+  } catch {
+    // libusb not available (WinUSB driver not installed, or USB module not built)
+    // Return empty list — UI will show manual entry fallback
+    return []
+  }
 }
