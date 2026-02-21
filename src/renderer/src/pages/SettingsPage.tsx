@@ -5,7 +5,8 @@ import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
 import { PrinterSetupWizard } from '@renderer/components/settings/PrinterSetupWizard'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
-import { Save, MonitorCheck, RefreshCw, Plug, PlugZap } from 'lucide-react'
+import { useAuthStore } from '@renderer/stores/authStore'
+import { Save, MonitorCheck, RefreshCw, Plug, PlugZap, Database, Clock, Key, Trash2, Download, Upload, Play, Square, CheckCircle2 } from 'lucide-react'
 
 interface PortInfo {
   path: string
@@ -22,6 +23,7 @@ const BAUD_RATES = [1200, 2400, 4800, 9600, 19200, 38400]
 
 export function SettingsPage(): React.JSX.Element {
   const { settings, isLoading, loadSettings, updateSetting } = useSettingsStore()
+  const { user } = useAuthStore()
   const [localSettings, setLocalSettings] = useState(settings)
   const [saving, setSaving] = useState(false)
 
@@ -32,6 +34,19 @@ export function SettingsPage(): React.JSX.Element {
   const [displayStatus, setDisplayStatus] = useState<DisplayStatus>({ connected: false, port: '', baudRate: 9600 })
   const [displayBusy, setDisplayBusy] = useState(false)
   const [displayMsg, setDisplayMsg] = useState('')
+
+  // Backup state
+  const [backupPassword, setBackupPassword] = useState('')
+  const [backupBusy, setBackupBusy] = useState(false)
+  const [backupMsg, setBackupMsg] = useState('')
+  const [localBackups, setLocalBackups] = useState<Array<{ filename: string; path: string; size: number; timestamp: string }>>([])
+  const [schedulerStatus, setSchedulerStatus] = useState<{ running: boolean; nextRun?: string }>({ running: false })
+
+  // AI state
+  const [geminiKey, setGeminiKey] = useState('')
+  const [aiSaving, setAiSaving] = useState(false)
+  const [aiMsg, setAiMsg] = useState('')
+  const [geminiConfigured, setGeminiConfigured] = useState(false)
 
   useEffect(() => {
     loadSettings()
@@ -72,9 +87,19 @@ export function SettingsPage(): React.JSX.Element {
     }
   }
 
-  const handleDisplayTabOpen = (): void => {
+  const handleDisplayTabOpen = async (): Promise<void> => {
     loadPorts()
     loadDisplayStatus()
+
+    // Load saved display settings from DB
+    try {
+      const savedPort = await window.electron.getSetting('display_port')
+      const savedBaud = await window.electron.getSetting('display_baud_rate')
+      if (savedPort) setDisplayPort(savedPort as string)
+      if (savedBaud) setDisplayBaud(parseInt(savedBaud as string))
+    } catch (err) {
+      console.warn('Failed to load saved display settings:', err)
+    }
   }
 
   const handleConnect = async (): Promise<void> => {
@@ -84,6 +109,11 @@ export function SettingsPage(): React.JSX.Element {
     try {
       await window.electron.display.connect(displayPort, displayBaud)
       setDisplayMsg(`Connected to ${displayPort} at ${displayBaud} baud`)
+
+      // Persist to DB on successful connection
+      await window.electron.setSetting('display_port', displayPort)
+      await window.electron.setSetting('display_baud_rate', displayBaud.toString())
+
       await loadDisplayStatus()
     } catch (err: any) {
       setDisplayMsg(`Error: ${err.message}`)
@@ -115,6 +145,161 @@ export function SettingsPage(): React.JSX.Element {
     }
   }
 
+  // Backup functions
+  const loadLocalBackups = async (): Promise<void> => {
+    try {
+      const backups = await window.electron.backup.listLocal()
+      setLocalBackups(backups as Array<{ filename: string; path: string; size: number; timestamp: string }>)
+    } catch (err: any) {
+      setBackupMsg(`Error loading backups: ${err.message}`)
+    }
+  }
+
+  const loadSchedulerStatus = async (): Promise<void> => {
+    try {
+      const status = await window.electron.backup.schedulerStatus()
+      setSchedulerStatus(status as { running: boolean; nextRun?: string })
+    } catch (err: any) {
+      console.warn('Failed to load scheduler status:', err)
+    }
+  }
+
+  const handleBackupTabOpen = (): void => {
+    loadLocalBackups()
+    loadSchedulerStatus()
+  }
+
+  const handleCreateBackup = async (): Promise<void> => {
+    if (!user?.id) {
+      setBackupMsg('Error: User not authenticated')
+      return
+    }
+    setBackupBusy(true)
+    setBackupMsg('')
+    try {
+      const result = await window.electron.backup.create(user.id, backupPassword || undefined)
+      setBackupMsg(`Backup created successfully: ${(result as any).filename}`)
+      setBackupPassword('')
+      await loadLocalBackups()
+    } catch (err: any) {
+      setBackupMsg(`Error: ${err.message}`)
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const handleRestoreBackup = async (backupPath: string): Promise<void> => {
+    if (!user?.id) {
+      setBackupMsg('Error: User not authenticated')
+      return
+    }
+    if (!confirm('Restore from this backup? This will replace all current data.')) return
+
+    const password = prompt('Enter backup password (leave empty if no password):')
+    if (password === null) return // Cancelled
+
+    setBackupBusy(true)
+    setBackupMsg('')
+    try {
+      await window.electron.backup.restore(user.id, backupPath, password || undefined)
+      setBackupMsg('Backup restored successfully. Please restart the application.')
+    } catch (err: any) {
+      setBackupMsg(`Error: ${err.message}`)
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const handleDeleteBackup = async (backupPath: string): Promise<void> => {
+    if (!confirm('Delete this backup? This cannot be undone.')) return
+
+    setBackupBusy(true)
+    setBackupMsg('')
+    try {
+      await window.electron.backup.deleteLocal(backupPath)
+      setBackupMsg('Backup deleted successfully')
+      await loadLocalBackups()
+    } catch (err: any) {
+      setBackupMsg(`Error: ${err.message}`)
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  const handleSchedulerToggle = async (): Promise<void> => {
+    setBackupBusy(true)
+    setBackupMsg('')
+    try {
+      if (schedulerStatus.running) {
+        await window.electron.backup.schedulerStop()
+        setBackupMsg('Automatic backup scheduler stopped')
+      } else {
+        await window.electron.backup.schedulerStart()
+        setBackupMsg('Automatic backup scheduler started')
+      }
+      await loadSchedulerStatus()
+    } catch (err: any) {
+      setBackupMsg(`Error: ${err.message}`)
+    } finally {
+      setBackupBusy(false)
+    }
+  }
+
+  // AI functions
+  const loadGeminiConfig = async (): Promise<void> => {
+    try {
+      const apiKey = await window.electron.getSetting('gemini_api_key')
+      if (apiKey && (apiKey as string).length > 0) {
+        setGeminiConfigured(true)
+        setGeminiKey('••••••••••••••••') // Masked
+      } else {
+        setGeminiConfigured(false)
+        setGeminiKey('')
+      }
+    } catch (err) {
+      console.warn('Failed to load Gemini config:', err)
+    }
+  }
+
+  const handleAiTabOpen = (): void => {
+    loadGeminiConfig()
+  }
+
+  const handleSaveGeminiKey = async (): Promise<void> => {
+    if (!geminiKey || geminiKey === '••••••••••••••••') {
+      setAiMsg('Please enter a valid API key')
+      return
+    }
+    setAiSaving(true)
+    setAiMsg('')
+    try {
+      await window.electron.setSetting('gemini_api_key', geminiKey)
+      setAiMsg('Gemini API key saved successfully')
+      setGeminiConfigured(true)
+      setGeminiKey('••••••••••••••••') // Mask after save
+    } catch (err: any) {
+      setAiMsg(`Error: ${err.message}`)
+    } finally {
+      setAiSaving(false)
+    }
+  }
+
+  const handleClearGeminiKey = async (): Promise<void> => {
+    if (!confirm('Clear the Gemini API key? AI features will be disabled.')) return
+    setAiSaving(true)
+    setAiMsg('')
+    try {
+      await window.electron.setSetting('gemini_api_key', '')
+      setAiMsg('Gemini API key cleared')
+      setGeminiConfigured(false)
+      setGeminiKey('')
+    } catch (err: any) {
+      setAiMsg(`Error: ${err.message}`)
+    } finally {
+      setAiSaving(false)
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -135,8 +320,8 @@ export function SettingsPage(): React.JSX.Element {
           <TabsTrigger value="printer">Printer</TabsTrigger>
           <TabsTrigger value="business">Business</TabsTrigger>
           <TabsTrigger value="display" onClick={handleDisplayTabOpen}>Display</TabsTrigger>
-          <TabsTrigger value="backup">Backup</TabsTrigger>
-          <TabsTrigger value="ai">AI</TabsTrigger>
+          <TabsTrigger value="backup" onClick={handleBackupTabOpen}>Backup</TabsTrigger>
+          <TabsTrigger value="ai" onClick={handleAiTabOpen}>AI</TabsTrigger>
         </TabsList>
 
         <TabsContent value="printer" className="space-y-6">
@@ -345,28 +530,274 @@ export function SettingsPage(): React.JSX.Element {
           </div>
         </TabsContent>
 
+        {/* ── Backup Tab ───────────────────────────────────────────── */}
         <TabsContent value="backup" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Backup Settings</CardTitle>
-              <CardDescription>Configure automatic backups</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">Backup settings will be added here</p>
-            </CardContent>
-          </Card>
+          <div className="max-w-2xl">
+            {/* Manual Backup */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="h-5 w-5" />
+                  Create Backup
+                </CardTitle>
+                <CardDescription>
+                  Manually create an encrypted backup of your database
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Backup Password (Optional)</label>
+                  <Input
+                    type="password"
+                    value={backupPassword}
+                    onChange={(e) => setBackupPassword(e.target.value)}
+                    placeholder="Leave empty for no encryption"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Recommended: Use a strong password to encrypt sensitive data
+                  </p>
+                </div>
+                <Button
+                  onClick={handleCreateBackup}
+                  disabled={backupBusy}
+                  className="flex items-center gap-2"
+                >
+                  <Upload className="h-4 w-4" />
+                  {backupBusy ? 'Creating...' : 'Create Backup Now'}
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Local Backups List */}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Database className="h-5 w-5" />
+                    Local Backups
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadLocalBackups}
+                    className="flex items-center gap-2"
+                  >
+                    <RefreshCw className="h-3 w-3" />
+                    Refresh
+                  </Button>
+                </CardTitle>
+                <CardDescription>
+                  Manage your local database backups
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {localBackups.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No local backups found</p>
+                ) : (
+                  <div className="space-y-2">
+                    {localBackups.map((backup) => (
+                      <div
+                        key={backup.path}
+                        className="flex items-center justify-between p-3 border rounded-lg"
+                      >
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{backup.filename}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(backup.timestamp).toLocaleString()} • {(backup.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRestoreBackup(backup.path)}
+                            disabled={backupBusy}
+                            className="flex items-center gap-1"
+                          >
+                            <Download className="h-3 w-3" />
+                            Restore
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteBackup(backup.path)}
+                            disabled={backupBusy}
+                            className="flex items-center gap-1 text-destructive"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Automatic Backup Scheduler */}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Clock className="h-5 w-5" />
+                  Automatic Backups
+                </CardTitle>
+                <CardDescription>
+                  Schedule automatic daily backups
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-3 h-3 rounded-full ${schedulerStatus.running ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                    <div>
+                      <p className="text-sm font-medium">
+                        {schedulerStatus.running ? 'Scheduler Active' : 'Scheduler Stopped'}
+                      </p>
+                      {schedulerStatus.running && schedulerStatus.nextRun && (
+                        <p className="text-xs text-muted-foreground">
+                          Next backup: {new Date(schedulerStatus.nextRun).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    variant={schedulerStatus.running ? 'outline' : 'default'}
+                    onClick={handleSchedulerToggle}
+                    disabled={backupBusy}
+                    className="flex items-center gap-2"
+                  >
+                    {schedulerStatus.running ? (
+                      <>
+                        <Square className="h-4 w-4" />
+                        Stop Scheduler
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4" />
+                        Start Scheduler
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Automatic backups run daily at 2:00 AM and are stored locally
+                </p>
+              </CardContent>
+            </Card>
+
+            {backupMsg && (
+              <div className={`mt-4 p-3 rounded-lg ${backupMsg.startsWith('Error') ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-700'}`}>
+                <p className="text-sm font-medium">{backupMsg}</p>
+              </div>
+            )}
+          </div>
         </TabsContent>
 
+        {/* ── AI Tab ───────────────────────────────────────────── */}
         <TabsContent value="ai" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>AI Configuration</CardTitle>
-              <CardDescription>Set up Gemini API for AI insights</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">AI settings will be added here</p>
-            </CardContent>
-          </Card>
+          <div className="max-w-xl">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Key className="h-5 w-5" />
+                  Gemini AI Configuration
+                </CardTitle>
+                <CardDescription>
+                  Configure Google Gemini API for AI-powered insights and analytics
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                {/* Status indicator */}
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                  {geminiConfigured ? (
+                    <>
+                      <CheckCircle2 className="h-5 w-5 text-green-600" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">AI Features Enabled</p>
+                        <p className="text-xs text-muted-foreground">
+                          Gemini API key is configured and ready to use
+                        </p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-5 h-5 rounded-full border-2 border-muted-foreground" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium">AI Features Disabled</p>
+                        <p className="text-xs text-muted-foreground">
+                          Enter your Gemini API key to enable AI insights
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* API Key input */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Gemini API Key</label>
+                  <Input
+                    type="password"
+                    value={geminiKey}
+                    onChange={(e) => setGeminiKey(e.target.value)}
+                    placeholder="Enter your Google Gemini API key"
+                    disabled={aiSaving}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Get your API key from{' '}
+                    <a
+                      href="https://makersuite.google.com/app/apikey"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline hover:text-primary"
+                    >
+                      Google AI Studio
+                    </a>
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handleSaveGeminiKey}
+                    disabled={aiSaving || !geminiKey || geminiKey === '••••••••••••••••'}
+                    className="flex items-center gap-2"
+                  >
+                    <Save className="h-4 w-4" />
+                    {aiSaving ? 'Saving...' : 'Save API Key'}
+                  </Button>
+                  {geminiConfigured && (
+                    <Button
+                      variant="outline"
+                      onClick={handleClearGeminiKey}
+                      disabled={aiSaving}
+                      className="flex items-center gap-2"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Clear Key
+                    </Button>
+                  )}
+                </div>
+
+                {aiMsg && (
+                  <div className={`p-3 rounded-lg ${aiMsg.startsWith('Error') ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-700'}`}>
+                    <p className="text-sm font-medium">{aiMsg}</p>
+                  </div>
+                )}
+
+                {/* Features info */}
+                <div className="border-t pt-4 space-y-2">
+                  <p className="text-sm font-medium">AI Features:</p>
+                  <ul className="text-xs text-muted-foreground space-y-1 ml-4">
+                    <li>• Smart reorder suggestions based on sales patterns</li>
+                    <li>• Dead stock detection to identify slow-moving items</li>
+                    <li>• Natural language queries for business insights</li>
+                    <li>• Sales forecasting and demand prediction</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
