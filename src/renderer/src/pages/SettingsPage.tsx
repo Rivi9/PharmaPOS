@@ -1,12 +1,33 @@
 import { useEffect, useState } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
 import { PrinterSetupWizard } from '@renderer/components/settings/PrinterSetupWizard'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { useAuthStore } from '@renderer/stores/authStore'
-import { Save, MonitorCheck, RefreshCw, Plug, PlugZap, Database, Clock, Key, Trash2, Download, Upload, Play, Square, CheckCircle2 } from 'lucide-react'
+import {
+  Save,
+  MonitorCheck,
+  RefreshCw,
+  Plug,
+  PlugZap,
+  Database,
+  Clock,
+  Key,
+  Trash2,
+  Download,
+  Upload,
+  Play,
+  Square,
+  CheckCircle2
+} from 'lucide-react'
 
 interface PortInfo {
   path: string
@@ -31,7 +52,11 @@ export function SettingsPage(): React.JSX.Element {
   const [availablePorts, setAvailablePorts] = useState<PortInfo[]>([])
   const [displayPort, setDisplayPort] = useState('')
   const [displayBaud, setDisplayBaud] = useState(9600)
-  const [displayStatus, setDisplayStatus] = useState<DisplayStatus>({ connected: false, port: '', baudRate: 9600 })
+  const [displayStatus, setDisplayStatus] = useState<DisplayStatus>({
+    connected: false,
+    port: '',
+    baudRate: 9600
+  })
   const [displayBusy, setDisplayBusy] = useState(false)
   const [displayMsg, setDisplayMsg] = useState('')
 
@@ -39,8 +64,12 @@ export function SettingsPage(): React.JSX.Element {
   const [backupPassword, setBackupPassword] = useState('')
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupMsg, setBackupMsg] = useState('')
-  const [localBackups, setLocalBackups] = useState<Array<{ filename: string; path: string; size: number; timestamp: string }>>([])
-  const [schedulerStatus, setSchedulerStatus] = useState<{ running: boolean; nextRun?: string }>({ running: false })
+  const [localBackups, setLocalBackups] = useState<
+    Array<{ filename: string; path: string; size: number; timestamp: string }>
+  >([])
+  const [schedulerStatus, setSchedulerStatus] = useState<{ running: boolean; nextRun?: string }>({
+    running: false
+  })
 
   // AI state
   const [geminiKey, setGeminiKey] = useState('')
@@ -149,7 +178,9 @@ export function SettingsPage(): React.JSX.Element {
   const loadLocalBackups = async (): Promise<void> => {
     try {
       const backups = await window.electron.backup.listLocal()
-      setLocalBackups(backups as Array<{ filename: string; path: string; size: number; timestamp: string }>)
+      setLocalBackups(
+        backups as Array<{ filename: string; path: string; size: number; timestamp: string }>
+      )
     } catch (err: any) {
       setBackupMsg(`Error loading backups: ${err.message}`)
     }
@@ -319,9 +350,15 @@ export function SettingsPage(): React.JSX.Element {
         <TabsList className="grid w-full grid-cols-5 max-w-3xl">
           <TabsTrigger value="printer">Printer</TabsTrigger>
           <TabsTrigger value="business">Business</TabsTrigger>
-          <TabsTrigger value="display" onClick={handleDisplayTabOpen}>Display</TabsTrigger>
-          <TabsTrigger value="backup" onClick={handleBackupTabOpen}>Backup</TabsTrigger>
-          <TabsTrigger value="ai" onClick={handleAiTabOpen}>AI</TabsTrigger>
+          <TabsTrigger value="display" onClick={handleDisplayTabOpen}>
+            Display
+          </TabsTrigger>
+          <TabsTrigger value="backup" onClick={handleBackupTabOpen}>
+            Backup
+          </TabsTrigger>
+          <TabsTrigger value="ai" onClick={handleAiTabOpen}>
+            AI
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="printer" className="space-y-6">
@@ -431,7 +468,9 @@ export function SettingsPage(): React.JSX.Element {
               <CardContent className="space-y-5">
                 {/* Status badge */}
                 <div className="flex items-center gap-3">
-                  <div className={`w-3 h-3 rounded-full ${displayStatus.connected ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                  <div
+                    className={`w-3 h-3 rounded-full ${displayStatus.connected ? 'bg-green-500' : 'bg-muted-foreground'}`}
+                  />
                   <span className="text-sm font-medium">
                     {displayStatus.connected
                       ? `Connected — ${displayStatus.port} @ ${displayStatus.baudRate} baud`
@@ -451,7 +490,8 @@ export function SettingsPage(): React.JSX.Element {
                       <option value="">Select a port...</option>
                       {availablePorts.map((p) => (
                         <option key={p.path} value={p.path}>
-                          {p.path}{p.manufacturer ? ` — ${p.manufacturer}` : ''}
+                          {p.path}
+                          {p.manufacturer ? ` — ${p.manufacturer}` : ''}
                         </option>
                       ))}
                     </select>
@@ -473,7 +513,9 @@ export function SettingsPage(): React.JSX.Element {
                     className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm"
                   >
                     {BAUD_RATES.map((b) => (
-                      <option key={b} value={b}>{b}</option>
+                      <option key={b} value={b}>
+                        {b}
+                      </option>
                     ))}
                   </select>
                   <p className="text-xs text-muted-foreground">
@@ -515,7 +557,9 @@ export function SettingsPage(): React.JSX.Element {
                 </div>
 
                 {displayMsg && (
-                  <p className={`text-sm font-medium ${displayMsg.startsWith('Error') ? 'text-destructive' : 'text-green-600'}`}>
+                  <p
+                    className={`text-sm font-medium ${displayMsg.startsWith('Error') ? 'text-destructive' : 'text-green-600'}`}
+                  >
                     {displayMsg}
                   </p>
                 )}
@@ -586,9 +630,7 @@ export function SettingsPage(): React.JSX.Element {
                     Refresh
                   </Button>
                 </CardTitle>
-                <CardDescription>
-                  Manage your local database backups
-                </CardDescription>
+                <CardDescription>Manage your local database backups</CardDescription>
               </CardHeader>
               <CardContent>
                 {localBackups.length === 0 ? (
@@ -603,7 +645,8 @@ export function SettingsPage(): React.JSX.Element {
                         <div className="flex-1">
                           <p className="text-sm font-medium">{backup.filename}</p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(backup.timestamp).toLocaleString()} • {(backup.size / 1024 / 1024).toFixed(2)} MB
+                            {new Date(backup.timestamp).toLocaleString()} •{' '}
+                            {(backup.size / 1024 / 1024).toFixed(2)} MB
                           </p>
                         </div>
                         <div className="flex gap-2">
@@ -642,14 +685,14 @@ export function SettingsPage(): React.JSX.Element {
                   <Clock className="h-5 w-5" />
                   Automatic Backups
                 </CardTitle>
-                <CardDescription>
-                  Schedule automatic daily backups
-                </CardDescription>
+                <CardDescription>Schedule automatic daily backups</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <div className={`w-3 h-3 rounded-full ${schedulerStatus.running ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+                    <div
+                      className={`w-3 h-3 rounded-full ${schedulerStatus.running ? 'bg-green-500' : 'bg-muted-foreground'}`}
+                    />
                     <div>
                       <p className="text-sm font-medium">
                         {schedulerStatus.running ? 'Scheduler Active' : 'Scheduler Stopped'}
@@ -687,7 +730,9 @@ export function SettingsPage(): React.JSX.Element {
             </Card>
 
             {backupMsg && (
-              <div className={`mt-4 p-3 rounded-lg ${backupMsg.startsWith('Error') ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-700'}`}>
+              <div
+                className={`mt-4 p-3 rounded-lg ${backupMsg.startsWith('Error') ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-700'}`}
+              >
                 <p className="text-sm font-medium">{backupMsg}</p>
               </div>
             )}
@@ -780,7 +825,9 @@ export function SettingsPage(): React.JSX.Element {
                 </div>
 
                 {aiMsg && (
-                  <div className={`p-3 rounded-lg ${aiMsg.startsWith('Error') ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-700'}`}>
+                  <div
+                    className={`p-3 rounded-lg ${aiMsg.startsWith('Error') ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-700'}`}
+                  >
                     <p className="text-sm font-medium">{aiMsg}</p>
                   </div>
                 )}

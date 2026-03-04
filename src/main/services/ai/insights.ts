@@ -45,7 +45,12 @@ export async function generateReorderSuggestions(): Promise<ReorderSuggestion[]>
       suggested_order_qty: item.reorder_qty,
       reason: `Stock level (${item.current_stock}) is below reorder point (${item.reorder_level})`,
       confidence: 0.8,
-      priority: item.current_stock === 0 ? 'high' : item.current_stock < item.reorder_level / 2 ? 'medium' : 'low'
+      priority:
+        item.current_stock === 0
+          ? 'high'
+          : item.current_stock < item.reorder_level / 2
+            ? 'medium'
+            : 'low'
     }))
   }
 

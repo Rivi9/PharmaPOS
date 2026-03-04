@@ -24,7 +24,12 @@ export interface PurchaseHistoryEntry {
 }
 
 export function getCustomers(): Customer[] {
-  return getDb().select().from(customers).where(eq(customers.isActive, 1)).orderBy(customers.name).all()
+  return getDb()
+    .select()
+    .from(customers)
+    .where(eq(customers.isActive, 1))
+    .orderBy(customers.name)
+    .all()
 }
 
 export function getCustomerById(id: string): Customer | null {

@@ -1,13 +1,7 @@
 import { eq, sql, asc } from 'drizzle-orm'
 import { getDb } from '../db/index'
 import { getDatabase, generateId } from './database'
-import {
-  categories,
-  suppliers,
-  stockBatches,
-  products,
-  inventoryAdjustments
-} from '../db/schema'
+import { categories, suppliers, stockBatches, products, inventoryAdjustments } from '../db/schema'
 import type { Category, Supplier, StockBatch } from '../db/schema'
 
 // =====================

@@ -49,7 +49,10 @@ export const usePOSStore = create<POSStore>((set, get) => ({
   // Add item to cart — stacks quantity if product already present
   addItem: (product, quantity) => {
     set((state) => {
-      const maxStock = product.total_stock != null ? Math.max(0, Math.floor(product.total_stock)) : Number.POSITIVE_INFINITY
+      const maxStock =
+        product.total_stock != null
+          ? Math.max(0, Math.floor(product.total_stock))
+          : Number.POSITIVE_INFINITY
       const safeQty = Math.max(1, Math.floor(quantity))
       const existingIndex = state.items.findIndex((i) => i.product.id === product.id)
       if (existingIndex !== -1) {

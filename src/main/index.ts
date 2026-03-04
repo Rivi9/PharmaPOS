@@ -1,11 +1,22 @@
 import { app, shell, BrowserWindow, ipcMain, session } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
-import { join as pathJoin } from 'path'
 
 // Forge Vite plugin injects these globals at build time
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string
 declare const MAIN_WINDOW_VITE_NAME: string
+
+interface CartData {
+  items?: { name?: string }[]
+  total?: number
+  currency?: string
+}
+
+interface SaleData {
+  total?: number
+  change_given?: number
+  currency?: string
+}
 import { initializeDatabase, closeDatabase } from './services/database'
 import { registerIpcHandlers } from './ipc/handlers'
 import { initializeAggregationJob } from './jobs/aggregation'
@@ -39,7 +50,7 @@ function createWindow(): BrowserWindow {
     height: 670,
     show: false,
     autoHideMenuBar: true,
-    ...(process.platform === 'linux' ? { icon: pathJoin(__dirname, '../../resources/icon.png') } : {}),
+    ...(process.platform === 'linux' ? { icon: join(__dirname, '../../resources/icon.png') } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -131,9 +142,9 @@ app.whenReady().then(() => {
   ipcMain.on(poleDisplay.SERIAL_READY_CHANNEL, () => {
     try {
       const db = getDatabase()
-      const portRow = db
-        .prepare("SELECT value FROM settings WHERE key = 'display_port'")
-        .get() as { value: string } | undefined
+      const portRow = db.prepare("SELECT value FROM settings WHERE key = 'display_port'").get() as
+        | { value: string }
+        | undefined
       const baudRow = db
         .prepare("SELECT value FROM settings WHERE key = 'display_baud_rate'")
         .get() as { value: string } | undefined
@@ -144,15 +155,17 @@ app.whenReady().then(() => {
           logError('Could not auto-connect pole display', { port: savedPort, error: err.message })
         })
       }
-    } catch (err: any) {
-      logError('Failed to read display settings for auto-connect', { error: err.message })
+    } catch (err: unknown) {
+      logError('Failed to read display settings for auto-connect', {
+        error: err instanceof Error ? err.message : String(err)
+      })
     }
   })
 
   // ── Pole display IPC handlers ──────────────────────────────────────────────
 
   // Cart updated — write last item + running total to pole display
-  ipcMain.handle(IPC_CHANNELS.DISPLAY_UPDATE, (_event, cartData: any) => {
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_UPDATE, (_event, cartData: CartData) => {
     if (poleDisplay.isConnected()) {
       const lastItem = cartData?.items?.at(-1)
       const itemName = lastItem?.name ?? ''
@@ -162,7 +175,7 @@ app.whenReady().then(() => {
   })
 
   // Sale complete — show total + change
-  ipcMain.handle(IPC_CHANNELS.DISPLAY_SALE_COMPLETE, (_event, saleData: any) => {
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_SALE_COMPLETE, (_event, saleData: SaleData) => {
     if (poleDisplay.isConnected()) {
       poleDisplay.showSaleComplete(
         saleData?.total ?? 0,
@@ -184,7 +197,9 @@ app.whenReady().then(() => {
     // Persist to settings
     const db = getDatabase()
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('display_port', ?)").run(port)
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('display_baud_rate', ?)").run(String(baudRate ?? 9600))
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('display_baud_rate', ?)").run(
+      String(baudRate ?? 9600)
+    )
     return { success: true }
   })
 

@@ -41,11 +41,7 @@ export function MainLayout({ user, onEndShift }: MainLayoutProps): React.JSX.Ele
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      <Header
-        user={user}
-        onEndShift={onEndShift}
-        onSettings={() => setCurrentPage('settings')}
-      />
+      <Header user={user} onEndShift={onEndShift} onSettings={() => setCurrentPage('settings')} />
       <div className="flex-1 flex overflow-hidden">
         <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
         <main className="flex-1 overflow-auto">{renderPage()}</main>

@@ -1,4 +1,10 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
 import { AlertTriangle, Clock } from 'lucide-react'
 import type { LowStockAlert, ExpiryAlert } from '@renderer/types/analytics'
@@ -23,9 +29,7 @@ export function AlertsPanel({
       <CardContent>
         <Tabs defaultValue="low-stock">
           <TabsList className="grid w-full grid-cols-2">
-            <TabsTrigger value="low-stock">
-              Low Stock ({lowStockAlerts.length})
-            </TabsTrigger>
+            <TabsTrigger value="low-stock">Low Stock ({lowStockAlerts.length})</TabsTrigger>
             <TabsTrigger value="expiring">Expiring ({expiryAlerts.length})</TabsTrigger>
           </TabsList>
 
@@ -33,9 +37,7 @@ export function AlertsPanel({
             {isLoading ? (
               <div className="text-center py-8 text-muted-foreground">Loading...</div>
             ) : lowStockAlerts.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                No low stock alerts
-              </div>
+              <div className="text-center py-8 text-muted-foreground">No low stock alerts</div>
             ) : (
               lowStockAlerts.map((alert) => (
                 <div
@@ -61,9 +63,7 @@ export function AlertsPanel({
             {isLoading ? (
               <div className="text-center py-8 text-muted-foreground">Loading...</div>
             ) : expiryAlerts.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                No expiring items
-              </div>
+              <div className="text-center py-8 text-muted-foreground">No expiring items</div>
             ) : (
               expiryAlerts.map((alert) => {
                 const isExpired = alert.days_until_expiry < 0
@@ -94,9 +94,7 @@ export function AlertsPanel({
                       <p className="text-sm text-muted-foreground">
                         Batch: {alert.batch_number || 'N/A'} | Qty: {alert.quantity}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        Expires: {alert.expiry_date}
-                      </p>
+                      <p className="text-xs text-muted-foreground">Expires: {alert.expiry_date}</p>
                     </div>
                     <div className="text-right">
                       <p

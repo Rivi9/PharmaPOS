@@ -42,12 +42,15 @@ export function registerUserHandlers(): void {
     return withPermission(userId, 'users:view', () => listUsers().map(mapUser))
   })
 
-  ipcMain.handle(IPC_CHANNELS.USER_GET, async (_event, { userId, id }: { userId: string; id: string }) => {
-    return withPermission(userId, 'users:view', () => {
-      const u = getUserById(id)
-      return u ? mapUser(u) : null
-    })
-  })
+  ipcMain.handle(
+    IPC_CHANNELS.USER_GET,
+    async (_event, { userId, id }: { userId: string; id: string }) => {
+      return withPermission(userId, 'users:view', () => {
+        const u = getUserById(id)
+        return u ? mapUser(u) : null
+      })
+    }
+  )
 
   ipcMain.handle(IPC_CHANNELS.USER_CREATE, async (_event, { userId, ...data }) => {
     return withPermission(userId, 'users:create', () => createUser(data))

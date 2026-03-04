@@ -82,7 +82,9 @@ export function ProductEntry({
         if (days <= 0) {
           setExpiryWarning(`⚠ ${product.name} is EXPIRED (${product.nearest_expiry})`)
         } else if (days <= 30) {
-          setExpiryWarning(`⚠ ${product.name} expires in ${days} day${days === 1 ? '' : 's'} (${product.nearest_expiry})`)
+          setExpiryWarning(
+            `⚠ ${product.name} expires in ${days} day${days === 1 ? '' : 's'} (${product.nearest_expiry})`
+          )
         }
       }
 
@@ -112,7 +114,10 @@ export function ProductEntry({
           <Button
             type="button"
             variant="outline"
-            onClick={() => { setModalQuery(''); setSearchOpen(true) }}
+            onClick={() => {
+              setModalQuery('')
+              setSearchOpen(true)
+            }}
             className="h-12 w-12 shrink-0"
           >
             <Search className="h-5 w-5" />

@@ -36,7 +36,11 @@ function formatDuration(startedAt: string): string {
  * Shows a shift summary (duration, total sales) and asks for
  * the closing cash count before closing the shift and logging out.
  */
-export function EndShiftModal({ open, onClose, onShiftEnded }: EndShiftModalProps): React.JSX.Element {
+export function EndShiftModal({
+  open,
+  onClose,
+  onShiftEnded
+}: EndShiftModalProps): React.JSX.Element {
   const [closingCash, setClosingCash] = useState('')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
@@ -114,7 +118,9 @@ export function EndShiftModal({ open, onClose, onShiftEnded }: EndShiftModalProp
               <p className="text-base font-bold">
                 {loadingExpectedCash
                   ? 'Calc…'
-                  : formatCurrency(computedExpectedCash !== null ? computedExpectedCash - openingCash : 0)}
+                  : formatCurrency(
+                      computedExpectedCash !== null ? computedExpectedCash - openingCash : 0
+                    )}
               </p>
             </div>
             <div className="border rounded-lg p-3 text-center space-y-1">
@@ -167,7 +173,12 @@ export function EndShiftModal({ open, onClose, onShiftEnded }: EndShiftModalProp
                 {currencySymbol}&nbsp;{closingCash || '0.00'}
               </p>
             </div>
-            <CashNumpad value={closingCash} onChange={setClosingCash} onSubmit={handleEndShift} buttonClassName="h-11" />
+            <CashNumpad
+              value={closingCash}
+              onChange={setClosingCash}
+              onSubmit={handleEndShift}
+              buttonClassName="h-11"
+            />
           </div>
 
           {/* Notes */}

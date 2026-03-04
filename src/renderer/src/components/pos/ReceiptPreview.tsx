@@ -100,9 +100,7 @@ export function ReceiptPreview({
         }
       }
       if (current) lines.push(current)
-      return lines
-        .map((l) => l.padStart(Math.floor((W + l.length) / 2)).padEnd(W))
-        .join('\n')
+      return lines.map((l) => l.padStart(Math.floor((W + l.length) / 2)).padEnd(W)).join('\n')
     }
 
     let text = `\n${LINE}\n`

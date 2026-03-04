@@ -13,7 +13,13 @@ interface UserFormModalProps {
   onSuccess: () => void
 }
 
-export function UserFormModal({ open, onClose, user, userId, onSuccess }: UserFormModalProps): React.JSX.Element {
+export function UserFormModal({
+  open,
+  onClose,
+  user,
+  userId,
+  onSuccess
+}: UserFormModalProps): React.JSX.Element {
   const [formData, setFormData] = useState({
     username: '',
     password: '',

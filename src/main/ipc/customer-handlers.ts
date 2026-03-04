@@ -42,9 +42,12 @@ export function registerCustomerHandlers(): void {
   })
 
   // Mutating handlers — require userId and appropriate permission
-  ipcMain.handle(IPC_CHANNELS.CUSTOMER_CREATE, (_event, { userId, ...data }: { userId: string } & CustomerData) => {
-    return withPermission(userId, 'customers:create', () => createCustomer(data as CustomerData))
-  })
+  ipcMain.handle(
+    IPC_CHANNELS.CUSTOMER_CREATE,
+    (_event, { userId, ...data }: { userId: string } & CustomerData) => {
+      return withPermission(userId, 'customers:create', () => createCustomer(data as CustomerData))
+    }
+  )
 
   ipcMain.handle(
     IPC_CHANNELS.CUSTOMER_UPDATE,
@@ -53,12 +56,15 @@ export function registerCustomerHandlers(): void {
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.CUSTOMER_DELETE, (_event, { userId, id }: { userId: string; id: string }) => {
-    return withPermission(userId, 'customers:delete', () => {
-      deleteCustomer(id)
-      return { success: true }
-    })
-  })
+  ipcMain.handle(
+    IPC_CHANNELS.CUSTOMER_DELETE,
+    (_event, { userId, id }: { userId: string; id: string }) => {
+      return withPermission(userId, 'customers:delete', () => {
+        deleteCustomer(id)
+        return { success: true }
+      })
+    }
+  )
 
   // NOTE: CUSTOMER_PURCHASE_HISTORY is handled in pos-handlers.ts
 }

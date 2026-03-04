@@ -33,12 +33,7 @@ interface SupplierFormDialogProps {
   supplier?: Supplier | null
 }
 
-export function SupplierFormDialog({
-  open,
-  onClose,
-  onSubmit,
-  supplier
-}: SupplierFormDialogProps) {
+export function SupplierFormDialog({ open, onClose, onSubmit, supplier }: SupplierFormDialogProps) {
   const {
     register,
     handleSubmit,

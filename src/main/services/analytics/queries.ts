@@ -72,7 +72,11 @@ export function getPeriodMetrics(startDate: string, endDate: string): DailySales
 /**
  * Get top selling products for a date range
  */
-export function getTopProducts(startDate: string, endDate: string, limit: number = 10): TopProduct[] {
+export function getTopProducts(
+  startDate: string,
+  endDate: string,
+  limit: number = 10
+): TopProduct[] {
   const db = getDatabase()
 
   const products = db
@@ -174,7 +178,9 @@ export function getLowStockAlerts(): LowStockAlert[] {
 export function getExpiryAlerts(daysAhead: number = 30): ExpiryAlert[] {
   const db = getDatabase()
 
-  const cutoffDate = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const cutoffDate = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split('T')[0]
 
   const alerts = db
     .prepare(

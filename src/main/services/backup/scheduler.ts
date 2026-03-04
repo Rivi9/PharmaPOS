@@ -165,9 +165,9 @@ export function getBackupStatus(): {
     | { value: string }
     | undefined
 
-  const lastBackup = db.prepare('SELECT value FROM settings WHERE key = ?').get('last_backup_time') as
-    | { value: string }
-    | undefined
+  const lastBackup = db
+    .prepare('SELECT value FROM settings WHERE key = ?')
+    .get('last_backup_time') as { value: string } | undefined
 
   return {
     enabled: enabled?.value === '1',

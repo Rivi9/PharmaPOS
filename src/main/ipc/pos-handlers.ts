@@ -7,7 +7,14 @@ import {
   getQuickItems,
   checkStockAvailability
 } from '../services/products'
-import { createSale, getReceipt, getTodaySalesTotal, voidSale, computeShiftExpectedCash, createRefund } from '../services/sales'
+import {
+  createSale,
+  getReceipt,
+  getTodaySalesTotal,
+  voidSale,
+  computeShiftExpectedCash,
+  createRefund
+} from '../services/sales'
 import { getCustomerPurchaseHistory } from '../services/customers'
 import { logAudit } from '../services/audit'
 
@@ -81,7 +88,10 @@ export function registerPOSHandlers(): void {
           action: 'SALE_REFUNDED',
           entityType: 'sale',
           entityId: saleId,
-          details: { refund_id: result.refund_id, total_refunded: items.reduce((s: number, i: any) => s + i.line_total, 0) }
+          details: {
+            refund_id: result.refund_id,
+            total_refunded: items.reduce((s: number, i: any) => s + i.line_total, 0)
+          }
         })
         return result
       })

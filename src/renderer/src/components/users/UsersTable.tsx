@@ -14,7 +14,12 @@ interface UsersTableProps {
   onRefresh: () => void
 }
 
-export function UsersTable({ users, userId, onEdit, onRefresh }: UsersTableProps): React.JSX.Element {
+export function UsersTable({
+  users,
+  userId,
+  onEdit,
+  onRefresh
+}: UsersTableProps): React.JSX.Element {
   const [changePwUser, setChangePwUser] = useState<User | null>(null)
   const [newPassword, setNewPassword] = useState('')
   const [pwError, setPwError] = useState('')

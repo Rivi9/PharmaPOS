@@ -35,18 +35,14 @@ export function Header({ user, onEndShift, onSettings }: HeaderProps): React.JSX
             <Clock className="h-3.5 w-3.5" />
             <span>{shiftStartTime(currentShift.started_at)}</span>
             <span className="mx-1 text-border">|</span>
-            <span className="font-medium text-foreground">
-              {formatCurrency(todaySalesTotal)}
-            </span>
+            <span className="font-medium text-foreground">{formatCurrency(todaySalesTotal)}</span>
           </div>
         )}
       </div>
 
       <div className="flex items-center gap-2">
         {user && (
-          <span className="hidden sm:block text-sm text-muted-foreground">
-            {user.full_name}
-          </span>
+          <span className="hidden sm:block text-sm text-muted-foreground">{user.full_name}</span>
         )}
 
         <Button variant="ghost" size="icon" onClick={onSettings} title="Settings">

@@ -8,138 +8,108 @@ This guide covers building and packaging PharmaPOS for distribution.
 - npm 9 or higher
 - Windows 10/11 (for Windows builds and code signing)
 
-## Development Build
+## Development
 
 ```bash
 # Install dependencies
 npm install
 
-# Build the application
+# Start the dev server
 npm run dev
 ```
 
 ## Production Build
 
-### 1. Build Without Code Signing
+### 1. Package (no installer)
 
 ```bash
-# Build for Windows without publishing
-npm run build
+npm run package
 ```
 
-This creates an unsigned installer in `dist/` directory.
+Creates the app bundle in `out/` directory (unpackaged).
 
-### 2. Build With Code Signing
-
-Code signing ensures users can trust your application and prevents Windows SmartScreen warnings.
-
-#### Obtaining a Code Signing Certificate
-
-1. **Purchase a certificate** from a trusted Certificate Authority (CA):
-   - DigiCert
-   - Sectigo
-   - GlobalSign
-   - SSL.com
-
-2. **Certificate formats**:
-   - `.pfx` (PKCS#12) - Windows format (recommended)
-   - `.p12` (PKCS#12) - Alternative format
-
-#### Setting Up Code Signing
-
-1. **Create `.env.local` file** (copy from template):
-   ```bash
-   cp .env.local.template .env.local
-   ```
-
-2. **Configure environment variables**:
-   ```env
-   # Path to your certificate file
-   CSC_LINK=C:/path/to/certificate.pfx
-
-   # Certificate password
-   CSC_KEY_PASSWORD=your-certificate-password
-
-   # GitHub token for releases
-   GH_TOKEN=your-github-personal-access-token
-   ```
-
-3. **Verify certificate**:
-   ```powershell
-   # On Windows PowerShell
-   certutil -dump certificate.pfx
-   ```
-
-#### Building Signed Installer
+### 2. Make Installer
 
 ```bash
-# Build with code signing
-npm run build
+npm run make
 ```
 
-The build process will automatically:
-- Sign the executable with SHA-256
-- Create NSIS installer
-- Sign the installer package
-- Output to `dist/` directory
+Creates a Squirrel.Windows installer in `out/make/` directory.
+
+### 3. Code Signing
+
+Configure code signing in `forge.config.ts` under `makers[0]` (MakerSquirrel):
+
+```typescript
+new MakerSquirrel({
+  name: 'PharmaPOS',
+  setupIcon: './build/icon.ico',
+  certificateFile: process.env.CSC_LINK,
+  certificatePassword: process.env.CSC_KEY_PASSWORD
+})
+```
+
+Set environment variables before building:
+
+```env
+CSC_LINK=C:/path/to/certificate.pfx
+CSC_KEY_PASSWORD=your-certificate-password
+GH_TOKEN=your-github-personal-access-token
+```
 
 ## Publishing Releases
 
 ### GitHub Releases
 
-1. **Setup GitHub token**:
-   - Go to GitHub Settings → Developer settings → Personal access tokens
-   - Generate token with `repo` scope
-   - Add to `.env.local` as `GH_TOKEN`
+1. **Update version**:
 
-2. **Update version**:
    ```bash
-   # Update version in package.json
    npm version patch  # or minor, major
    ```
 
-3. **Create release**:
+2. **Create release**:
    ```bash
-   npm run release
+   npm run publish
    ```
 
 This will:
+
 - Build the application
-- Create a GitHub release
-- Upload installer as release asset
+- Create a Squirrel.Windows installer
+- Publish to GitHub Releases
 - Enable auto-update for existing installations
 
 ### Manual Release
 
-If you need to build without auto-publishing:
-
 ```bash
-# Build and create installer, but don't publish
-npm run build
+# Build installer without publishing
+npm run make
 
-# Upload dist/PharmaPOS-Setup-*.exe manually to GitHub Releases
+# Upload out/make/squirrel.windows/x64/*.exe manually to GitHub Releases
 ```
 
 ## Build Configuration
 
-Build configuration is defined in `electron-builder.yml`:
+Build configuration is defined in `forge.config.ts`:
 
 - **Application ID**: `com.pharmapos.app`
 - **Product Name**: `PharmaPOS`
-- **Installer Type**: NSIS (Windows)
+- **Installer Type**: Squirrel.Windows
 - **Architecture**: x64
-- **Signing**: SHA-256 hash algorithm
-- **Auto-update**: GitHub releases provider
+- **Auto-update**: GitHub releases via `update-electron-app`
 
 ## Build Outputs
 
-After successful build, you'll find:
+After `npm run make`:
 
 ```
-dist/
-├── PharmaPOS-Setup-1.0.0.exe    # Signed NSIS installer
-├── win-unpacked/                # Unpacked application files
-└── builder-debug.yml            # Build debug information
+out/
+├── make/
+│   └── squirrel.windows/
+│       └── x64/
+│           ├── PharmaPOS-Setup.exe    # Squirrel installer
+│           └── *.nupkg                # Update package
+└── PharmaPOS-win32-x64/              # Unpacked application
 ```
 
 ## Troubleshooting
@@ -149,39 +119,19 @@ dist/
 **Cause**: `CSC_LINK` path is incorrect or certificate file is missing.
 
 **Solution**:
+
 - Verify certificate file exists at specified path
-- Use absolute paths in `.env.local`
+- Use absolute paths in environment variables
 - Check file permissions
-
-### "Invalid certificate password" Error
-
-**Cause**: `CSC_KEY_PASSWORD` is incorrect.
-
-**Solution**:
-- Verify password with: `certutil -dump certificate.pfx`
-- Ensure no extra spaces in `.env.local`
 
 ### Windows SmartScreen Warning
 
 **Cause**: Certificate doesn't have enough reputation or is self-signed.
 
 **Solution**:
+
 - Use certificate from trusted CA (DigiCert, Sectigo, etc.)
-- Build reputation over time (Microsoft tracks signed executables)
 - Consider Extended Validation (EV) certificate for immediate trust
-
-### Build Fails on Non-Windows Platform
-
-**Cause**: Code signing requires Windows.
-
-**Solution**:
-- Build on Windows machine or Windows VM
-- Use CI/CD with Windows runners (GitHub Actions)
-- Or build without signing: remove certificate config from electron-builder.yml
-
-## CI/CD Integration
-
-For automated builds with GitHub Actions, see `.github/workflows/release.yml` (created in Phase 6, Task 8).
 
 ## Security Best Practices
 
@@ -192,18 +142,9 @@ For automated builds with GitHub Actions, see `.github/workflows/release.yml` (c
 2. **Store certificates securely**:
    - Use password-protected certificates
    - Rotate certificates before expiration
-   - Keep backups in secure location
-
-3. **Limit access**:
-   - Only trusted team members should have access to certificates
-   - Use environment-specific certificates (dev vs prod)
-
-4. **Monitor certificate expiration**:
-   - Set calendar reminders 3-6 months before expiration
-   - Plan renewal well in advance
 
 ## Additional Resources
 
-- [electron-builder Documentation](https://www.electron.build/)
-- [Code Signing Guide](https://www.electron.build/code-signing)
-- [Windows Code Signing](https://docs.microsoft.com/en-us/windows/win32/seccrypto/cryptography-tools)
+- [Electron Forge Documentation](https://www.electronforge.io/)
+- [Squirrel.Windows Maker](https://www.electronforge.io/config/makers/squirrel.windows)
+- [update-electron-app](https://github.com/electron/update-electron-app)

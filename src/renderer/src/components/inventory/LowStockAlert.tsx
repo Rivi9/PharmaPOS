@@ -26,9 +26,7 @@ export function LowStockAlert({ lowStockProducts }: LowStockAlertProps) {
                 <span className="font-semibold text-red-600 ml-1">
                   {product.total_stock || 0} {product.unit}
                 </span>
-                <span className="text-orange-600 ml-1">
-                  (reorder at {product.reorder_level})
-                </span>
+                <span className="text-orange-600 ml-1">(reorder at {product.reorder_level})</span>
               </div>
             ))}
             {lowStockProducts.length > 5 && (

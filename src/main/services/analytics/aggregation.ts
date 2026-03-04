@@ -54,9 +54,9 @@ export function aggregateDateRange(startDate: string, endDate: string): { daysPr
  */
 export function getLastAggregatedDate(): string | null {
   const db = getDatabase()
-  const result = db
-    .prepare('SELECT MAX(date) as last_date FROM product_sales_daily')
-    .get() as { last_date: string | null }
+  const result = db.prepare('SELECT MAX(date) as last_date FROM product_sales_daily').get() as {
+    last_date: string | null
+  }
 
   return result.last_date
 }

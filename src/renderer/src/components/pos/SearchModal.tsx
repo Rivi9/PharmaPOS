@@ -11,7 +11,12 @@ interface SearchModalProps {
   initialQuery?: string
 }
 
-export function SearchModal({ open, onClose, onSelect, initialQuery }: SearchModalProps): React.JSX.Element {
+export function SearchModal({
+  open,
+  onClose,
+  onSelect,
+  initialQuery
+}: SearchModalProps): React.JSX.Element {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Product[]>([])
   const [loading, setLoading] = useState(false)
@@ -122,7 +127,9 @@ export function SearchModal({ open, onClose, onSelect, initialQuery }: SearchMod
                       </div>
                       <div className="text-right shrink-0">
                         <p className="font-bold text-base">Rs. {product.unit_price.toFixed(2)}</p>
-                        <p className={`text-sm font-medium mt-0.5 ${getStockColor(product.total_stock)}`}>
+                        <p
+                          className={`text-sm font-medium mt-0.5 ${getStockColor(product.total_stock)}`}
+                        >
                           {product.total_stock || 0} in stock
                         </p>
                       </div>
@@ -133,9 +140,7 @@ export function SearchModal({ open, onClose, onSelect, initialQuery }: SearchMod
             )}
           </div>
 
-          <p className="text-sm text-muted-foreground text-center">
-            Tap a product to add to cart
-          </p>
+          <p className="text-sm text-muted-foreground text-center">Tap a product to add to cart</p>
         </div>
       </DialogContent>
     </Dialog>

@@ -236,7 +236,9 @@ export function CustomersPage(): React.JSX.Element {
                     <p className="text-muted-foreground text-xs uppercase font-medium">Notes</p>
                     <p className="mt-0.5">{selected.notes}</p>
                   </div>
-                ) : <div />}
+                ) : (
+                  <div />
+                )}
                 <div>
                   <p className="text-muted-foreground text-xs uppercase font-medium">
                     Customer Since

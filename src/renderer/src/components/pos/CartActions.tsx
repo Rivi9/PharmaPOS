@@ -9,7 +9,7 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
-  AlertDialogTitle,
+  AlertDialogTitle
 } from '@renderer/components/ui/alert-dialog'
 
 interface CartActionsProps {
@@ -27,7 +27,7 @@ export function CartActions({
   onHold,
   onRecall,
   onClear,
-  onPayment,
+  onPayment
 }: CartActionsProps): React.JSX.Element {
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
 
@@ -78,11 +78,7 @@ export function CartActions({
       </div>
 
       {/* Pay Button — large, easy to tap */}
-      <Button
-        disabled={!hasItems}
-        onClick={onPayment}
-        className="w-full h-16 text-xl font-bold"
-      >
+      <Button disabled={!hasItems} onClick={onPayment} className="w-full h-16 text-xl font-bold">
         Pay Now
       </Button>
 
@@ -97,7 +93,10 @@ export function CartActions({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleClearConfirm} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction
+              onClick={handleClearConfirm}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
               Clear Cart
             </AlertDialogAction>
           </AlertDialogFooter>

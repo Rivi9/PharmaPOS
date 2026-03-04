@@ -1,4 +1,10 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
 import { Trophy } from 'lucide-react'
 import type { TopProduct } from '@renderer/types/analytics'
 
@@ -71,9 +77,7 @@ export function TopProductsList({ products, isLoading }: TopProductsListProps): 
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium truncate">{product.product_name}</p>
-                <p className="text-sm text-muted-foreground">
-                  {product.total_quantity} units sold
-                </p>
+                <p className="text-sm text-muted-foreground">{product.total_quantity} units sold</p>
               </div>
               <div className="text-right">
                 <p className="font-medium">Rs. {product.total_revenue.toFixed(2)}</p>

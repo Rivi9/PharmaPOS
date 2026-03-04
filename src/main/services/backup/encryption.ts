@@ -35,10 +35,7 @@ export function encryptData(data: Buffer, password: string): Buffer {
 export function decryptData(encryptedData: Buffer, password: string): Buffer {
   const salt = encryptedData.subarray(0, SALT_LENGTH)
   const iv = encryptedData.subarray(SALT_LENGTH, SALT_LENGTH + IV_LENGTH)
-  const tag = encryptedData.subarray(
-    SALT_LENGTH + IV_LENGTH,
-    SALT_LENGTH + IV_LENGTH + TAG_LENGTH
-  )
+  const tag = encryptedData.subarray(SALT_LENGTH + IV_LENGTH, SALT_LENGTH + IV_LENGTH + TAG_LENGTH)
   const encrypted = encryptedData.subarray(SALT_LENGTH + IV_LENGTH + TAG_LENGTH)
 
   const key = deriveKey(password, salt)

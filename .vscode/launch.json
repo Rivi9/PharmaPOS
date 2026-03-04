@@ -6,14 +6,12 @@
       "type": "node",
       "request": "launch",
       "cwd": "${workspaceRoot}",
-      "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron-vite",
+      "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron-forge",
       "windows": {
-        "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron-vite.cmd"
+        "runtimeExecutable": "${workspaceRoot}/node_modules/.bin/electron-forge.cmd"
       },
-      "runtimeArgs": ["--sourcemap"],
-      "env": {
-        "REMOTE_DEBUGGING_PORT": "9222"
-      }
+      "runtimeArgs": ["start", "--", "--inspect-brk=9229"],
+      "env": {}
     },
     {
       "name": "Debug Renderer Process",

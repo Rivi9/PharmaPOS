@@ -42,10 +42,7 @@ export const logger = winston.createLogger({
 if (process.env.NODE_ENV !== 'production') {
   logger.add(
     new winston.transports.Console({
-      format: winston.format.combine(
-        winston.format.colorize(),
-        winston.format.simple()
-      )
+      format: winston.format.combine(winston.format.colorize(), winston.format.simple())
     })
   )
 }
@@ -61,13 +58,20 @@ if (process.env.NODE_ENV !== 'production') {
  * - silly: 6
  */
 
-export function logError(message: string, error?: Error | unknown, context?: Record<string, any>): void {
+export function logError(
+  message: string,
+  error?: Error | unknown,
+  context?: Record<string, any>
+): void {
   logger.error(message, {
-    error: error instanceof Error ? {
-      message: error.message,
-      stack: error.stack,
-      name: error.name
-    } : error,
+    error:
+      error instanceof Error
+        ? {
+            message: error.message,
+            stack: error.stack,
+            name: error.name
+          }
+        : error,
     ...context
   })
 }

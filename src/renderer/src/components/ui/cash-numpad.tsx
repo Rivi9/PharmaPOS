@@ -24,20 +24,31 @@ const KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', 'backspace'
  *   — but only when the active element is NOT an <input> or <textarea>,
  *   so sibling text fields (Notes, Customer name, etc.) still work normally.
  */
-export function CashNumpad({ value, onChange, onSubmit, buttonClassName }: CashNumpadProps): React.JSX.Element {
+export function CashNumpad({
+  value,
+  onChange,
+  onSubmit,
+  buttonClassName
+}: CashNumpadProps): React.JSX.Element {
   // Refs so the single keydown listener always sees the latest values
   const valueRef = useRef(value)
   const onChangeRef = useRef(onChange)
   const onSubmitRef = useRef(onSubmit)
-  useEffect(() => { valueRef.current = value }, [value])
-  useEffect(() => { onChangeRef.current = onChange }, [onChange])
-  useEffect(() => { onSubmitRef.current = onSubmit }, [onSubmit])
+  useEffect(() => {
+    valueRef.current = value
+  }, [value])
+  useEffect(() => {
+    onChangeRef.current = onChange
+  }, [onChange])
+  useEffect(() => {
+    onSubmitRef.current = onSubmit
+  }, [onSubmit])
 
   /** Apply one key press and call onChange with the resulting string. */
   const applyKey = (key: string, current: string): string | null => {
     if (key === 'backspace') return current.slice(0, -1)
     if (key === '.') {
-      if (current.includes('.')) return null  // already has decimal
+      if (current.includes('.')) return null // already has decimal
       return current + '.'
     }
     // Digit — enforce max 2 decimal places

@@ -21,7 +21,9 @@ export function getProducts(): Product[] {
 /**
  * Search products by name, generic name, barcode, or SKU
  */
-export function searchProducts(query: string): (Product & { total_stock: number; nearest_expiry: string | null })[] {
+export function searchProducts(
+  query: string
+): (Product & { total_stock: number; nearest_expiry: string | null })[] {
   const q = query.trim()
   const db = getDatabase()
   const searchTerm = `%${q}%`
@@ -47,7 +49,10 @@ export function searchProducts(query: string): (Product & { total_stock: number;
     LIMIT 20
   `
     )
-    .all(searchTerm, searchTerm, q, searchTerm) as (Product & { total_stock: number; nearest_expiry: string | null })[]
+    .all(searchTerm, searchTerm, q, searchTerm) as (Product & {
+    total_stock: number
+    nearest_expiry: string | null
+  })[]
 
   return results
 }
@@ -56,18 +61,16 @@ export function searchProducts(query: string): (Product & { total_stock: number;
  * Get product by ID
  */
 export function getProductById(id: string): Product | null {
-  const result = getDb()
-    .select()
-    .from(products)
-    .where(eq(products.id, id))
-    .get()
+  const result = getDb().select().from(products).where(eq(products.id, id)).get()
   return result ?? null
 }
 
 /**
  * Get product by exact barcode match
  */
-export function getProductByBarcode(barcode: string): (Product & { total_stock: number; nearest_expiry: string | null }) | null {
+export function getProductByBarcode(
+  barcode: string
+): (Product & { total_stock: number; nearest_expiry: string | null }) | null {
   const db = getDatabase()
 
   const result = db
@@ -108,7 +111,10 @@ export function createProduct(data: Omit<NewProduct, 'id' | 'createdAt' | 'updat
 /**
  * Update an existing product
  */
-export function updateProduct(id: string, data: Partial<Omit<NewProduct, 'id' | 'createdAt'>>): Product {
+export function updateProduct(
+  id: string,
+  data: Partial<Omit<NewProduct, 'id' | 'createdAt'>>
+): Product {
   const now = new Date().toISOString()
 
   getDb()
@@ -128,17 +134,18 @@ export function updateProduct(id: string, data: Partial<Omit<NewProduct, 'id' | 
 export function deleteProduct(id: string): void {
   const now = new Date().toISOString()
 
-  getDb()
-    .update(products)
-    .set({ isActive: 0, updatedAt: now })
-    .where(eq(products.id, id))
-    .run()
+  getDb().update(products).set({ isActive: 0, updatedAt: now }).where(eq(products.id, id)).run()
 }
 
 /**
  * Get products where current stock is at or below the reorder level
  */
-export function getLowStockProducts(): { id: string; name: string; reorderLevel: number; currentStock: number }[] {
+export function getLowStockProducts(): {
+  id: string
+  name: string
+  reorderLevel: number
+  currentStock: number
+}[] {
   return getDb()
     .select({
       id: products.id,
@@ -159,7 +166,11 @@ export function getLowStockProducts(): { id: string; name: string; reorderLevel:
 /**
  * Get top 8 quick items (best sellers from last 7 days)
  */
-export function getQuickItems(): (Product & { total_stock: number; nearest_expiry: string | null; sales_7d: number })[] {
+export function getQuickItems(): (Product & {
+  total_stock: number
+  nearest_expiry: string | null
+  sales_7d: number
+})[] {
   const db = getDatabase()
 
   const results = db
@@ -189,7 +200,10 @@ export function getQuickItems(): (Product & { total_stock: number; nearest_expir
 /**
  * Get products with their total stock quantity (for inventory views)
  */
-export function getProductsWithStock(): (Product & { total_stock: number; nearest_expiry: string | null })[] {
+export function getProductsWithStock(): (Product & {
+  total_stock: number
+  nearest_expiry: string | null
+})[] {
   const db = getDatabase()
 
   return db

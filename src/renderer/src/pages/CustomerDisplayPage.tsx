@@ -136,18 +136,24 @@ export function CustomerDisplayPage(): React.JSX.Element {
       <div className="bg-gray-900 px-8 py-6 space-y-2">
         <div className="flex justify-between text-gray-400 text-lg">
           <span>Subtotal</span>
-          <span>{currency} {cart.subtotal.toFixed(2)}</span>
+          <span>
+            {currency} {cart.subtotal.toFixed(2)}
+          </span>
         </div>
         {cart.discount_amount > 0 && (
           <div className="flex justify-between text-green-400 text-lg">
             <span>Discount</span>
-            <span>- {currency} {cart.discount_amount.toFixed(2)}</span>
+            <span>
+              - {currency} {cart.discount_amount.toFixed(2)}
+            </span>
           </div>
         )}
         {cart.tax_amount > 0 && (
           <div className="flex justify-between text-gray-400 text-lg">
             <span>Tax</span>
-            <span>{currency} {cart.tax_amount.toFixed(2)}</span>
+            <span>
+              {currency} {cart.tax_amount.toFixed(2)}
+            </span>
           </div>
         )}
         <div className="flex justify-between text-white font-bold pt-2 border-t border-gray-700">

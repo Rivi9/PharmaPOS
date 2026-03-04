@@ -24,7 +24,8 @@ export function CartItem({
   onUpdateQuantity,
   onRemove
 }: CartItemProps): React.JSX.Element {
-  const maxStock = item.product.total_stock != null ? Math.max(0, Math.floor(item.product.total_stock)) : undefined
+  const maxStock =
+    item.product.total_stock != null ? Math.max(0, Math.floor(item.product.total_stock)) : undefined
   const isAtStockLimit = maxStock !== undefined && item.quantity >= maxStock
 
   const handleQuantityChange = (delta: number) => {
@@ -47,24 +48,25 @@ export function CartItem({
         {item.product.generic_name && (
           <p className="text-sm text-muted-foreground truncate">{item.product.generic_name}</p>
         )}
-        {item.product.nearest_expiry && (() => {
-          const days = getDaysUntilExpiry(item.product.nearest_expiry!)
-          if (days <= 0) {
-            return (
-              <p className="text-sm text-red-600 flex items-center gap-1 mt-0.5 font-medium">
-                <AlertTriangle className="h-4 w-4" /> EXPIRED
-              </p>
-            )
-          }
-          if (days <= 30) {
-            return (
-              <p className="text-sm text-orange-500 flex items-center gap-1 mt-0.5">
-                <AlertTriangle className="h-4 w-4" /> Expires in {days}d
-              </p>
-            )
-          }
-          return null
-        })()}
+        {item.product.nearest_expiry &&
+          (() => {
+            const days = getDaysUntilExpiry(item.product.nearest_expiry!)
+            if (days <= 0) {
+              return (
+                <p className="text-sm text-red-600 flex items-center gap-1 mt-0.5 font-medium">
+                  <AlertTriangle className="h-4 w-4" /> EXPIRED
+                </p>
+              )
+            }
+            if (days <= 30) {
+              return (
+                <p className="text-sm text-orange-500 flex items-center gap-1 mt-0.5">
+                  <AlertTriangle className="h-4 w-4" /> Expires in {days}d
+                </p>
+              )
+            }
+            return null
+          })()}
       </div>
 
       {/* Quantity Controls — min 44px touch targets */}

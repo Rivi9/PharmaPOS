@@ -164,9 +164,10 @@ export function isDriveConfigured(): boolean {
  */
 export function storeDriveToken(accessToken: string): void {
   const db = getDatabase()
-  db.prepare(
-    'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)'
-  ).run('google_drive_token', accessToken)
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
+    'google_drive_token',
+    accessToken
+  )
 
   initializeDrive(accessToken)
 }

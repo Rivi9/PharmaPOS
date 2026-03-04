@@ -1,5 +1,20 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from 'recharts'
 import type { DailySalesMetric } from '@renderer/types/analytics'
 
 interface SalesTrendChartProps {
@@ -57,11 +72,7 @@ export function SalesTrendChart({ data, isLoading }: SalesTrendChartProps): Reac
         <ResponsiveContainer width="100%" height={300}>
           <LineChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" />
-            <XAxis
-              dataKey="date"
-              tick={{ fontSize: 12 }}
-              tickMargin={10}
-            />
+            <XAxis dataKey="date" tick={{ fontSize: 12 }} tickMargin={10} />
             <YAxis
               tick={{ fontSize: 12 }}
               tickMargin={10}

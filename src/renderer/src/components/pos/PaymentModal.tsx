@@ -168,12 +168,15 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
 
       addToTodaySales(total)
 
-      window.electron.display.saleComplete({
-        total,
-        cash_received: paymentMethod === 'cash' || paymentMethod === 'mixed' ? cashReceivedNum : 0,
-        change_given: change,
-        currency: currencySymbol
-      }).catch(() => {})
+      window.electron.display
+        .saleComplete({
+          total,
+          cash_received:
+            paymentMethod === 'cash' || paymentMethod === 'mixed' ? cashReceivedNum : 0,
+          change_given: change,
+          currency: currencySymbol
+        })
+        .catch(() => {})
 
       clearCart()
       setCashReceived('')
@@ -197,9 +200,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg max-h-[95vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl">
-            Complete Sale — {formatCurrency(total)}
-          </DialogTitle>
+          <DialogTitle className="text-xl">Complete Sale — {formatCurrency(total)}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -269,7 +270,12 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
               </div>
 
               {/* Touch Numpad */}
-              <CashNumpad value={cashReceived} onChange={updateCash} onSubmit={handleComplete} buttonClassName="h-14 text-xl" />
+              <CashNumpad
+                value={cashReceived}
+                onChange={updateCash}
+                onSubmit={handleComplete}
+                buttonClassName="h-14 text-xl"
+              />
 
               {/* Change display */}
               {paymentMethod === 'cash' && cashReceivedNum > 0 && (
@@ -328,7 +334,9 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
 
             {purchaseHistory.length > 0 && (
               <div className="border rounded-lg max-h-48 overflow-y-auto">
-                <p className="text-xs font-semibold px-3 pt-2 pb-1 text-muted-foreground border-b">Purchase History</p>
+                <p className="text-xs font-semibold px-3 pt-2 pb-1 text-muted-foreground border-b">
+                  Purchase History
+                </p>
                 <div className="divide-y">
                   {purchaseHistory.map((sale) => (
                     <div key={sale.id} className="px-3 py-2">

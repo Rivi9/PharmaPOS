@@ -63,7 +63,5 @@ export function backfillAggregation(startDate: string, endDate: string): void {
     current.setDate(current.getDate() + 1)
   }
 
-  console.log(
-    `[Backfill] Completed: ${successCount} successful, ${errorCount} failed`
-  )
+  console.log(`[Backfill] Completed: ${successCount} successful, ${errorCount} failed`)
 }

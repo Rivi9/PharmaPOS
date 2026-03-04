@@ -27,9 +27,7 @@ export async function createBackup(password?: string): Promise<string> {
   }
 
   const tempZipPath = path.join(backupDir, `${backupName}.zip`)
-  const finalPath = password
-    ? path.join(backupDir, `${backupName}.encrypted`)
-    : tempZipPath
+  const finalPath = password ? path.join(backupDir, `${backupName}.encrypted`) : tempZipPath
 
   // Create ZIP archive
   await new Promise<void>((resolve, reject) => {
@@ -131,7 +129,9 @@ export function listBackups(): Array<{ path: string; timestamp: string; size: nu
 
   const files = fs.readdirSync(backupDir)
   return files
-    .filter((f) => f.startsWith('pharmapos-backup-') && (f.endsWith('.zip') || f.endsWith('.encrypted')))
+    .filter(
+      (f) => f.startsWith('pharmapos-backup-') && (f.endsWith('.zip') || f.endsWith('.encrypted'))
+    )
     .map((f) => {
       const filePath = path.join(backupDir, f)
       const stats = fs.statSync(filePath)

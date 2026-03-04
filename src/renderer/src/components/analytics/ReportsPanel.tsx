@@ -1,5 +1,11 @@
 import { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { FileText, Download } from 'lucide-react'
@@ -64,13 +70,13 @@ interface ProfitLossData {
 
 // ── PDF helpers ───────────────────────────────────────────────────────────────
 
-const PRIMARY = [30, 64, 175] as const    // blue-800
+const PRIMARY = [30, 64, 175] as const // blue-800
 const HEADER_TEXT = [255, 255, 255] as const
-const DARK = [15, 23, 42] as const        // slate-900
-const MUTED = [100, 116, 139] as const    // slate-500
-const SURFACE = [248, 250, 252] as const  // slate-50
-const BORDER = [226, 232, 240] as const   // slate-200
-const GREEN = [22, 163, 74] as const      // green-600
+const DARK = [15, 23, 42] as const // slate-900
+const MUTED = [100, 116, 139] as const // slate-500
+const SURFACE = [248, 250, 252] as const // slate-50
+const BORDER = [226, 232, 240] as const // slate-200
+const GREEN = [22, 163, 74] as const // green-600
 
 function fmt(n: number, sym: string): string {
   return `${sym} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -81,12 +87,7 @@ function pct(n: number): string {
 }
 
 /** Draws the blue header band and returns the y-coordinate to continue from. */
-function drawHeader(
-  doc: jsPDF,
-  title: string,
-  subtitle: string,
-  businessName: string
-): number {
+function drawHeader(doc: jsPDF, title: string, subtitle: string, businessName: string): number {
   const W = doc.internal.pageSize.getWidth()
   doc.setFillColor(...PRIMARY)
   doc.rect(0, 0, W, 34, 'F')
@@ -177,7 +178,12 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
     headStyles: { fillColor: [...PRIMARY], textColor: 255, fontStyle: 'bold', fontSize: 8 },
     bodyStyles: { fontSize: 8, textColor: [...DARK] },
     alternateRowStyles: { fillColor: [...SURFACE] },
-    columnStyles: { 0: { halign: 'left' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    columnStyles: {
+      0: { halign: 'left' },
+      1: { halign: 'right' },
+      2: { halign: 'right' },
+      3: { halign: 'right' }
+    },
     didParseCell: ({ cell, column }: any) => {
       if (column.index > 0) cell.styles.halign = 'right'
     },
@@ -187,7 +193,10 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
   y = (doc as any).lastAutoTable.finalY + 8
 
   // Top products
-  if (y > 240) { doc.addPage(); y = 20 }
+  if (y > 240) {
+    doc.addPage()
+    y = 20
+  }
   y = sectionTitle(doc, 'Top 10 Products by Revenue', y)
   autoTable(doc, {
     startY: y,
@@ -202,7 +211,12 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
     headStyles: { fillColor: [...PRIMARY], textColor: 255, fontStyle: 'bold', fontSize: 8 },
     bodyStyles: { fontSize: 8, textColor: [...DARK] },
     alternateRowStyles: { fillColor: [...SURFACE] },
-    columnStyles: { 0: { halign: 'left' }, 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' } },
+    columnStyles: {
+      0: { halign: 'left' },
+      1: { halign: 'right' },
+      2: { halign: 'right' },
+      3: { halign: 'right' }
+    },
     didParseCell: ({ cell, column }: any) => {
       if (column.index > 0) cell.styles.halign = 'right'
     },
@@ -212,7 +226,10 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
   y = (doc as any).lastAutoTable.finalY + 8
 
   // Payment methods
-  if (y > 240) { doc.addPage(); y = 20 }
+  if (y > 240) {
+    doc.addPage()
+    y = 20
+  }
   y = sectionTitle(doc, 'Payment Methods', y)
   autoTable(doc, {
     startY: y,
@@ -253,7 +270,8 @@ function buildInventoryPdf(data: InventoryValuationData, businessName: string, s
   drawKpi(doc, 'Active Products', String(data.total_items), 14 + (kpiW + 4) * 2, y, kpiW)
 
   // Potential margin
-  const margin = data.total_value > 0 ? ((data.total_value - data.total_cost) / data.total_value) * 100 : 0
+  const margin =
+    data.total_value > 0 ? ((data.total_value - data.total_cost) / data.total_value) * 100 : 0
   y += 28
   doc.setFontSize(8)
   doc.setTextColor(...MUTED)
@@ -296,7 +314,10 @@ function buildInventoryPdf(data: InventoryValuationData, businessName: string, s
   y = (doc as any).lastAutoTable.finalY + 8
 
   // By product
-  if (y > 230) { doc.addPage(); y = 20 }
+  if (y > 230) {
+    doc.addPage()
+    y = 20
+  }
   y = sectionTitle(doc, 'Product Breakdown', y)
   autoTable(doc, {
     startY: y,
@@ -350,7 +371,8 @@ function buildProfitLossPdf(data: ProfitLossData, businessName: string, sym: str
 
   // Profit indicator bar
   const barW = W - 28
-  const profitRatio = data.total_revenue > 0 ? Math.min(data.gross_profit / data.total_revenue, 1) : 0
+  const profitRatio =
+    data.total_revenue > 0 ? Math.min(data.gross_profit / data.total_revenue, 1) : 0
   doc.setFillColor(...BORDER)
   doc.roundedRect(14, y, barW, 5, 1, 1, 'F')
   doc.setFillColor(...GREEN)
@@ -390,7 +412,10 @@ function buildProfitLossPdf(data: ProfitLossData, businessName: string, sym: str
 
   // By month
   if (data.by_month.length > 0) {
-    if (y > 230) { doc.addPage(); y = 20 }
+    if (y > 230) {
+      doc.addPage()
+      y = 20
+    }
     y = sectionTitle(doc, 'Monthly Trend', y)
     autoTable(doc, {
       startY: y,
@@ -411,12 +436,14 @@ function buildProfitLossPdf(data: ProfitLossData, businessName: string, sym: str
         2: { halign: 'right' },
         3: { halign: 'right' }
       },
-      foot: [[
-        'TOTAL',
-        fmt(data.total_revenue, sym),
-        fmt(data.total_cost, sym),
-        fmt(data.gross_profit, sym)
-      ]],
+      foot: [
+        [
+          'TOTAL',
+          fmt(data.total_revenue, sym),
+          fmt(data.total_cost, sym),
+          fmt(data.gross_profit, sym)
+        ]
+      ],
       footStyles: { fillColor: [...PRIMARY], textColor: 255, fontStyle: 'bold', fontSize: 8 },
       margin: { left: 14, right: 14 }
     })
@@ -504,7 +531,8 @@ export function ReportsPanel(): React.JSX.Element {
     {
       key: 'sales' as const,
       title: 'Sales Report',
-      description: 'Comprehensive sales analysis with daily breakdown, top products, and payment methods',
+      description:
+        'Comprehensive sales analysis with daily breakdown, top products, and payment methods',
       onGenerate: generateSalesReport
     },
     {
@@ -526,26 +554,22 @@ export function ReportsPanel(): React.JSX.Element {
       <Card>
         <CardHeader>
           <CardTitle>Report Generator</CardTitle>
-          <CardDescription>Generate and download comprehensive business reports as PDF</CardDescription>
+          <CardDescription>
+            Generate and download comprehensive business reports as PDF
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm font-medium mb-2 block">Start Date</label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
+              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
             </div>
             <div>
               <label className="text-sm font-medium mb-2 block">End Date</label>
               <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
             </div>
           </div>
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
         </CardContent>
       </Card>
 
@@ -558,11 +582,7 @@ export function ReportsPanel(): React.JSX.Element {
               <CardDescription>{description}</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button
-                onClick={onGenerate}
-                disabled={loadingReport !== null}
-                className="w-full"
-              >
+              <Button onClick={onGenerate} disabled={loadingReport !== null} className="w-full">
                 <Download className="h-4 w-4 mr-2" />
                 {loadingReport === key ? 'Generating…' : 'Generate PDF'}
               </Button>

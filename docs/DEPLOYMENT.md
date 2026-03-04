@@ -24,16 +24,16 @@ GH_TOKEN=github-token
 ### 2. Build Installer
 
 ```bash
-# Build without publishing
-npm run build
+# Build installer without publishing
+npm run make
 
 # Build and publish to GitHub releases
-npm run release
+npm run publish
 ```
 
 ### 3. Test Installer
 
-1. Install the generated .exe from `dist/` directory
+1. Install the generated .exe from `out/make/squirrel.windows/x64/` directory
 2. Run the application and complete first-run setup
 3. Verify all features work correctly
 4. Test auto-update mechanism (with test release)
@@ -51,24 +51,24 @@ npm run release
 
 ```bash
 # Build and publish
-npm run release
+npm run publish
 
 # Installer will be uploaded to GitHub releases
 ```
 
 ## Auto-Update Configuration
 
-Auto-updates work through GitHub releases:
+Auto-updates work via `update-electron-app` + Squirrel.Windows + GitHub releases:
 
-1. Application checks for updates on startup (production only)
-2. Downloads latest release from GitHub
-3. Prompts user to install and restart
-4. Update installed on next app quit
+1. Application checks for updates every hour (production only)
+2. Squirrel downloads the update silently in the background
+3. User is notified via the renderer when update is ready
+4. Update is applied on next app quit (`autoUpdater.quitAndInstall()`)
 
 ### Update Channels
 
 - `latest`: Stable releases (default)
-- `beta`: Pre-release versions (set in electron-builder.yml)
+- `beta`: Pre-release versions (set `prerelease: true` in `forge.config.ts`)
 
 ## Code Signing
 
@@ -145,6 +145,6 @@ PharmaPOS-Setup-1.0.0.exe /S /D=C:\CustomPath
 
 ## Additional Resources
 
-- [electron-builder Documentation](https://www.electron.build/)
+- [Electron Forge Documentation](https://www.electronforge.io/)
 - [GitHub Actions Documentation](https://docs.github.com/en/actions)
 - [Code Signing Guide](docs/BUILDING.md)

@@ -35,10 +35,7 @@ export function initializeDatabase(data: {
   const db = getDatabase()
 
   // Update business settings
-  db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(
-    data.businessName,
-    'business_name'
-  )
+  db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(data.businessName, 'business_name')
 
   if (data.businessAddress) {
     db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(
@@ -55,10 +52,7 @@ export function initializeDatabase(data: {
   }
 
   if (data.currency) {
-    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(
-      data.currency,
-      'currency_symbol'
-    )
+    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(data.currency, 'currency_symbol')
   }
 
   // Create the first admin user (bypasses RBAC — no authenticated user exists yet)

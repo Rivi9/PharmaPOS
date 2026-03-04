@@ -74,11 +74,7 @@ export function handlePortSelect(
  * Called from ipcMain.on('serial:result') in index.ts.
  * Settles the promise created by openDisplay() or acknowledges a disconnect.
  */
-export function handleResult(data: {
-  type: string
-  success: boolean
-  error?: string
-}): void {
+export function handleResult(data: { type: string; success: boolean; error?: string }): void {
   if (data.type === 'connect') {
     if (data.success) {
       _connected = true

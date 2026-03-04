@@ -1,5 +1,11 @@
 import { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
@@ -59,9 +65,7 @@ export function SetupWizardPage(): React.JSX.Element {
                 />
               ))}
             </div>
-            <span className="text-sm text-muted-foreground">
-              Step {currentStep} of 3
-            </span>
+            <span className="text-sm text-muted-foreground">Step {currentStep} of 3</span>
           </div>
           <CardTitle className="text-2xl">Welcome to PharmaPOS</CardTitle>
           <CardDescription>Let's set up your pharmacy management system</CardDescription>

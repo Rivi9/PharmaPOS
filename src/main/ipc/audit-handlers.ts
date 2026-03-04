@@ -6,9 +6,12 @@ import { withPermission } from './middleware'
 import { queryAuditLog, exportAuditLogCsv, type AuditQueryOptions } from '../services/audit'
 
 export function registerAuditHandlers(): void {
-  ipcMain.handle(IPC_CHANNELS.AUDIT_LOG_QUERY, (_event, { userId, ...options }: AuditQueryOptions & { userId: string }) => {
-    return withPermission(userId, 'reports:view', () => queryAuditLog(options))
-  })
+  ipcMain.handle(
+    IPC_CHANNELS.AUDIT_LOG_QUERY,
+    (_event, { userId, ...options }: AuditQueryOptions & { userId: string }) => {
+      return withPermission(userId, 'reports:view', () => queryAuditLog(options))
+    }
+  )
 
   ipcMain.handle(
     IPC_CHANNELS.AUDIT_LOG_EXPORT_CSV,

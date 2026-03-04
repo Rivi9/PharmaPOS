@@ -68,7 +68,12 @@ export function StartShiftModal(): React.JSX.Element {
         </div>
 
         {/* Numpad */}
-        <CashNumpad value={openingCash} onChange={setOpeningCash} onSubmit={handleStartShift} buttonClassName="h-14 text-xl" />
+        <CashNumpad
+          value={openingCash}
+          onChange={setOpeningCash}
+          onSubmit={handleStartShift}
+          buttonClassName="h-14 text-xl"
+        />
 
         {/* Start shift */}
         <Button

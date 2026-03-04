@@ -21,12 +21,7 @@ import { StockBatchFormDialog } from '@renderer/components/inventory/StockBatchF
 
 // Alerts
 import { LowStockAlert } from '@renderer/components/inventory/LowStockAlert'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle
-} from '@renderer/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 
 export function InventoryPage(): React.JSX.Element {
   const { user } = useAuthStore()
@@ -254,7 +249,9 @@ export function InventoryPage(): React.JSX.Element {
   }
 
   // Excel Import
-  const [importResult, setImportResult] = useState<{ imported: number; errors: string[] } | null>(null)
+  const [importResult, setImportResult] = useState<{ imported: number; errors: string[] } | null>(
+    null
+  )
 
   const handleImportExcel = async () => {
     try {
@@ -561,12 +558,14 @@ export function InventoryPage(): React.JSX.Element {
           {importResult && (
             <div className="space-y-3">
               <p className="text-sm text-green-700 font-medium">
-                {importResult.imported} product{importResult.imported !== 1 ? 's' : ''} imported successfully.
+                {importResult.imported} product{importResult.imported !== 1 ? 's' : ''} imported
+                successfully.
               </p>
               {importResult.errors.length > 0 && (
                 <div>
                   <p className="text-sm font-medium text-destructive mb-1">
-                    {importResult.errors.length} row{importResult.errors.length !== 1 ? 's' : ''} skipped:
+                    {importResult.errors.length} row{importResult.errors.length !== 1 ? 's' : ''}{' '}
+                    skipped:
                   </p>
                   <ul className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-y-auto">
                     {importResult.errors.map((e, i) => (

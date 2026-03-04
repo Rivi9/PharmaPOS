@@ -83,7 +83,9 @@ export function registerIpcHandlers(): void {
       if (pinValid) {
         const { password_hash, ...safeUser } = user
         const activeShift = db
-          .prepare(`SELECT opening_cash FROM shifts WHERE user_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`)
+          .prepare(
+            `SELECT opening_cash FROM shifts WHERE user_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`
+          )
           .get(user.id) as { opening_cash: number } | undefined
         logAudit({
           userId: user.id,
@@ -103,7 +105,9 @@ export function registerIpcHandlers(): void {
       if (valid) {
         const { password_hash, ...safeUser } = user
         const activeShift = db
-          .prepare(`SELECT opening_cash FROM shifts WHERE user_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`)
+          .prepare(
+            `SELECT opening_cash FROM shifts WHERE user_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`
+          )
           .get(user.id) as { opening_cash: number } | undefined
         logAudit({
           userId: user.id,
@@ -211,7 +215,9 @@ export function registerIpcHandlers(): void {
         WHERE s.id = ?
       `
       )
-      .get(shiftId) as { id: string; user_id: string; opening_cash: number; user_name: string } | undefined
+      .get(shiftId) as
+      | { id: string; user_id: string; opening_cash: number; user_name: string }
+      | undefined
 
     const openingCash = shift?.opening_cash ?? 0
     const expectedCash = computeShiftExpectedCash(shiftId, openingCash)

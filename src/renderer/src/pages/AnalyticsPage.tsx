@@ -44,15 +44,14 @@ export function AnalyticsPage(): React.JSX.Element {
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
 
       // Load all dashboard data in parallel
-      const [todayData, weekData, topProds, categoryData, lowStock, expiring] =
-        await Promise.all([
-          window.electron.analytics.getDailyMetrics(userId, today),
-          window.electron.analytics.getPeriodMetrics(userId, weekAgo, today),
-          window.electron.analytics.getTopProducts(userId, weekAgo, today, 10),
-          window.electron.analytics.getCategoryBreakdown(userId, weekAgo, today),
-          window.electron.analytics.getLowStockAlerts(userId),
-          window.electron.analytics.getExpiryAlerts(userId, 30)
-        ])
+      const [todayData, weekData, topProds, categoryData, lowStock, expiring] = await Promise.all([
+        window.electron.analytics.getDailyMetrics(userId, today),
+        window.electron.analytics.getPeriodMetrics(userId, weekAgo, today),
+        window.electron.analytics.getTopProducts(userId, weekAgo, today, 10),
+        window.electron.analytics.getCategoryBreakdown(userId, weekAgo, today),
+        window.electron.analytics.getLowStockAlerts(userId),
+        window.electron.analytics.getExpiryAlerts(userId, 30)
+      ])
 
       setTodayMetrics(todayData)
       setWeekMetrics(weekData)

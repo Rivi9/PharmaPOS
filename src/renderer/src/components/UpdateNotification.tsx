@@ -78,9 +78,7 @@ export function UpdateNotification(): React.JSX.Element | null {
             <RefreshCw className="h-5 w-5" />
             Update Available
           </CardTitle>
-          <CardDescription>
-            Version {updateInfo?.version} is ready to install
-          </CardDescription>
+          <CardDescription>Version {updateInfo?.version} is ready to install</CardDescription>
         </CardHeader>
 
         <CardContent>
@@ -90,7 +88,8 @@ export function UpdateNotification(): React.JSX.Element | null {
                 <div className="space-y-2">
                   <Progress value={downloadProgress.percent} />
                   <p className="text-xs text-muted-foreground text-center">
-                    {downloadProgress.percent.toFixed(0)}% - {formatBytes(downloadProgress.bytesPerSecond)}/s
+                    {downloadProgress.percent.toFixed(0)}% -{' '}
+                    {formatBytes(downloadProgress.bytesPerSecond)}/s
                   </p>
                 </div>
               ) : (

@@ -121,7 +121,10 @@ export function AuditLogPage(): React.JSX.Element {
                 placeholder="Filter by action (e.g. SALE_CREATED)"
                 className="pl-8"
                 value={actionFilter}
-                onChange={(e) => { setActionFilter(e.target.value); setPage(0) }}
+                onChange={(e) => {
+                  setActionFilter(e.target.value)
+                  setPage(0)
+                }}
               />
             </div>
           </div>
@@ -146,10 +149,18 @@ export function AuditLogPage(): React.JSX.Element {
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-muted/80 backdrop-blur">
                 <tr className="border-b">
-                  <th className="text-left px-4 py-2 font-medium text-muted-foreground w-44">Timestamp</th>
-                  <th className="text-left px-4 py-2 font-medium text-muted-foreground w-32">User</th>
-                  <th className="text-left px-4 py-2 font-medium text-muted-foreground w-48">Action</th>
-                  <th className="text-left px-4 py-2 font-medium text-muted-foreground w-28">Entity</th>
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground w-44">
+                    Timestamp
+                  </th>
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground w-32">
+                    User
+                  </th>
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground w-48">
+                    Action
+                  </th>
+                  <th className="text-left px-4 py-2 font-medium text-muted-foreground w-28">
+                    Entity
+                  </th>
                   <th className="text-left px-4 py-2 font-medium text-muted-foreground">Details</th>
                 </tr>
               </thead>
@@ -160,7 +171,9 @@ export function AuditLogPage(): React.JSX.Element {
                       {formatTimestamp(entry.timestamp)}
                     </td>
                     <td className="px-4 py-2 font-medium truncate max-w-0">
-                      {entry.user_name ?? <span className="text-muted-foreground italic">system</span>}
+                      {entry.user_name ?? (
+                        <span className="text-muted-foreground italic">system</span>
+                      )}
                     </td>
                     <td className="px-4 py-2">
                       <span
@@ -169,9 +182,7 @@ export function AuditLogPage(): React.JSX.Element {
                         {entry.action}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-muted-foreground text-xs">
-                      {entry.entity_type}
-                    </td>
+                    <td className="px-4 py-2 text-muted-foreground text-xs">{entry.entity_type}</td>
                     <td className="px-4 py-2 text-xs text-muted-foreground truncate max-w-xs">
                       {parseDetails(entry.details)}
                     </td>

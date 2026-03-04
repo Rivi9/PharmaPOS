@@ -106,7 +106,8 @@ export function generateSalesReport(startDate: string, endDate: string): SalesRe
     )
     .get(startDate, endDate) as any
 
-  const avgTransaction = summary.total_transactions > 0 ? summary.total_sales / summary.total_transactions : 0
+  const avgTransaction =
+    summary.total_transactions > 0 ? summary.total_sales / summary.total_transactions : 0
 
   // Daily breakdown
   const dailyBreakdown = db

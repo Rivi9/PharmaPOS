@@ -20,9 +20,12 @@ import fs from 'fs'
 
 export function registerBackupHandlers(): void {
   // Local backup operations
-  ipcMain.handle(IPC_CHANNELS.BACKUP_CREATE, async (_event, { userId, password }: { userId: string; password?: string }) => {
-    return withPermission(userId, 'backup:create', () => createBackup(password))
-  })
+  ipcMain.handle(
+    IPC_CHANNELS.BACKUP_CREATE,
+    async (_event, { userId, password }: { userId: string; password?: string }) => {
+      return withPermission(userId, 'backup:create', () => createBackup(password))
+    }
+  )
 
   ipcMain.handle(
     IPC_CHANNELS.BACKUP_RESTORE,

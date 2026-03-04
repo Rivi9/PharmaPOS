@@ -1,5 +1,11 @@
 import { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@renderer/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
@@ -138,8 +144,8 @@ export function AIInsightsPanel(): React.JSX.Element {
                       <div>
                         <p className="font-medium">{item.product_name}</p>
                         <p className="text-sm text-muted-foreground">
-                          Stock: {item.current_stock} | Last sale: {item.days_since_last_sale}{' '}
-                          days ago
+                          Stock: {item.current_stock} | Last sale: {item.days_since_last_sale} days
+                          ago
                         </p>
                       </div>
                     </div>
