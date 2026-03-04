@@ -7,6 +7,13 @@ import { PublisherGithub } from '@electron-forge/publisher-github'
 
 const config: ForgeConfig = {
   packagerConfig: {
+    // Keep Vite output and runtime dependencies. The Vite plugin's default
+    // ignore only keeps `/.vite`, which drops externalized modules (for
+    // example `better-sqlite3`) from packaged apps.
+    ignore: (file: string) => {
+      if (!file) return false
+      return !(file.startsWith('/.vite') || file.startsWith('/node_modules'))
+    },
     asar: {
       // Native .node files cannot be loaded from inside an asar archive —
       // unpack them alongside it so the OS can load them directly.
