@@ -2,7 +2,7 @@
   "name": "pharma-pos",
   "version": "1.0.0",
   "description": "Pharmacy POS Desktop Application",
-  "main": ".vite/build/main.js",
+  "main": ".vite/build/index.js",
   "author": "Rivi9",
   "homepage": "https://www.electronforge.io",
   "scripts": {

@@ -7,7 +7,12 @@ import { PublisherGithub } from '@electron-forge/publisher-github'
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    asar: {
+      // Native .node files cannot be loaded from inside an asar archive —
+      // unpack them alongside it so the OS can load them directly.
+      unpack: '**/*.node',
+      unpackDir: '**/node_modules/{better-sqlite3,usb}'
+    },
     icon: './build/icon',
     name: 'PharmaPOS',
     appVersion: '1.0.0',
