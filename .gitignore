@@ -149,3 +149,5 @@ vite.config.ts.timestamp-*
 *.p12
 
 .worktrees
+
+released/
