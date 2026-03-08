@@ -18,7 +18,7 @@ const config: ForgeConfig = {
       // Native .node files cannot be loaded from inside an asar archive —
       // unpack them alongside it so the OS can load them directly.
       unpack: '**/*.node',
-      unpackDir: '**/node_modules/{better-sqlite3,usb}'
+      unpackDir: '**/node_modules/{better-sqlite3,usb,serialport,@serialport}'
     },
     icon: './build/icon',
     name: 'PharmaPOS',

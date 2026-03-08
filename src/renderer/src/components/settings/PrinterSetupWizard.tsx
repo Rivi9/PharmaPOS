@@ -22,6 +22,7 @@ export function PrinterSetupWizard(): React.JSX.Element {
     width: 42
   })
   const [testResult, setTestResult] = useState<boolean | null>(null)
+  const [testError, setTestError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [usbPrinters, setUsbPrinters] = useState<Array<{ name: string; path: string }>>([])
   const [usbListLoading, setUsbListLoading] = useState(false)
@@ -74,6 +75,7 @@ export function PrinterSetupWizard(): React.JSX.Element {
   const handleTestPrinter = async () => {
     setIsLoading(true)
     setTestResult(null)
+    setTestError(null)
 
     try {
       // Initialize with current config
@@ -85,15 +87,17 @@ export function PrinterSetupWizard(): React.JSX.Element {
       }
 
       // Test print
-      const result = await window.electron.printer.test()
-      setTestResult(result)
-
-      if (result) {
+      const result = (await window.electron.printer.test()) as { success: boolean; error?: string }
+      if (result.success) {
+        setTestResult(true)
         setTimeout(() => setStep(3), 1500)
+      } else {
+        setTestResult(false)
+        setTestError(result.error || 'Unknown error')
       }
     } catch (error: any) {
       setTestResult(false)
-      alert(error.message)
+      setTestError(error.message)
     } finally {
       setIsLoading(false)
     }
@@ -288,6 +292,11 @@ export function PrinterSetupWizard(): React.JSX.Element {
                 <>
                   <XCircle className="h-16 w-16 mx-auto mb-4 text-destructive" />
                   <p className="text-lg font-medium text-destructive mb-2">Test failed</p>
+                  {testError && (
+                    <p className="text-sm font-mono bg-muted px-3 py-2 rounded mb-4 max-w-sm mx-auto text-left break-all">
+                      {testError}
+                    </p>
+                  )}
                   <p className="text-sm text-muted-foreground mb-6">
                     Please check your printer connection and settings
                   </p>

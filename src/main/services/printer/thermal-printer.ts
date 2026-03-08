@@ -1,11 +1,8 @@
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const escpos = require('escpos')
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const USB = require('escpos-usb')
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const Network = require('escpos-network')
-
+const usbLib = require('usb')
+import * as net from 'net'
 import { getDatabase } from '../database'
+import { EscPosBuilder } from './escpos-builder'
 
 export interface PrinterConfig {
   type: 'epson' | 'star' | 'generic'
@@ -16,44 +13,15 @@ export interface PrinterConfig {
   width?: number // receipt width in chars (default: 42)
 }
 
-/** Returned by getPrinter() — passed to receipt-formatter functions */
-export interface EscposPrinterInstance {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  device: any
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  printer: any
+/** Passed to receipt-formatter functions */
+export interface PrinterHandle {
+  send: (buf: Buffer) => Promise<void>
   width: number
 }
 
 let storedConfig: PrinterConfig | null = null
 
-/** Load config from DB, validate, store in module state */
-export function initializePrinter(config?: PrinterConfig): void {
-  if (config) {
-    storedConfig = config
-    return
-  }
-
-  const db = getDatabase()
-  const get = (key: string): string | undefined =>
-    (
-      db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
-        | { value: string }
-        | undefined
-    )?.value
-
-  storedConfig = {
-    type: (get('printer_type') as PrinterConfig['type']) || 'epson',
-    interface: (get('printer_interface') as PrinterConfig['interface']) || 'usb',
-    path: get('printer_path'),
-    ip: get('printer_ip'),
-    port: get('printer_port') ? parseInt(get('printer_port')!) : 9100,
-    width: get('printer_width') ? parseInt(get('printer_width')!) : 42
-  }
-}
-
-/** Read saved printer configuration from database */
-export function getPrinterConfig(): PrinterConfig {
+function loadConfigFromDb(): PrinterConfig {
   const db = getDatabase()
   const get = (key: string): string | undefined =>
     (
@@ -72,59 +40,26 @@ export function getPrinterConfig(): PrinterConfig {
   }
 }
 
-/** Create a fresh device + printer instance from stored (or DB) config */
-export function getPrinter(): EscposPrinterInstance {
-  if (!storedConfig) {
-    initializePrinter()
+export function initializePrinter(config?: PrinterConfig): void {
+  if (config) {
+    storedConfig = config
+    return
   }
-
-  const config = storedConfig!
-  const width = config.width || 42
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let device: any
-
-  if (config.interface === 'tcp') {
-    if (!config.ip) {
-      throw new Error(
-        'No IP address configured for TCP interface. Please configure your printer in Settings.'
-      )
-    }
-    device = new Network(config.ip, config.port || 9100)
-  } else if (config.interface === 'usb') {
-    if (config.path) {
-      // path format: "vid:pid" (decimal integers, e.g. "1208:3598")
-      const [vidStr, pidStr] = config.path.split(':')
-      const vid = parseInt(vidStr, 10)
-      const pid = parseInt(pidStr, 10)
-      if (
-        !isNaN(vid) &&
-        !isNaN(pid) &&
-        vidStr.trim() === String(vid) &&
-        pidStr.trim() === String(pid)
-      ) {
-        device = new USB(vid, pid)
-      } else {
-        throw new Error(
-          `Invalid USB path format "${config.path}". Expected decimal "vid:pid", e.g. "1208:3598". Reconfigure printer in Settings.`
-        )
-      }
-    } else {
-      // Auto-detect first available USB printer
-      device = new USB()
-    }
-  } else {
-    throw new Error(`Interface "${config.interface}" is not supported. Use USB or TCP.`)
-  }
-
-  const printer = new escpos.Printer(device, { encoding: 'GB18030', width })
-  return { device, printer, width }
+  storedConfig = loadConfigFromDb()
 }
 
-/** Save printer configuration to database and store in module state */
+export function getPrinterConfig(): PrinterConfig {
+  return loadConfigFromDb()
+}
+
 export function savePrinterConfig(config: PrinterConfig): void {
   const db = getDatabase()
   const set = (key: string, value: string) =>
-    db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value)
+    db
+      .prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))"
+      )
+      .run(key, value)
 
   set('printer_type', config.type)
   set('printer_interface', config.interface)
@@ -132,65 +67,149 @@ export function savePrinterConfig(config: PrinterConfig): void {
   if (config.ip) set('printer_ip', config.ip)
   if (config.port) set('printer_port', config.port.toString())
   if (config.width) set('printer_width', config.width.toString())
-
   storedConfig = config
 }
 
-/** Print a test page */
-export async function testPrinter(): Promise<boolean> {
+// ── USB transport ─────────────────────────────────────────────────────────────
+
+async function sendUSB(vid: number, pid: number, data: Buffer): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const device: any = usbLib.findByIds(vid, pid)
+  if (!device) throw new Error(`USB printer not found (${vid}:${pid}). Is it plugged in?`)
+
+  device.open()
+
+  // Prefer the interface with printer class (0x07); fall back to interface 0
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ifaces: any[] = device.interfaces ?? []
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const iface = ifaces.find((i: any) => i.descriptor.bInterfaceClass === 0x07) ?? device.interface(0)
+
   try {
-    const instance = getPrinter()
-    const line = '─'.repeat(instance.width)
+    // detachKernelDriver is not supported on Windows — skip it
+    if (process.platform !== 'win32') {
+      try {
+        if (iface.isKernelDriverActive()) iface.detachKernelDriver()
+      } catch {
+        /* ignore */
+      }
+    }
+    iface.claim()
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const endpoint: any = iface.endpoints.find((e: any) => e.direction === 'out')
+    if (!endpoint) throw new Error('No bulk-OUT endpoint found on USB printer')
 
     await new Promise<void>((resolve, reject) => {
-      instance.device.open((err: Error | null) => {
-        if (err) {
-          reject(err)
-          return
-        }
-        instance.printer
-          .align('CT')
-          .style('B')
-          .size(2, 2)
-          .text('PRINTER TEST\n')
-          .style('NORMAL')
-          .size(1, 1)
-          .text(line + '\n')
-          .align('LT')
-          .text('If you can read this,\n')
-          .text('your printer is working!\n')
-          .text(line + '\n')
-          .feed(2)
-          .cut()
-          .close((closeErr: Error | null) => {
-            if (closeErr) reject(closeErr)
-            else resolve()
-          })
-      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      endpoint.transfer(data, (err: any) => (err ? reject(err) : resolve()))
     })
-    return true
-  } catch (error) {
-    console.error('Printer test failed:', error)
-    return false
+  } finally {
+    try {
+      iface.release(true, () => {})
+    } catch {
+      /* ignore */
+    }
+    try {
+      device.close()
+    } catch {
+      /* ignore */
+    }
   }
 }
 
-/** Open the cash drawer (pin 2) */
-export async function openCashDrawer(): Promise<void> {
-  const instance = getPrinter()
-  await new Promise<void>((resolve, reject) => {
-    instance.device.open((err: Error | null) => {
-      if (err) {
-        reject(err)
-        return
-      }
-      instance.printer.cashdraw(2).close((closeErr: Error | null) => {
-        if (closeErr) reject(closeErr)
+// ── TCP transport ─────────────────────────────────────────────────────────────
+
+async function sendTCP(ip: string, port: number, data: Buffer): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const socket = net.createConnection(port, ip)
+    socket.setTimeout(5000)
+    socket.on('connect', () => {
+      socket.write(data, (err) => {
+        socket.destroy()
+        if (err) reject(err)
         else resolve()
       })
     })
+    socket.on('error', reject)
+    socket.on('timeout', () => {
+      socket.destroy()
+      reject(new Error(`TCP timeout connecting to ${ip}:${port}`))
+    })
   })
 }
+
+// ── Public printer handle ─────────────────────────────────────────────────────
+
+export function getPrinter(): PrinterHandle {
+  if (!storedConfig) initializePrinter()
+  const config = storedConfig!
+  const width = config.width || 42
+
+  if (config.interface === 'tcp') {
+    if (!config.ip) throw new Error('No IP address configured for TCP printer')
+    const { ip, port } = config
+    return { send: (buf) => sendTCP(ip, port || 9100, buf), width }
+  }
+
+  if (config.interface === 'usb') {
+    let vid: number, pid: number
+
+    if (config.path) {
+      const [vidStr, pidStr] = config.path.split(':')
+      vid = parseInt(vidStr, 10)
+      pid = parseInt(pidStr, 10)
+      if (isNaN(vid) || isNaN(pid))
+        throw new Error(`Invalid USB path "${config.path}". Expected decimal "vid:pid".`)
+    } else {
+      // Auto-detect: first device with a printer-class interface
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const found = (usbLib.getDeviceList() as any[]).find((d: any) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (d.interfaces ?? []).some((i: any) => i.descriptor.bInterfaceClass === 0x07)
+      )
+      if (!found) throw new Error('No USB printer detected. Check connection and WinUSB driver.')
+      vid = found.deviceDescriptor.idVendor
+      pid = found.deviceDescriptor.idProduct
+    }
+
+    return { send: (buf) => sendUSB(vid, pid, buf), width }
+  }
+
+  throw new Error(`Unsupported interface "${config.interface}". Use USB or TCP.`)
+}
+
+// ── High-level operations ─────────────────────────────────────────────────────
+
+/** Throws on failure so the caller sees the real error */
+export async function testPrinter(): Promise<void> {
+  const handle = getPrinter()
+  const line = '-'.repeat(handle.width)
+  const buf = new EscPosBuilder()
+    .align('CT')
+    .bold(true)
+    .size(2, 2)
+    .text('PRINTER TEST\n')
+    .bold(false)
+    .size(1, 1)
+    .text(line + '\n')
+    .align('LT')
+    .text('If you can read this,\n')
+    .text('your printer is working!\n')
+    .text(line + '\n')
+    .feed(2)
+    .cut()
+    .build()
+  await handle.send(buf)
+}
+
+export async function openCashDrawer(): Promise<void> {
+  const handle = getPrinter()
+  const buf = new EscPosBuilder().cashdraw(2).build()
+  await handle.send(buf)
+}
+
+// ── USB device listing ────────────────────────────────────────────────────────
 
 const KNOWN_VENDORS: Record<number, string> = {
   0x04b8: 'Epson',
@@ -199,24 +218,36 @@ const KNOWN_VENDORS: Record<number, string> = {
   0x1504: 'Microcom'
 }
 
-/** List available USB printers using libusb (requires WinUSB driver on Windows) */
-export async function listUSBPrinters(): Promise<Array<{ name: string; path: string }>> {
+export function listUSBPrinters(): Array<{ name: string; path: string }> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const devices: any[] = USB.findPrinter()
-    if (!devices || devices.length === 0) return []
+    const devices: any[] = usbLib.getDeviceList()
+    const results: Array<{ name: string; path: string }> = []
 
-    return devices.map((device) => {
+    for (const device of devices) {
       const vid: number = device.deviceDescriptor.idVendor
       const pid: number = device.deviceDescriptor.idProduct
-      const vendorName = KNOWN_VENDORS[vid] || 'USB Printer'
-      const name = `${vendorName} (${vid.toString(16).padStart(4, '0')}:${pid.toString(16).padStart(4, '0')})`
-      const path = `${vid}:${pid}`
-      return { name, path }
-    })
+
+      // Check config descriptor for a printer-class interface (class 0x07)
+      // configDescriptor.interfaces is an array-of-arrays (one per alternate setting)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const ifaceGroups: any[][] = device.configDescriptor?.interfaces ?? []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const hasPrinterClass = ifaceGroups.some((alts: any[]) =>
+        alts.some((alt) => alt.bInterfaceClass === 0x07)
+      )
+
+      if (hasPrinterClass || KNOWN_VENDORS[vid]) {
+        const vendorName = KNOWN_VENDORS[vid] || 'USB Printer'
+        results.push({
+          name: `${vendorName} (${vid.toString(16).padStart(4, '0')}:${pid.toString(16).padStart(4, '0')})`,
+          path: `${vid}:${pid}`
+        })
+      }
+    }
+
+    return results
   } catch {
-    // libusb not available (WinUSB driver not installed, or USB module not built)
-    // Return empty list — UI will show manual entry fallback
     return []
   }
 }

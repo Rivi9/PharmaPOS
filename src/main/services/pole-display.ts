@@ -1,181 +1,126 @@
-import { BrowserWindow } from 'electron'
+import { SerialPort } from 'serialport'
 import { logInfo, logError } from './logging/logger'
 
-// ── IPC channels shared with the renderer serial module ──────────────────────
-export const SERIAL_CMD_CHANNEL = 'serial:cmd'
-export const SERIAL_RESULT_CHANNEL = 'serial:result'
-export const SERIAL_READY_CHANNEL = 'serial:ready'
+// ── OCPD-LED8 protocol (from official manual) ─────────────────────────────────
+//
+// Baud: 2400, N, 8, 1  (default, no handshake)
+//
+// Key commands:
+//   CLR            \x0C              — clear all digits
+//   ESC @          \x1B\x40          — initialize (power-on reset)
+//   ESC Q A … CR   \x1B\x51\x41 + digits + \x0D  — display digits
+//   ESC s n        \x1B\x73 + n      — light a label LED
+//                    n='0' all off | '1' Price | '2' Total | '3' Collect | '4' Change
+//
+// ESC Q A accepts only: digits 0-9, '-', '.'
+// Max 8 digits without decimal, up to 15 chars with decimal places.
+// ──────────────────────────────────────────────────────────────────────────────
 
-// ── Display constants ─────────────────────────────────────────────────────────
-// \x0C (Form Feed) resets/clears most single-line LED price displays.
-const CLEAR = '\x0C'
+const DEFAULT_BAUD = 2400
 
-// ── Module state ──────────────────────────────────────────────────────────────
-let mainWindow: BrowserWindow | null = null
-let _connected = false
+// Label LED selector values (ASCII '0'..'4')
+const LABEL = {
+  OFF: '0',
+  PRICE: '1',
+  TOTAL: '2',
+  COLLECT: '3',
+  CHANGE: '4'
+} as const
+
+let activePort: SerialPort | null = null
 let _currentPort = ''
-let _currentBaudRate = 9600
+let _currentBaudRate = DEFAULT_BAUD
 
-// Pending promise resolvers — held while waiting for renderer to respond
-let _listPortsResolve: ((ports: { path: string; manufacturer?: string }[]) => void) | null = null
-let _connectResolve: (() => void) | null = null
-let _connectReject: ((err: Error) => void) | null = null
+// ── Public API ────────────────────────────────────────────────────────────────
 
-// Port name to auto-select in the 'select-serial-port' session event
-let _pendingConnectPort = ''
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/** Forward a command object to the renderer via the serial command channel */
-function sendCmd(cmd: unknown): void {
-  if (!mainWindow || mainWindow.isDestroyed()) return
-  mainWindow.webContents.send(SERIAL_CMD_CHANNEL, cmd)
-}
-
-// ── Called from index.ts event handlers ──────────────────────────────────────
-
-/** Store reference to the main window so we can push commands to the renderer */
-export function init(win: BrowserWindow): void {
-  mainWindow = win
-}
-
-/**
- * Called from the 'select-serial-port' session event.
- * Resolves a pending listPorts() call or auto-selects a port for openDisplay().
- */
-export function handlePortSelect(
-  portList: { portId: string; portName: string }[],
-  callback: (portId: string) => void
-): void {
-  if (_listPortsResolve) {
-    // listPorts() is waiting — resolve it with the captured port list, then cancel selection
-    const result = portList.map((p) => ({ path: p.portName, manufacturer: undefined }))
-    _listPortsResolve(result)
-    _listPortsResolve = null
-    callback('') // cancel — no port is actually opened
-    return
-  }
-
-  if (_pendingConnectPort) {
-    // openDisplay() is waiting — find the matching port by name and select it
-    const match = portList.find((p) => p.portName === _pendingConnectPort)
-    if (match) {
-      callback(match.portId)
-    } else {
-      callback('') // port not found; renderer requestPort() will throw NotFoundError
-    }
-    return
-  }
-
-  callback('') // unexpected call — cancel
-}
-
-/**
- * Called from ipcMain.on('serial:result') in index.ts.
- * Settles the promise created by openDisplay() or acknowledges a disconnect.
- */
-export function handleResult(data: { type: string; success: boolean; error?: string }): void {
-  if (data.type === 'connect') {
-    if (data.success) {
-      _connected = true
-      logInfo('Pole display connected via Web Serial', {
-        port: _currentPort,
-        baudRate: _currentBaudRate
-      })
-      _connectResolve?.()
-    } else {
-      _connected = false
-      logError('Pole display connection failed', { port: _currentPort, error: data.error })
-      _connectReject?.(new Error(data.error ?? 'Connection failed'))
-    }
-    _connectResolve = null
-    _connectReject = null
-    _pendingConnectPort = ''
-  } else if (data.type === 'disconnect') {
-    _connected = false
-    _currentPort = ''
-    logInfo('Pole display disconnected')
-  }
-}
-
-// ── Public API (same interface as before) ─────────────────────────────────────
-
-/** List available serial ports — triggers a requestPort() in the renderer to capture the port list */
 export async function listPorts(): Promise<{ path: string; manufacturer?: string }[]> {
-  if (!mainWindow || mainWindow.isDestroyed()) return []
-  return new Promise((resolve) => {
-    _listPortsResolve = resolve
-    sendCmd({ type: 'listPorts' })
-    // Timeout after 5 s if the renderer never triggers the port list
-    setTimeout(() => {
-      if (_listPortsResolve) {
-        _listPortsResolve([])
-        _listPortsResolve = null
-      }
-    }, 5000)
-  })
+  const ports = await SerialPort.list()
+  return ports.map((p) => ({ path: p.path, manufacturer: p.manufacturer }))
 }
 
-/** Open a connection to the pole display */
-export async function openDisplay(portPath: string, baudRate = 9600): Promise<void> {
-  if (_connected) await closeDisplay()
-  _currentPort = portPath
-  _currentBaudRate = baudRate
-  _pendingConnectPort = portPath
+export async function openDisplay(portPath: string, baudRate = DEFAULT_BAUD): Promise<void> {
+  if (activePort?.isOpen) await closeDisplay()
+
   return new Promise((resolve, reject) => {
-    _connectResolve = resolve
-    _connectReject = reject
-    sendCmd({ type: 'connect', portName: portPath, baudRate })
-    // Timeout after 10 s
-    setTimeout(() => {
-      if (_connectResolve || _connectReject) {
-        _connectReject?.(new Error('Connection timeout'))
-        _connectResolve = null
-        _connectReject = null
-        _pendingConnectPort = ''
+    const port = new SerialPort({ path: portPath, baudRate }, (err) => {
+      if (err) {
+        logError('Pole display connection failed', { port: portPath, error: err.message })
+        reject(err)
+        return
       }
-    }, 10000)
+      activePort = port
+      _currentPort = portPath
+      _currentBaudRate = baudRate
+      logInfo('Pole display connected', { port: portPath, baudRate })
+      showWelcome()
+      resolve()
+    })
   })
 }
 
-/** Close the serial connection */
 export async function closeDisplay(): Promise<void> {
-  sendCmd({ type: 'disconnect' })
-  _connected = false
-  _currentPort = ''
+  if (!activePort?.isOpen) {
+    activePort = null
+    return
+  }
+  return new Promise((resolve) => {
+    activePort!.close(() => {
+      activePort = null
+      _currentPort = ''
+      logInfo('Pole display disconnected')
+      resolve()
+    })
+  })
 }
 
-/** Returns whether the display port is currently open */
 export function isConnected(): boolean {
-  return _connected
+  return activePort?.isOpen ?? false
 }
 
-/** Returns the currently connected port path and baud rate */
 export function getStatus(): { connected: boolean; port: string; baudRate: number } {
-  return { connected: _connected, port: _currentPort, baudRate: _currentBaudRate }
+  return { connected: isConnected(), port: _currentPort, baudRate: _currentBaudRate }
 }
 
-/** Write a number to the display — clears first, then sends the value */
-function showNumber(value: number): void {
-  sendCmd({ type: 'write', data: CLEAR + value.toFixed(2) })
+// ── Low-level helpers ─────────────────────────────────────────────────────────
+
+function writeToPort(data: string): void {
+  if (!activePort?.isOpen) return
+  const bytes = Buffer.from([...data].map((c) => c.charCodeAt(0) & 0xff))
+  activePort.write(bytes, (err) => {
+    if (err) logError('Pole display write error', { error: err.message })
+  })
 }
 
-/** Show 0.00 on the idle welcome screen */
-export function showWelcome(_businessName: string): void {
-  showNumber(0)
+/** CLR + ESC s n + ESC Q A [value] CR */
+function showValue(value: string, label: string): void {
+  const cmd =
+    '\x0C' + // CLR — clear screen
+    '\x1B\x73' +
+    label + // ESC s n — set label LED
+    '\x1B\x51\x41' +
+    value +
+    '\x0D' // ESC Q A … CR — display digits
+  writeToPort(cmd)
 }
 
-/** Show the running cart total on every cart update */
+// ── Display commands ──────────────────────────────────────────────────────────
+
+export function showWelcome(): void {
+  showValue('0.00', LABEL.OFF)
+}
+
 export function showCartUpdate(_lastItemName: string, total: number, _currency: string): void {
-  showNumber(total)
+  showValue(total.toFixed(2), LABEL.TOTAL)
 }
 
-/** Show the sale total after payment */
-export function showSaleComplete(total: number, _change: number, _currency: string): void {
-  showNumber(total)
+export function showSaleComplete(total: number, change: number, _currency: string): void {
+  showValue(total.toFixed(2), LABEL.TOTAL)
+  // After 3 s switch to showing change amount
+  setTimeout(() => {
+    if (isConnected()) showValue(change.toFixed(2), LABEL.CHANGE)
+  }, 3000)
 }
 
-/** Send a test pattern to verify the display is working */
 export function sendTestMessage(): void {
-  showNumber(88.88)
+  showValue('88.88', LABEL.OFF)
 }

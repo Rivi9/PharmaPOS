@@ -51,11 +51,11 @@ export function SettingsPage(): React.JSX.Element {
   // Pole display state
   const [availablePorts, setAvailablePorts] = useState<PortInfo[]>([])
   const [displayPort, setDisplayPort] = useState('')
-  const [displayBaud, setDisplayBaud] = useState(9600)
+  const [displayBaud, setDisplayBaud] = useState(2400)
   const [displayStatus, setDisplayStatus] = useState<DisplayStatus>({
     connected: false,
     port: '',
-    baudRate: 9600
+    baudRate: 2400
   })
   const [displayBusy, setDisplayBusy] = useState(false)
   const [displayMsg, setDisplayMsg] = useState('')
@@ -519,7 +519,7 @@ export function SettingsPage(): React.JSX.Element {
                     ))}
                   </select>
                   <p className="text-xs text-muted-foreground">
-                    Most VFD displays use 9600 baud (default). Check your display manual.
+                    OCPD-LED8 default is 2400 baud. Check your display manual if different.
                   </p>
                 </div>
 

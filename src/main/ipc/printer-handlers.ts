@@ -28,7 +28,13 @@ export function registerPrinterHandlers(): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.PRINTER_TEST, async () => {
-    return await testPrinter()
+    try {
+      await testPrinter()
+      return { success: true }
+    } catch (error) {
+      console.warn('Printer test failed:', (error as Error).message)
+      return { success: false, error: (error as Error).message }
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.PRINTER_SAVE_CONFIG, (_event, config: PrinterConfig) => {

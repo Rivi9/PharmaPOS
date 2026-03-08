@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, session } from 'electron'
+import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 
@@ -124,44 +124,27 @@ app.whenReady().then(() => {
     mainWindow.destroy()
   })
 
-  // ── Web Serial API — grant port access automatically ──────────────────────
-  // This intercepts navigator.serial.requestPort() calls from the renderer.
-  // The pole-display module uses it to list ports and to auto-select by name.
-  session.defaultSession.on('select-serial-port', (_event, portList, _webContents, callback) => {
-    poleDisplay.handlePortSelect(portList, callback)
-  })
-
-  // Initialise the pole display bridge with the window reference
-  poleDisplay.init(mainWindow)
-
-  // Result messages sent back from the renderer's Web Serial implementation
-  ipcMain.on(poleDisplay.SERIAL_RESULT_CHANNEL, (_event, data) => {
-    poleDisplay.handleResult(data)
-  })
-
-  // Renderer signals it is ready — trigger auto-connect now that we can send IPC
-  ipcMain.on(poleDisplay.SERIAL_READY_CHANNEL, () => {
-    try {
-      const db = getDatabase()
-      const portRow = db.prepare("SELECT value FROM settings WHERE key = 'display_port'").get() as
-        | { value: string }
-        | undefined
-      const baudRow = db
-        .prepare("SELECT value FROM settings WHERE key = 'display_baud_rate'")
-        .get() as { value: string } | undefined
-      const savedPort = portRow?.value
-      const savedBaud = parseInt(baudRow?.value ?? '9600', 10)
-      if (savedPort) {
-        poleDisplay.openDisplay(savedPort, savedBaud).catch((err: Error) => {
-          logError('Could not auto-connect pole display', { port: savedPort, error: err.message })
-        })
-      }
-    } catch (err: unknown) {
-      logError('Failed to read display settings for auto-connect', {
-        error: err instanceof Error ? err.message : String(err)
+  // ── Pole display — auto-connect from saved settings ───────────────────────
+  try {
+    const db = getDatabase()
+    const portRow = db.prepare("SELECT value FROM settings WHERE key = 'display_port'").get() as
+      | { value: string }
+      | undefined
+    const baudRow = db
+      .prepare("SELECT value FROM settings WHERE key = 'display_baud_rate'")
+      .get() as { value: string } | undefined
+    const savedPort = portRow?.value
+    const savedBaud = parseInt(baudRow?.value ?? '9600', 10)
+    if (savedPort) {
+      poleDisplay.openDisplay(savedPort, savedBaud).catch((err: Error) => {
+        logError('Could not auto-connect pole display', { port: savedPort, error: err.message })
       })
     }
-  })
+  } catch (err: unknown) {
+    logError('Failed to read display settings for auto-connect', {
+      error: err instanceof Error ? err.message : String(err)
+    })
+  }
 
   // ── Pole display IPC handlers ──────────────────────────────────────────────
 
@@ -197,8 +180,8 @@ app.whenReady().then(() => {
     await poleDisplay.openDisplay(port, baudRate ?? 9600)
     // Persist to settings
     const db = getDatabase()
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('display_port', ?)").run(port)
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('display_baud_rate', ?)").run(
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('display_port', ?, datetime('now'))").run(port)
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('display_baud_rate', ?, datetime('now'))").run(
       String(baudRate ?? 9600)
     )
     return { success: true }
