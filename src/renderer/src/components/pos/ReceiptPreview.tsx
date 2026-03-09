@@ -79,7 +79,7 @@ export function ReceiptPreview({
     const businessAddress = settings.business_address || ''
     const businessPhone = settings.business_phone || ''
     const currency = settings.currency_symbol || 'Rs.'
-    const vatRate = settings.vat_rate || '18'
+    const vatRate = settings.vat_rate || '0'
     const footer = settings.receipt_footer || 'Thank you for your purchase!'
 
     const date = new Date(receipt.sale.created_at)

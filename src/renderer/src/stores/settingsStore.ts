@@ -21,7 +21,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     business_name: '',
     business_address: '',
     business_phone: '',
-    vat_rate: '18',
+    vat_rate: '0',
     currency_symbol: 'Rs.',
     receipt_footer: ''
   },

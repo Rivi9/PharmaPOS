@@ -419,7 +419,7 @@ export function SettingsPage(): React.JSX.Element {
                     type="number"
                     value={localSettings.vat_rate}
                     onChange={(e) => handleChange('vat_rate', e.target.value)}
-                    placeholder="18"
+                    placeholder="0"
                   />
                 </div>
                 <div>
