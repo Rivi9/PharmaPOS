@@ -89,10 +89,10 @@ export async function printReceipt(handle: PrinterHandle, data: ReceiptData): Pr
     .text(
       tableRow(
         [
-          { text: 'Item', align: 'LEFT', width: 0.38 },
-          { text: 'Qty', align: 'CENTER', width: 0.08 },
-          { text: 'Price', align: 'RIGHT', width: 0.27 },
-          { text: 'Total', align: 'RIGHT', width: 0.27 }
+          { text: 'Item', align: 'LEFT', width: 0.382 },
+          { text: 'Qty', align: 'CENTER', width: 0.096 },
+          { text: `Price(${currency})`, align: 'RIGHT', width: 0.262 },
+          { text: `Total(${currency})`, align: 'RIGHT', width: 0.262 }
         ],
         width
       ) + '\n'
@@ -105,10 +105,10 @@ export async function printReceipt(handle: PrinterHandle, data: ReceiptData): Pr
     b.text(
       tableRow(
         [
-          { text: item.product_name, align: 'LEFT', width: 0.38 },
-          { text: item.quantity.toString(), align: 'CENTER', width: 0.08 },
-          { text: `${currency}${item.unit_price.toFixed(2)}`, align: 'RIGHT', width: 0.27 },
-          { text: `${currency}${item.line_total.toFixed(2)}`, align: 'RIGHT', width: 0.27 }
+          { text: item.product_name, align: 'LEFT', width: 0.382 },
+          { text: item.quantity.toString(), align: 'CENTER', width: 0.096 },
+          { text: item.unit_price.toFixed(2), align: 'RIGHT', width: 0.262 },
+          { text: item.line_total.toFixed(2), align: 'RIGHT', width: 0.262 }
         ],
         width
       ) + '\n'
