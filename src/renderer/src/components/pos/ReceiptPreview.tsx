@@ -111,8 +111,23 @@ export function ReceiptPreview({
       return lines.map((l) => l.padStart(Math.floor((W + l.length) / 2)).padEnd(W)).join('\n')
     }
 
+    // Column helper — matches tableRow() in receipt-formatter.ts
+    const col = (text: string, width: number, align: 'L' | 'C' | 'R'): string => {
+      const t = text.length > width ? text.substring(0, width) : text
+      if (align === 'R') return t.padStart(width)
+      if (align === 'C') {
+        const pad = Math.floor((width - t.length) / 2)
+        return ' '.repeat(pad) + t + ' '.repeat(width - t.length - pad)
+      }
+      return t.padEnd(width)
+    }
+    // Amount row: left label 29 chars, right amount 12 chars = 41 (matches print 0.7/0.3 split)
+    const amtRow = (label: string, amount: string): string =>
+      label.padEnd(29) + amount.padStart(12) + '\n'
+
     let text = `\n${LINE}\n`
     text += `${centered(businessName)}\n`
+    text += '\n'
     if (businessAddress) text += `${centered(businessAddress)}\n`
     if (businessPhone) text += `${centered('Tel: ' + businessPhone)}\n`
     text += `${LINE}\n\n`
@@ -121,37 +136,44 @@ export function ReceiptPreview({
     text += `Date: ${dateStr}  Time: ${timeStr}\n`
     text += `Cashier: ${receipt.sale.cashier_name}\n\n`
 
+    // Items — 4 columns matching print: Item(16) Qty(4) Price(11) Total(11) = 42
     text += `${line}\n`
-    text += `Item              Qty    Price\n`
+    text +=
+      col('Item', 16, 'L') +
+      col('Qty', 4, 'C') +
+      col(`Price(${currency})`, 11, 'R') +
+      col(`Total(${currency})`, 11, 'R') +
+      '\n'
     text += `${line}\n`
-
     receipt.items.forEach((item) => {
-      const name = item.product_name.padEnd(16).substring(0, 16)
-      const qty = item.quantity.toString().padStart(3)
-      const price = `${currency} ${item.line_total.toFixed(2)}`.padStart(9)
-      text += `${name} ${qty} ${price}\n`
+      text +=
+        col(item.product_name, 16, 'L') +
+        col(item.quantity.toString(), 4, 'C') +
+        col(item.unit_price.toFixed(2), 11, 'R') +
+        col(item.line_total.toFixed(2), 11, 'R') +
+        '\n'
     })
 
     text += `${line}\n`
-    text += `Subtotal:         ${`${currency} ${receipt.sale.subtotal.toFixed(2)}`.padStart(9)}\n`
-
+    text += amtRow('Subtotal:', `${currency}${receipt.sale.subtotal.toFixed(2)}`)
     if (receipt.sale.discount_amount > 0) {
-      text += `Discount:        -${`${currency} ${receipt.sale.discount_amount.toFixed(2)}`.padStart(9)}\n`
+      text += amtRow('Discount:', `-${currency}${receipt.sale.discount_amount.toFixed(2)}`)
     }
-
-    text += `VAT (${vatRate}%):      ${`${currency} ${receipt.sale.tax_amount.toFixed(2)}`.padStart(9)}\n`
+    if (receipt.sale.tax_amount > 0) {
+      text += amtRow(`VAT (${vatRate}%):`, `${currency}${receipt.sale.tax_amount.toFixed(2)}`)
+    }
     text += `${LINE}\n`
-    text += `TOTAL:            ${`${currency} ${receipt.sale.total.toFixed(2)}`.padStart(9)}\n`
+    text += amtRow('TOTAL:', `${currency}${receipt.sale.total.toFixed(2)}`)
     text += `${LINE}\n`
 
     if (receipt.sale.payment_method === 'cash') {
-      text += `Cash:             ${`${currency} ${receipt.sale.cash_received.toFixed(2)}`.padStart(9)}\n`
-      text += `Change:           ${`${currency} ${receipt.sale.change_given.toFixed(2)}`.padStart(9)}\n`
+      text += amtRow('Cash:', `${currency}${receipt.sale.cash_received.toFixed(2)}`)
+      text += amtRow('Change:', `${currency}${receipt.sale.change_given.toFixed(2)}`)
     } else if (receipt.sale.payment_method === 'card') {
-      text += `Card:             ${`${currency} ${receipt.sale.card_amount.toFixed(2)}`.padStart(9)}\n`
+      text += amtRow('Card:', `${currency}${receipt.sale.card_amount.toFixed(2)}`)
     } else if (receipt.sale.payment_method === 'mixed') {
-      text += `Cash:             ${`${currency} ${receipt.sale.cash_received.toFixed(2)}`.padStart(9)}\n`
-      text += `Card:             ${`${currency} ${receipt.sale.card_amount.toFixed(2)}`.padStart(9)}\n`
+      text += amtRow('Cash:', `${currency}${receipt.sale.cash_received.toFixed(2)}`)
+      text += amtRow('Card:', `${currency}${receipt.sale.card_amount.toFixed(2)}`)
     }
 
     if (receipt.sale.customer_name || receipt.sale.customer_phone) {
@@ -162,6 +184,7 @@ export function ReceiptPreview({
 
     text += `${line}\n`
     text += `${centered(footer)}\n`
+    text += `${centered('Powered by PharmaPOS')}\n`
     text += `${LINE}\n`
 
     return text

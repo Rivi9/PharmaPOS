@@ -70,7 +70,7 @@ export async function printReceipt(handle: PrinterHandle, data: ReceiptData): Pr
   const b = new EscPosBuilder()
 
   // Header
-  b.align('CT').bold(true).size(2, 2).text(businessName + '\n').bold(false).size(1, 1)
+  b.align('CT').bold(true).size(2, 2).text(businessName + '\n').bold(false).size(1, 1).text('\n')
   if (address) b.text(address + '\n')
   if (phone) b.text(`Tel: ${phone}\n`)
   b.text(line + '\n')
@@ -207,7 +207,7 @@ export async function printReceipt(handle: PrinterHandle, data: ReceiptData): Pr
   // Footer
   b.align('CT')
   if (footer) b.text(footer + '\n')
-  b.text('Powered by PharmaPOS\n').feed(2)
+  b.text('Powered by PharmaPOS\n').feed(4)
 
   // Open cash drawer for cash/mixed payments (not card)
   if (data.sale.payment_method === 'cash' || data.sale.payment_method === 'mixed') {
