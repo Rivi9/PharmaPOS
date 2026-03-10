@@ -41,12 +41,12 @@ export function CartItem({
   }
 
   return (
-    <div className="flex items-center gap-3 p-3 border rounded-lg bg-card">
+    <div className="flex items-center gap-2 py-2 border-b last:border-b-0">
       {/* Product Info */}
       <div className="flex-1 min-w-0">
-        <p className="font-medium truncate">{item.product.name}</p>
+        <p className="font-medium text-sm truncate">{item.product.name}</p>
         {item.product.generic_name && (
-          <p className="text-sm text-muted-foreground truncate">{item.product.generic_name}</p>
+          <p className="text-xs text-muted-foreground truncate">{item.product.generic_name}</p>
         )}
         {item.product.nearest_expiry &&
           (() => {
@@ -69,49 +69,49 @@ export function CartItem({
           })()}
       </div>
 
-      {/* Quantity Controls — min 44px touch targets */}
-      <div className="flex items-center gap-1">
+      {/* Quantity Controls */}
+      <div className="flex items-center gap-1 shrink-0">
         <Button
           size="icon"
           variant="outline"
-          className="h-11 w-11"
+          className="h-9 w-9"
           onClick={() => handleQuantityChange(-1)}
         >
-          <Minus className="h-4 w-4" />
+          <Minus className="h-3.5 w-3.5" />
         </Button>
         <Input
           type="number"
           value={item.quantity}
           onChange={(e) => handleManualQuantityChange(e.target.value)}
-          className="w-16 h-11 text-center text-base"
+          className="w-12 h-9 text-center text-sm"
           min="1"
           max={maxStock}
         />
         <Button
           size="icon"
           variant="outline"
-          className="h-11 w-11"
+          className="h-9 w-9"
           onClick={() => handleQuantityChange(1)}
           disabled={isAtStockLimit}
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-3.5 w-3.5" />
         </Button>
       </div>
 
       {/* Price */}
-      <div className="text-right w-24">
-        <p className="text-sm text-muted-foreground">@ {formatCurrency(item.unit_price)}</p>
-        <p className="font-semibold">{formatCurrency(item.line_total)}</p>
+      <div className="text-right w-20 shrink-0">
+        <p className="text-xs text-muted-foreground">@ {formatCurrency(item.unit_price)}</p>
+        <p className="text-sm font-semibold">{formatCurrency(item.line_total)}</p>
       </div>
 
-      {/* Remove Button — 44px touch target */}
+      {/* Remove Button */}
       <Button
         size="icon"
         variant="ghost"
-        className="h-11 w-11 text-destructive hover:text-destructive hover:bg-destructive/10"
+        className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
         onClick={() => onRemove(index)}
       >
-        <X className="h-5 w-5" />
+        <X className="h-4 w-4" />
       </Button>
     </div>
   )

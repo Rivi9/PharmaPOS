@@ -16,6 +16,7 @@ export function POSPage(): React.JSX.Element {
     receiptNumber: string
   } | null>(null)
   const [searchModalOpen, setSearchModalOpen] = useState(false)
+  const [quickItemsRefreshKey, setQuickItemsRefreshKey] = useState(0)
 
   // Sync cart state to customer display window
   useCustomerDisplay()
@@ -30,6 +31,7 @@ export function POSPage(): React.JSX.Element {
     setCompletedSale({ saleId, receiptNumber })
     setPaymentModalOpen(false)
     setReceiptPreviewOpen(true)
+    setQuickItemsRefreshKey((k) => k + 1)
   }
 
   const handleReceiptClose = () => {
@@ -87,13 +89,13 @@ export function POSPage(): React.JSX.Element {
           <div className="flex-1 flex flex-col space-y-2 min-h-0">
             <h2 className="text-sm font-semibold">Quick Items</h2>
             <div className="flex-1 overflow-auto">
-              <QuickItems />
+              <QuickItems refreshTrigger={quickItemsRefreshKey} />
             </div>
           </div>
         </div>
 
         {/* Right Side - Shopping Cart */}
-        <div className="flex-1 flex flex-col p-4">
+        <div className="flex-1 flex flex-col p-4 min-h-0">
           <h2 className="text-sm font-semibold mb-2">Shopping Cart</h2>
           <ShoppingCart onPayment={() => setPaymentModalOpen(true)} />
         </div>

@@ -29,9 +29,9 @@ export function ShoppingCart({ onPayment }: ShoppingCartProps): React.JSX.Elemen
   const hasHeldSale = heldSale !== null
 
   return (
-    <div className="flex-1 flex flex-col border rounded-lg bg-card p-4">
+    <div className="flex-1 flex flex-col border rounded-lg bg-card p-4 min-h-0">
       {/* Cart Items List */}
-      <div className="flex-1 overflow-auto mb-4">
+      <div className="flex-1 overflow-auto mb-4 min-h-0">
         {items.length === 0 ? (
           <div className="h-full flex items-center justify-center text-muted-foreground">
             <div className="text-center">
@@ -41,7 +41,7 @@ export function ShoppingCart({ onPayment }: ShoppingCartProps): React.JSX.Elemen
             </div>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div>
             {items.map((item, index) => (
               <CartItem
                 key={`${item.product.id}-${index}`}

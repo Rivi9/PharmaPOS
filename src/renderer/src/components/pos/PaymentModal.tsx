@@ -52,6 +52,11 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   const addToTodaySales = useShiftStore((state) => state.addToTodaySales)
   const currencySymbol = useSettingsStore((state) => state.settings.currency_symbol)
 
+  // Clear stale errors each time the dialog opens
+  useEffect(() => {
+    if (open) setError('')
+  }, [open])
+
   useEffect(() => {
     if (customerPhone.length < 7) {
       setFoundCustomer(null)
@@ -205,11 +210,11 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
 
         <div className="space-y-4">
           {/* Payment Method — large touch buttons */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="flex justify-center items-center w-full gap-3">
             <Button
               variant={paymentMethod === 'cash' ? 'default' : 'outline'}
               onClick={() => handlePaymentMethodChange('cash')}
-              className="h-16 flex flex-col items-center gap-1"
+              className="h-16 grow flex flex-col items-center gap-1"
             >
               <Banknote className="h-6 w-6" />
               <span>Cash</span>
@@ -217,19 +222,19 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
             <Button
               variant={paymentMethod === 'card' ? 'default' : 'outline'}
               onClick={() => handlePaymentMethodChange('card')}
-              className="h-16 flex flex-col items-center gap-1"
+              className="h-16 grow flex flex-col items-center gap-1"
             >
               <CreditCard className="h-6 w-6" />
               <span>Card</span>
             </Button>
-            <Button
+            {/* <Button
               variant={paymentMethod === 'mixed' ? 'default' : 'outline'}
               onClick={() => handlePaymentMethodChange('mixed')}
-              className="h-16 flex flex-col items-center gap-1"
+              className="h-16 grow flex flex-col items-center gap-1"
             >
               <Split className="h-6 w-6" />
               <span>Mixed</span>
-            </Button>
+            </Button> */}
           </div>
 
           {/* Cash entry section */}

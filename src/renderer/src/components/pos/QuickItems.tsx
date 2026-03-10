@@ -4,15 +4,19 @@ import { useProductStore } from '@renderer/stores/productStore'
 import { usePOSStore } from '@renderer/stores/posStore'
 import { Button } from '@renderer/components/ui/button'
 
-export function QuickItems(): React.JSX.Element {
+interface QuickItemsProps {
+  refreshTrigger?: number
+}
+
+export function QuickItems({ refreshTrigger }: QuickItemsProps = {}): React.JSX.Element {
   const quickItems = useProductStore((state) => state.quickItems)
   const setQuickItems = useProductStore((state) => state.setQuickItems)
   const addItem = usePOSStore((state) => state.addItem)
 
-  // Load quick items on mount
+  // Load quick items on mount and whenever a sale completes (refreshTrigger changes)
   useEffect(() => {
     loadQuickItems()
-  }, [])
+  }, [refreshTrigger])
 
   const loadQuickItems = async () => {
     try {
