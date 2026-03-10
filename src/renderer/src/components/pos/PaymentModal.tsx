@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { CreditCard, Banknote, Split } from 'lucide-react'
+import { CreditCard, Banknote } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
