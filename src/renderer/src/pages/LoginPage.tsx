@@ -13,6 +13,19 @@ interface User {
   role: string
 }
 
+function generatePin(): string {
+  const arr = new Uint16Array(1)
+  crypto.getRandomValues(arr)
+  return String(1000 + (arr[0] % 9000))
+}
+
+function generatePassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+  const arr = new Uint8Array(10)
+  crypto.getRandomValues(arr)
+  return Array.from(arr, (b) => chars[b % chars.length]).join('')
+}
+
 export function LoginPage(): React.JSX.Element {
   const [users, setUsers] = useState<User[]>([])
   const [selectedUser, setSelectedUser] = useState<User | null>(null)
@@ -20,6 +33,9 @@ export function LoginPage(): React.JSX.Element {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [firstRunCreds, setFirstRunCreds] = useState<{ pin: string; password: string } | null>(
+    null
+  )
 
   const login = useAuthStore((state) => state.login)
   const setCurrentShift = useShiftStore((state) => state.setCurrentShift)
@@ -47,13 +63,16 @@ export function LoginPage(): React.JSX.Element {
   }
 
   const createDefaultAdmin = async (): Promise<void> => {
+    const pin = generatePin()
+    const pw = generatePassword()
     await window.electron.createUser({
       username: 'admin',
-      password: 'admin123',
+      password: pw,
       fullName: 'Administrator',
       role: 'admin',
-      pin: '0000'
+      pin
     })
+    setFirstRunCreds({ pin, password: pw })
   }
 
   /** Load an existing active shift and restore its sales total from the DB. */
@@ -105,6 +124,34 @@ export function LoginPage(): React.JSX.Element {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      {firstRunCreds && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-background border rounded-xl p-6 max-w-sm w-full space-y-4 shadow-xl">
+            <h2 className="text-lg font-bold text-center">First-Time Setup</h2>
+            <p className="text-sm text-muted-foreground text-center">
+              An admin account has been created. Write down these credentials — they will not be
+              shown again.
+            </p>
+            <div className="bg-muted rounded-lg p-4 space-y-2 font-mono text-sm">
+              <p>
+                <span className="text-muted-foreground">Username: </span>
+                <span className="font-bold">admin</span>
+              </p>
+              <p>
+                <span className="text-muted-foreground">PIN: </span>
+                <span className="font-bold">{firstRunCreds.pin}</span>
+              </p>
+              <p>
+                <span className="text-muted-foreground">Password: </span>
+                <span className="font-bold">{firstRunCreds.password}</span>
+              </p>
+            </div>
+            <Button className="w-full" onClick={() => setFirstRunCreds(null)}>
+              I have saved these credentials
+            </Button>
+          </div>
+        </div>
+      )}
       <Card className="w-full max-w-sm">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl text-primary">PharmaPOS</CardTitle>

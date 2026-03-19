@@ -5,8 +5,11 @@ import { ShoppingCart } from '@renderer/components/pos/ShoppingCart'
 import { PaymentModal } from '@renderer/components/pos/PaymentModal'
 import { ReceiptPreview } from '@renderer/components/pos/ReceiptPreview'
 import { usePOSStore } from '@renderer/stores/posStore'
+import { useShiftStore } from '@renderer/stores/shiftStore'
+import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { useKeyboardShortcuts } from '@renderer/hooks/useKeyboardShortcuts'
 import { useCustomerDisplay } from '@renderer/hooks/useCustomerDisplay'
+import { formatCurrency } from '@renderer/lib/calculations'
 
 export function POSPage(): React.JSX.Element {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
@@ -26,6 +29,8 @@ export function POSPage(): React.JSX.Element {
   const recallHeldSale = usePOSStore((state) => state.recallHeldSale)
   const clearCart = usePOSStore((state) => state.clearCart)
   const heldSale = usePOSStore((state) => state.heldSale)
+  const todaySalesTotal = useShiftStore((s) => s.todaySalesTotal)
+  const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
 
   const handlePaymentComplete = (saleId: string, receiptNumber: string) => {
     setCompletedSale({ saleId, receiptNumber })
@@ -70,7 +75,7 @@ export function POSPage(): React.JSX.Element {
           </div>
           <div className="text-right">
             <p className="text-xs text-muted-foreground">Today's Sales</p>
-            <p className="text-lg font-bold">Rs. 0.00</p>
+            <p className="text-lg font-bold">{formatCurrency(todaySalesTotal, currencySymbol)}</p>
           </div>
         </div>
       </div>

@@ -113,14 +113,14 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   const validatePayment = (): boolean => {
     if (paymentMethod === 'cash') {
       if (cashReceivedNum < total) {
-        setError(`Insufficient cash. Need ${formatCurrency(total - cashReceivedNum)} more.`)
+        setError(`Insufficient cash. Need ${formatCurrency(total - cashReceivedNum, currencySymbol)} more.`)
         return false
       }
     } else if (paymentMethod === 'mixed') {
       const totalPaid = cashReceivedNum + cardAmountNum
       if (Math.abs(totalPaid - total) > 0.01) {
         setError(
-          `Payment mismatch. Total: ${formatCurrency(total)}, Paid: ${formatCurrency(totalPaid)}`
+          `Payment mismatch. Total: ${formatCurrency(total, currencySymbol)}, Paid: ${formatCurrency(totalPaid, currencySymbol)}`
         )
         return false
       }
@@ -139,6 +139,22 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
     setError('')
 
     try {
+      // H7: Pre-payment stock recheck — verify every cart item still has enough
+      // stock before committing the sale. Catches concurrent inventory adjustments.
+      const outOfStockNames: string[] = []
+      for (const item of items) {
+        const results = await window.electron.searchProducts(item.product.name)
+        const fresh = results.find((p) => p.id === item.product.id)
+        if (!fresh || (fresh.total_stock ?? 0) < item.quantity) {
+          outOfStockNames.push(item.product.name)
+        }
+      }
+      if (outOfStockNames.length > 0) {
+        setError(`Insufficient stock: ${outOfStockNames.join(', ')}. Please adjust quantities.`)
+        setProcessing(false)
+        return
+      }
+
       const saleData = {
         shift_id: currentShift.id,
         user_id: currentShift.user_id,
@@ -170,6 +186,12 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
       }
 
       const result = await window.electron.createSale(saleData)
+
+      // C2: Only proceed if the sale was actually committed
+      if (!result?.sale_id) {
+        setError(result?.error || 'Failed to complete sale. Please try again.')
+        return
+      }
 
       addToTodaySales(total)
 
@@ -205,7 +227,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg max-h-[95vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="text-xl">Complete Sale — {formatCurrency(total)}</DialogTitle>
+          <DialogTitle className="text-xl">Complete Sale — {formatCurrency(total, currencySymbol)}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -292,8 +314,8 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
                   }`}
                 >
                   {cashReceivedNum >= total
-                    ? `Change: ${formatCurrency(change)}`
-                    : `Short: ${formatCurrency(total - cashReceivedNum)}`}
+                    ? `Change: ${formatCurrency(change, currencySymbol)}`
+                    : `Short: ${formatCurrency(total - cashReceivedNum, currencySymbol)}`}
                 </div>
               )}
             </div>
@@ -349,7 +371,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
                         <span className="text-muted-foreground">
                           {new Date(sale.createdAt).toLocaleDateString()}
                         </span>
-                        <span className="font-medium">{formatCurrency(sale.total)}</span>
+                        <span className="font-medium">{formatCurrency(sale.total, currencySymbol)}</span>
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
                         {sale.items.map((item, i) => (

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -50,6 +50,10 @@ export function StockBatchFormDialog({
   products,
   suppliers
 }: StockBatchFormDialogProps) {
+  const [productSearch, setProductSearch] = useState('')
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const productInputRef = useRef<HTMLInputElement>(null)
+
   const {
     register,
     handleSubmit,
@@ -75,20 +79,36 @@ export function StockBatchFormDialog({
         received_date: batch.received_date,
         supplier_id: batch.supplier_id || ''
       })
+      // Pre-fill the search box with the existing product name
+      const existing = products.find((p) => p.id === batch.product_id)
+      setProductSearch(existing ? `${existing.name} (${existing.sku})` : '')
     } else {
-      reset({
-        received_date: new Date().toISOString().split('T')[0]
-      })
+      reset({ received_date: new Date().toISOString().split('T')[0] })
+      setProductSearch('')
     }
-  }, [batch, reset])
+  }, [batch, reset, products])
 
   const handleFormSubmit = async (data: StockBatchFormData) => {
     await onSubmit(data)
     reset()
+    setProductSearch('')
   }
 
-  const productId = watch('product_id')
   const supplierId = watch('supplier_id')
+
+  // Client-side filter — no IPC needed since products are already loaded
+  const filteredProducts = productSearch.trim().length > 0
+    ? products.filter((p) => {
+        const q = productSearch.toLowerCase()
+        return p.name.toLowerCase().includes(q) || (p.sku ?? '').toLowerCase().includes(q)
+      }).slice(0, 8)
+    : []
+
+  const handleProductSelect = (product: Product) => {
+    setValue('product_id', product.id, { shouldValidate: true })
+    setProductSearch(`${product.name} (${product.sku})`)
+    setShowSuggestions(false)
+  }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -103,22 +123,42 @@ export function StockBatchFormDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+          {/* Product — searchable combobox */}
           <div className="space-y-2">
-            <Label htmlFor="product_id">
+            <Label htmlFor="product_search">
               Product <span className="text-red-500">*</span>
             </Label>
-            <Select value={productId} onValueChange={(value) => setValue('product_id', value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select product" />
-              </SelectTrigger>
-              <SelectContent>
-                {products.map((product) => (
-                  <SelectItem key={product.id} value={product.id}>
-                    {product.name} ({product.sku})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="relative">
+              <Input
+                id="product_search"
+                ref={productInputRef}
+                value={productSearch}
+                onChange={(e) => {
+                  setProductSearch(e.target.value)
+                  setValue('product_id', '', { shouldValidate: false })
+                  setShowSuggestions(true)
+                }}
+                onFocus={() => filteredProducts.length > 0 && setShowSuggestions(true)}
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                placeholder="Type to search by name or SKU…"
+                autoComplete="off"
+              />
+              {showSuggestions && filteredProducts.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                  {filteredProducts.map((product) => (
+                    <button
+                      key={product.id}
+                      type="button"
+                      onPointerDown={() => handleProductSelect(product)}
+                      className="w-full px-3 py-2 text-left hover:bg-muted active:bg-muted/80 border-b last:border-b-0"
+                    >
+                      <p className="text-sm font-medium">{product.name}</p>
+                      <p className="text-xs text-muted-foreground">{product.sku}</p>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             {errors.product_id && (
               <p className="text-sm text-red-500">{errors.product_id.message}</p>
             )}

@@ -201,8 +201,30 @@ function InsightSection({ title, items }: { title: string; items: any[] }): Reac
       <h4 className="font-medium mb-2">{title}</h4>
       <div className="space-y-2">
         {items.map((item, i) => (
-          <div key={i} className="border rounded-md p-3 text-sm">
-            <pre className="whitespace-pre-wrap font-sans">{JSON.stringify(item, null, 2)}</pre>
+          <div key={i} className="border rounded-md p-3 text-sm space-y-1">
+            <p className="font-semibold">{item.product_name ?? '—'}</p>
+            <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-muted-foreground text-xs">
+              {item.current_stock !== undefined && (
+                <span>Stock: {item.current_stock}</span>
+              )}
+              {item.suggested_order_qty !== undefined && (
+                <span>Order qty: {item.suggested_order_qty}</span>
+              )}
+              {item.days_since_last_sale !== undefined && (
+                <span>Last sold: {item.days_since_last_sale}d ago</span>
+              )}
+              {item.priority && (
+                <span className="capitalize">Priority: {item.priority}</span>
+              )}
+              {item.confidence !== undefined && (
+                <span>Confidence: {Math.round(item.confidence * 100)}%</span>
+              )}
+            </div>
+            {(item.reason || item.suggested_action) && (
+              <p className="text-xs text-muted-foreground italic">
+                {item.reason ?? item.suggested_action}
+              </p>
+            )}
           </div>
         ))}
       </div>

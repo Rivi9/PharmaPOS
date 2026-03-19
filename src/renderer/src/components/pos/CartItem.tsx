@@ -3,6 +3,7 @@ import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import type { CartItem as CartItemType } from '@renderer/lib/types'
 import { formatCurrency } from '@renderer/lib/calculations'
+import { useSettingsStore } from '@renderer/stores/settingsStore'
 
 function getDaysUntilExpiry(expiryDate: string): number {
   const expiry = new Date(expiryDate)
@@ -24,6 +25,7 @@ export function CartItem({
   onUpdateQuantity,
   onRemove
 }: CartItemProps): React.JSX.Element {
+  const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
   const maxStock =
     item.product.total_stock != null ? Math.max(0, Math.floor(item.product.total_stock)) : undefined
   const isAtStockLimit = maxStock !== undefined && item.quantity >= maxStock
@@ -100,8 +102,8 @@ export function CartItem({
 
       {/* Price */}
       <div className="text-right w-20 shrink-0">
-        <p className="text-xs text-muted-foreground">@ {formatCurrency(item.unit_price)}</p>
-        <p className="text-sm font-semibold">{formatCurrency(item.line_total)}</p>
+        <p className="text-xs text-muted-foreground">@ {formatCurrency(item.unit_price, currencySymbol)}</p>
+        <p className="text-sm font-semibold">{formatCurrency(item.line_total, currencySymbol)}</p>
       </div>
 
       {/* Remove Button */}

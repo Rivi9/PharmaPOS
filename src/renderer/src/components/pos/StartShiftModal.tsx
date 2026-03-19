@@ -63,7 +63,7 @@ export function StartShiftModal(): React.JSX.Element {
             {currencySymbol}&nbsp;{openingCash || '0.00'}
           </p>
           {cashAmount > 0 && (
-            <p className="text-sm text-muted-foreground">{formatCurrency(cashAmount)}</p>
+            <p className="text-sm text-muted-foreground">{formatCurrency(cashAmount, currencySymbol)}</p>
           )}
         </div>
 

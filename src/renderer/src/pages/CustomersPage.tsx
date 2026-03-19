@@ -106,10 +106,16 @@ export function CustomersPage(): React.JSX.Element {
       notes: formNotes.trim() || undefined
     }
 
+    let result: { success?: boolean; error?: string } | undefined
     if (editCustomer) {
-      await window.electron.customers.update(userId, editCustomer.id, data)
+      result = await window.electron.customers.update(userId, editCustomer.id, data)
     } else {
-      await window.electron.customers.create(userId, data)
+      result = await window.electron.customers.create(userId, data)
+    }
+
+    if (result && result.success === false) {
+      setFormError(result.error || 'Failed to save customer')
+      return
     }
 
     setShowForm(false)

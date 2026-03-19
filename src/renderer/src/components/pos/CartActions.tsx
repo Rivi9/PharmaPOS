@@ -30,6 +30,7 @@ export function CartActions({
   onPayment
 }: CartActionsProps): React.JSX.Element {
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
+  const [recallConfirmOpen, setRecallConfirmOpen] = useState(false)
 
   const handleClearClick = () => {
     setClearConfirmOpen(true)
@@ -38,6 +39,19 @@ export function CartActions({
   const handleClearConfirm = () => {
     onClear()
     setClearConfirmOpen(false)
+  }
+
+  const handleRecallClick = () => {
+    if (hasItems) {
+      setRecallConfirmOpen(true)
+    } else {
+      onRecall()
+    }
+  }
+
+  const handleRecallConfirm = () => {
+    onRecall()
+    setRecallConfirmOpen(false)
   }
 
   return (
@@ -58,7 +72,7 @@ export function CartActions({
         <Button
           variant="outline"
           disabled={!hasHeldSale}
-          onClick={onRecall}
+          onClick={handleRecallClick}
           className="h-12 flex flex-col items-center gap-1 py-2"
         >
           <RotateCcw className="h-5 w-5" />
@@ -81,6 +95,22 @@ export function CartActions({
       <Button disabled={!hasItems} onClick={onPayment} className="w-full h-16 text-xl font-bold">
         Pay Now
       </Button>
+
+      {/* Recall Confirmation Dialog — shown when cart has unsaved items */}
+      <AlertDialog open={recallConfirmOpen} onOpenChange={setRecallConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Replace Current Cart?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Recalling the held sale will discard the items currently in your cart. Continue?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleRecallConfirm}>Recall Sale</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Clear Confirmation Dialog */}
       <AlertDialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>

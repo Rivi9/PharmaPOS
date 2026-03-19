@@ -1,6 +1,7 @@
 import { Button } from '@renderer/components/ui/button'
 import { Settings, LogOut, Clock } from 'lucide-react'
 import { useShiftStore } from '@renderer/stores/shiftStore'
+import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { formatCurrency } from '@renderer/lib/calculations'
 
 interface HeaderProps {
@@ -24,6 +25,7 @@ function shiftStartTime(startedAt: string): string {
 export function Header({ user, onEndShift, onSettings }: HeaderProps): React.JSX.Element {
   const currentShift = useShiftStore((s) => s.currentShift)
   const todaySalesTotal = useShiftStore((s) => s.todaySalesTotal)
+  const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
 
   return (
     <header className="h-14 border-b bg-background flex items-center justify-between px-4 shrink-0">
@@ -35,7 +37,7 @@ export function Header({ user, onEndShift, onSettings }: HeaderProps): React.JSX
             <Clock className="h-3.5 w-3.5" />
             <span>{shiftStartTime(currentShift.started_at)}</span>
             <span className="mx-1 text-border">|</span>
-            <span className="font-medium text-foreground">{formatCurrency(todaySalesTotal)}</span>
+            <span className="font-medium text-foreground">{formatCurrency(todaySalesTotal, currencySymbol)}</span>
           </div>
         )}
       </div>

@@ -1,6 +1,6 @@
 # PharmaPOS QA Report
 
-**Date:** 2026-03-11
+**Date:** 2026-03-11 (updated with touchscreen pass)
 **Reviewed by:** Code review (source-level analysis)
 **Environment:** Windows 10 POS touchscreen + customer pole display
 
@@ -13,21 +13,22 @@
 | 🔴 Critical | 4 |
 | 🟠 High | 10 |
 | 🟡 Medium | 13 |
-| ⚪ Low | 10 |
-| **Total** | **37** |
+| ⚪ Low | 12 |
+| 📱 Touch-specific | 12 (5 High, 7 Medium) |
+| **Total** | **49** |
 
 ---
 
 ## 🔴 Critical
 
-### C1 — Expired products can be added to cart without blocking the transaction
+<!-- ### C1 — Expired products can be added to cart without blocking the transaction
 **File:** `src/renderer/src/components/pos/ProductEntry.tsx`
 
 The expiry check only sets an `expiryWarning` string — it never blocks the item from being added. `addItem` is called unconditionally even when `days <= 0`. A cashier scanning an expired product sees a yellow warning text but the item still enters the cart and the sale completes. A pharmacy legally cannot dispense expired medicines.
 
 `handleSuggestionSelect` checks for `total_stock === 0` and returns early, but there is no equivalent early return for expired products.
 
-**Fix:** Add a hard block (return early, set an error, do not call `addItem`) when `days <= 0`, matching the out-of-stock guard already present.
+**Fix:** Add a hard block (return early, set an error, do not call `addItem`) when `days <= 0`, matching the out-of-stock guard already present. -->
 
 ---
 
@@ -135,12 +136,12 @@ Stock is checked once when the item is added to the cart. If stock goes to zero 
 
 ---
 
-### H8 — Mixed payment card field gives no live mismatch feedback
+<!-- ### H8 — Mixed payment card field gives no live mismatch feedback
 **File:** `src/renderer/src/components/pos/PaymentModal.tsx`
 
 Manually editing the card amount field does not recalculate cash. The cashier can enter Rs. 500 cash + Rs. 500 card on a Rs. 800 total, see no immediate error, and only get blocked on submit with no indication of which value to fix.
 
-**Fix:** Add live mismatch feedback showing remaining balance as the card amount is changed.
+**Fix:** Add live mismatch feedback showing remaining balance as the card amount is changed. -->
 
 ---
 
@@ -303,6 +304,216 @@ After deleting a product, `loadProducts()` is called but `stockBatches` is not r
 | L8 | `EndShiftModal.tsx` | Shows "Cash Sales" only, no combined Total Sales (cash + card) visible to manager |
 | L9 | `Sidebar.tsx` | `title` tooltip invisible on touch — cashiers cannot identify icon-only nav items |
 | L10 | `ShoppingCart.tsx` | No "Total Sales" on shift summary — manager cannot see combined revenue at a glance |
+| L11 | `ReceiptPreview.tsx` | Receipt auto-prints on every dialog open — wastes paper when cashier reopens to check |
+| L12 | `StockBatchFormDialog.tsx` | Product dropdown in Receive Stock has no search — unusable with large product catalogue |
+
+---
+
+## 📱 Touchscreen-Specific Issues
+
+Second-pass review focused exclusively on touch interaction quality. These are distinct from the general bugs above.
+
+### T1 — Sidebar nav buttons have no active/press state — zero tap feedback
+**File:** `src/renderer/src/components/layout/Sidebar.tsx` line 57–61
+
+```tsx
+'hover:bg-accent text-muted-foreground hover:text-foreground'
+```
+
+`hover:` CSS never fires on capacitive touchscreens — the browser skips it entirely. The inactive nav buttons have **no visual feedback when tapped**: no colour change, no press animation, nothing. On a fast POS workflow a cashier cannot tell if their tap registered.
+
+**Fix:** Add `active:bg-accent active:text-foreground` to the button className. This fires on both touch and mouse press.
+
+---
+
+### T2 — Header Settings and End Shift buttons below 44px touch minimum
+**File:** `src/renderer/src/components/layout/Header.tsx` lines 48, 53–62
+
+- Settings: `size="icon"` = 36×36px in shadcn — below 44px minimum
+- End Shift: `size="sm"` = 36px height — below 44px minimum, and it's a **critical action** (logs out the cashier)
+
+A cashier rushing at end-of-shift can easily miss the 36px target, especially at arm's reach from a pole display.
+
+**Fix:** Settings → `size="icon"` with `className="h-11 w-11"`; End Shift → `size="default"` with `className="h-11"`.
+
+---
+
+### T3 — LoginPage "Back" and "Use PIN/Password" buttons are 36px
+**File:** `src/renderer/src/pages/LoginPage.tsx` lines 157, 160
+
+```tsx
+<Button variant="ghost" size="sm" onClick={...}>Back</Button>
+<Button variant="ghost" size="sm" onClick={...}>Use Password</Button>
+```
+
+`size="sm"` = `h-9` (36px). These are the two most frequently tapped navigation controls on the login screen. Users select the wrong user, then can't reliably tap Back. First interaction with the app fails on touch.
+
+**Fix:** Change to `size="default"` (`h-10`) minimum, or `className="h-12"` to match other login buttons.
+
+---
+
+### T4 — LoginPage password Input has no height — defaults to ~36px
+**File:** `src/renderer/src/pages/LoginPage.tsx` line 141
+
+```tsx
+<Input type="password" placeholder="Enter password" ... />
+```
+
+No `className` is provided, so the input renders at the browser/shadcn default (~36px). Every other input across the app explicitly sets `h-12`. This inconsistency makes the password field noticeably smaller and harder to tap on touch.
+
+**Fix:** Add `className="h-12 text-base"` to match the rest of the app.
+
+---
+
+### T5 — PinPad keydown listener re-registers on every digit typed — race condition on fast input
+**File:** `src/renderer/src/components/auth/PinPad.tsx` line 61
+
+```tsx
+useEffect(() => {
+  window.addEventListener('keydown', handleKeyDown)
+  return () => window.removeEventListener('keydown', handleKeyDown)
+}, [pin, maxLength, onSubmit])   // ← changes on every digit
+```
+
+The listener is torn down and re-attached on every `pin` state change. On a physical keyboard or a rapid-tap touchscreen, a digit pressed during the 1-frame gap between removal and re-add is silently dropped. This causes intermittent missed digits — a PIN of `1234` typed quickly might register as `134`.
+
+**Fix:** Move `handleNumber`, `handleDelete`, `handleSubmit` inside the effect using refs (the same pattern used correctly in `CashNumpad`), then use `[]` as the dependency array.
+
+---
+
+### T6 — EndShiftModal Notes input is 40px — below minimum touch target
+**File:** `src/renderer/src/components/pos/EndShiftModal.tsx` line 192
+
+```tsx
+<Input placeholder="Any notes for this shift…" className="h-10" />
+```
+
+`h-10` = 40px, the only input in the entire app shorter than 44px. On a touch device a pharmacist typing shift notes frequently misses this field and activates the scrollable dialog content behind it instead.
+
+**Fix:** Change to `className="h-12"`.
+
+---
+
+### T7 — CashNumpad and PinPad buttons lack `touch-action: manipulation` and `select-none`
+**Files:** `src/renderer/src/components/ui/cash-numpad.tsx`, `src/renderer/src/components/auth/PinPad.tsx`
+
+Both numpad grids allow double-tap-to-zoom (browser default) and text selection on long press. On a POS touchscreen this means:
+- Rapid cash entry (e.g. `5`, `0`, `0`) triggers the double-tap zoom on the `0` button, zooming the entire dialog.
+- Long-pressing a numpad key shows a text selection popup, blocking the interface.
+
+**Fix:** Add `style={{ touchAction: 'manipulation' }}` to each `<Button>` in both components, and wrap the grid `<div>` with `className="select-none"`.
+
+---
+
+### T8 — No `inputMode` on phone and amount inputs — wrong soft keyboard shown
+**Files:** `src/renderer/src/components/pos/PaymentModal.tsx`, `src/renderer/src/components/pos/EndShiftModal.tsx`
+
+On touch devices, tapping an `<input type="text">` opens the full QWERTY keyboard. For numeric-only fields (phone number, cash amounts not using the numpad) this forces cashiers to find the number row or switch keyboard layout.
+
+| Field | Current type | Should be |
+|-------|-------------|-----------|
+| Customer phone | `text` | `inputMode="tel"` |
+| Cash received | `number` | already correct, but lacks `inputMode="decimal"` for iOS |
+| Card amount | `number` | `inputMode="decimal"` |
+| Notes / names | `text` | `inputMode="text"` (fine, already default) |
+
+**Fix:** Add `inputMode="tel"` to the phone input, `inputMode="decimal"` to cash/card number inputs.
+
+---
+
+### T9 — AlertDialog confirmation buttons are ~40px — too small for destructive touch actions
+**File:** `src/renderer/src/components/pos/CartActions.tsx` lines 95–101
+
+```tsx
+<AlertDialogCancel>Cancel</AlertDialogCancel>
+<AlertDialogAction onClick={handleClearConfirm} ...>Clear Cart</AlertDialogAction>
+```
+
+Shadcn's `AlertDialogAction` and `AlertDialogCancel` default to `h-10` (40px). "Clear Cart" is a destructive, irreversible action — if the button is too small, a cashier might accidentally confirm instead of cancel (or vice versa) by tapping the wrong area.
+
+**Fix:** Add `className="h-14 text-base"` to both buttons in the cart clear dialog.
+
+---
+
+### T10 — `hover:` states throughout the app provide zero feedback on touch
+**Scope:** App-wide (`Sidebar.tsx`, `SearchModal.tsx`, `InventoryPage.tsx`, tables, etc.)
+
+Patterns like `hover:bg-muted/50`, `hover:bg-accent`, `hover:text-foreground` are used on nearly every interactive element. On touch these states never activate, leaving rows, buttons, and list items with no visual press response. The user cannot tell if their tap landed on the intended target.
+
+**Fix:** Pair each `hover:` with a matching `active:` class:
+- `hover:bg-muted/50` → add `active:bg-muted/50`
+- `hover:bg-accent` → add `active:bg-accent`
+- Interactive table rows in `InventoryPage`, `CustomersPage`, `AuditLogPage` — add `active:bg-muted/60`
+
+---
+
+### T11 — `main` wrapper `overflow-auto` causes scroll conflict with inner scroll areas on touch
+**File:** `src/renderer/src/components/layout/MainLayout.tsx` line 47
+
+```tsx
+<main className="flex-1 overflow-auto">{renderPage()}</main>
+```
+
+On touch, when a user swipes inside `ShoppingCart`'s `overflow-auto` items list, the browser must decide which scroll container to move. Because `main` also has `overflow-auto`, the outer container intercepts swipes that start outside the inner scroll region, scrolling the whole page instead of the cart list. This is most noticeable when there are many cart items.
+
+**Fix:** Change `main` to `overflow-hidden` for pages that manage their own internal scrolling (POS, most pages). Pages that need full-page scroll (InventoryPage, SettingsPage) can opt in with their own `overflow-auto` wrapper.
+
+---
+
+### T12 — Suggestion dropdown in ProductEntry has no max-height — overflows below screen on small displays
+**File:** `src/renderer/src/components/pos/ProductEntry.tsx` line 119
+
+```tsx
+<div className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border rounded-lg shadow-lg overflow-hidden">
+```
+
+No `max-h-*` is set. With 6 suggestions and each row ~48px, the dropdown is ~288px tall. If `ProductEntry` is near the bottom of its container on a 768px-tall screen, the list overflows below the visible area with no scroll — the bottom suggestions are unreachable without scrolling the page, which closes the dropdown via `onBlur`.
+
+**Fix:** Add `max-h-72 overflow-y-auto` to the dropdown container.
+
+---
+
+## Summary Table — Touch Issues
+
+| ID | File | Severity | Issue |
+|----|------|----------|-------|
+| T1 | `Sidebar.tsx` | High | No `active:` press state — zero tap feedback on nav buttons |
+| T2 | `Header.tsx` | High | Settings (36px) and End Shift (36px) below 44px touch minimum |
+| T3 | `LoginPage.tsx` | High | Back / Use-PIN buttons are `h-9` (36px) — first-screen touch failure |
+| T4 | `LoginPage.tsx` | Medium | Password input has no height — renders at ~36px |
+| T5 | `PinPad.tsx` | High | Keydown listener re-registers on every digit — drops keys on fast input |
+| T6 | `EndShiftModal.tsx` | Medium | Notes input `h-10` (40px) — below 44px minimum |
+| T7 | `cash-numpad.tsx`, `PinPad.tsx` | High | No `touch-action: manipulation` — double-tap zoom on numpad '0' |
+| T8 | `PaymentModal.tsx` | Medium | No `inputMode` on phone/amount fields — wrong soft keyboard |
+| T9 | `CartActions.tsx` | Medium | Alert dialog buttons `h-10` (40px) for destructive "Clear Cart" action |
+| T10 | App-wide | Medium | `hover:` states unused on touch — no visual tap feedback anywhere |
+| T11 | `MainLayout.tsx` | High | `overflow-auto` on `main` conflicts with inner scroll areas |
+| T12 | `ProductEntry.tsx` | Medium | Dropdown has no `max-h` — bottom suggestions unreachable on small screen |
+
+---
+
+## Fixed (2026-03-19, session 4)
+
+| Issue | Fix |
+|-------|-----|
+| C2 — Cart cleared even on failed sale | `PaymentModal.tsx`: guard on `result?.sale_id` before clearing cart / calling `onComplete` |
+| C3 — Today's Sales always shows `Rs. 0.00` | `POSPage.tsx`: subscribe to `useShiftStore.todaySalesTotal` + `useSettingsStore.currency_symbol`; use `formatCurrency` |
+| C4 — Default admin credentials hardcoded | `LoginPage.tsx`: generate random PIN + password via `crypto.getRandomValues`; show first-run credentials banner |
+| H4 — Recall silently discards active cart | `CartActions.tsx`: prompt confirmation dialog when `hasItems && hasHeldSale` before calling `onRecall` |
+| H5 — Customer save silently fails | `CustomersPage.tsx`: check `result.success === false`, surface `result.error` in `formError` |
+| H6 — Product/supplier delete swallows errors | `InventoryPage.tsx`: `else { alert(result.error) }` branch added to both delete handlers |
+| H7 — No stock recheck before payment commit | `PaymentModal.tsx`: sequential `for…of` loop re-checks live stock before `createSale`; aborts with named items if insufficient |
+| H9 — `formatCurrency` ignores configured currency | `calculations.ts`: added optional `symbol` param (default `'Rs.'`); all 7 callers updated to pass `currencySymbol` from `settingsStore` |
+| H10 — InsightSection renders raw JSON | `AnalyticsPage.tsx`: replaced `JSON.stringify` with labelled field layout (`product_name`, `current_stock`, `order qty`, `priority`, `confidence`, `reason`) |
+
+---
+
+## Fixed (2026-03-19, session 3)
+
+| Issue | Fix |
+|-------|-----|
+| Receipt auto-prints on every dialog open (L11) | Removed auto-print block from `loadReceipt()`; print only fires from the explicit Print button (`handlePrint`) |
+| Restock modal product select has no search (L12) | Replaced shadcn `<Select>` with a typed searchable combobox — client-side filter, absolute dropdown, `onPointerDown` selection |
 
 ---
 

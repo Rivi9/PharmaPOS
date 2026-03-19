@@ -36,6 +36,6 @@ export function calculateChange(amountPaid: number, total: number): number {
   return Math.max(0, amountPaid - total)
 }
 
-export function formatCurrency(amount: number): string {
-  return `Rs. ${amount.toFixed(2)}`
+export function formatCurrency(amount: number, symbol = 'Rs.'): string {
+  return `${symbol} ${amount.toFixed(2)}`
 }

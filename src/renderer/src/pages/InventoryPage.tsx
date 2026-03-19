@@ -138,6 +138,8 @@ export function InventoryPage(): React.JSX.Element {
       const result = await window.electron.deleteProduct(userId, product.id)
       if (result.success) {
         await loadProducts()
+      } else {
+        alert(result.error || 'Failed to delete product')
       }
     }
   }
@@ -204,6 +206,8 @@ export function InventoryPage(): React.JSX.Element {
       const result = await window.electron.deleteSupplier(userId, supplier.id)
       if (result.success) {
         await loadSuppliers()
+      } else {
+        alert(result.error || 'Failed to deactivate supplier')
       }
     }
   }

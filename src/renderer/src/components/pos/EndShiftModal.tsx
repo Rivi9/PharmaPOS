@@ -119,14 +119,15 @@ export function EndShiftModal({
                 {loadingExpectedCash
                   ? 'Calc…'
                   : formatCurrency(
-                      computedExpectedCash !== null ? computedExpectedCash - openingCash : 0
+                      computedExpectedCash !== null ? computedExpectedCash - openingCash : 0,
+                      currencySymbol
                     )}
               </p>
             </div>
             <div className="border rounded-lg p-3 text-center space-y-1">
               <Banknote className="h-4 w-4 mx-auto text-muted-foreground" />
               <p className="text-xs text-muted-foreground">Opening Cash</p>
-              <p className="text-base font-bold">{formatCurrency(openingCash)}</p>
+              <p className="text-base font-bold">{formatCurrency(openingCash, currencySymbol)}</p>
             </div>
           </div>
 

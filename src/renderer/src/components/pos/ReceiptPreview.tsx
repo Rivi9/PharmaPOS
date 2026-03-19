@@ -57,14 +57,6 @@ export function ReceiptPreview({
     try {
       const data = await window.electron.getReceipt(saleId)
       setReceipt(data)
-      // Auto-print on every checkout — fire and forget, don't block the UI
-      window.electron.printer
-        .printReceipt({
-          sale: data.sale,
-          items: data.items,
-          user: { full_name: (data.sale as any).cashier_name || 'Cashier' }
-        })
-        .catch((err: unknown) => console.error('Auto-print failed:', err))
     } catch (err) {
       console.error('Failed to load receipt:', err)
     } finally {
