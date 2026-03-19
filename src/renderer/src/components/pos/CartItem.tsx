@@ -83,7 +83,7 @@ export function CartItem({
           type="number"
           value={item.quantity}
           onChange={(e) => handleManualQuantityChange(e.target.value)}
-          className="w-12 h-9 text-center text-sm"
+          className="w-16 h-9 text-center text-sm"
           min="1"
           max={maxStock}
         />

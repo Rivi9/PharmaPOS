@@ -79,8 +79,10 @@ export function SearchModal({
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onClick={() => inputRef.current?.focus()}
               placeholder="Search by name, generic name, barcode, or SKU..."
               className="pl-12 h-12 text-base"
+              style={{ touchAction: 'manipulation' }}
             />
           </div>
 

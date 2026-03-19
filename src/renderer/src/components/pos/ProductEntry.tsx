@@ -166,8 +166,10 @@ export function ProductEntry({
               onChange={(e) => setBarcode(e.target.value)}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
               onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+              onClick={() => inputRef.current?.focus()}
               placeholder="Scan or enter barcode..."
               className="h-12 text-base"
+              style={{ touchAction: 'manipulation' }}
               autoComplete="off"
             />
             {showSuggestions && suggestions.length > 0 && (
@@ -179,7 +181,7 @@ export function ProductEntry({
                       key={product.id}
                       type="button"
                       disabled={outOfStock}
-                      onMouseDown={() => handleSuggestionSelect(product)}
+                      onPointerDown={() => handleSuggestionSelect(product)}
                       className="w-full px-4 py-2.5 text-left flex items-center justify-between gap-3 hover:bg-muted/60 active:bg-muted disabled:opacity-50 disabled:cursor-not-allowed border-b last:border-b-0"
                     >
                       <div className="flex-1 min-w-0">
