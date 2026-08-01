@@ -5,13 +5,21 @@ import { initDb } from '../db/index'
 
 let db: Database.Database | null = null
 
+/**
+ * The one place the database filename is defined. Anything that copies, backs up
+ * or restores the database MUST use this — a second hardcoded name here is what
+ * silently broke backup and restore.
+ */
+export function getDatabasePath(): string {
+  return process.env.TEST_DB_PATH
+    ? process.env.TEST_DB_PATH
+    : path.join(app.getPath('userData'), 'pharmapos.db')
+}
+
 export function getDatabase(): Database.Database {
   if (db) return db
 
-  // Use test database in test environment
-  const dbPath = process.env.TEST_DB_PATH
-    ? process.env.TEST_DB_PATH
-    : path.join(app.getPath('userData'), 'pharmapos.db')
+  const dbPath = getDatabasePath()
 
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')

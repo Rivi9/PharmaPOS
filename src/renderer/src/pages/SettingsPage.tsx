@@ -9,6 +9,14 @@ import {
 } from '@renderer/components/ui/card'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
+import { Label } from '@renderer/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from '@renderer/components/ui/dialog'
 import { PrinterSetupWizard } from '@renderer/components/settings/PrinterSetupWizard'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { useAuthStore } from '@renderer/stores/authStore'
@@ -26,6 +34,22 @@ import {
   Play,
   Square
 } from 'lucide-react'
+
+interface LocalBackup {
+  path: string
+  size: number
+  timestamp: string
+  /** False for the zero-byte residue of a failed run — never offer it for restore. */
+  valid: boolean
+}
+
+interface SchedulerStatus {
+  enabled: boolean
+  running: boolean
+  lastBackup: string | null
+  lastError: string | null
+  nextRun: string | null
+}
 
 interface PortInfo {
   path: string
@@ -63,12 +87,17 @@ export function SettingsPage(): React.JSX.Element {
   const [backupPassword, setBackupPassword] = useState('')
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupMsg, setBackupMsg] = useState('')
-  const [localBackups, setLocalBackups] = useState<
-    Array<{ filename: string; path: string; size: number; timestamp: string }>
-  >([])
-  const [schedulerStatus, setSchedulerStatus] = useState<{ running: boolean; nextRun?: string }>({
-    running: false
+  const [localBackups, setLocalBackups] = useState<LocalBackup[]>([])
+  const [schedulerStatus, setSchedulerStatus] = useState<SchedulerStatus>({
+    enabled: true,
+    running: false,
+    lastBackup: null,
+    lastError: null,
+    nextRun: null
   })
+  const [restoreTarget, setRestoreTarget] = useState<string | null>(null)
+  const [restorePassword, setRestorePassword] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
 
 
   useEffect(() => {
@@ -202,10 +231,16 @@ export function SettingsPage(): React.JSX.Element {
 
   // Backup functions
   const loadLocalBackups = async (): Promise<void> => {
+    if (!user?.id) return
     try {
-      const backups = await window.electron.backup.listLocal()
+      const backups = await window.electron.backup.listLocal(user.id)
       setLocalBackups(
-        backups as Array<{ filename: string; path: string; size: number; timestamp: string }>
+        backups as Array<{
+          path: string
+          size: number
+          timestamp: string
+          valid: boolean
+        }>
       )
     } catch (err: any) {
       setBackupMsg(`Error loading backups: ${err.message}`)
@@ -213,9 +248,10 @@ export function SettingsPage(): React.JSX.Element {
   }
 
   const loadSchedulerStatus = async (): Promise<void> => {
+    if (!user?.id) return
     try {
-      const status = await window.electron.backup.schedulerStatus()
-      setSchedulerStatus(status as { running: boolean; nextRun?: string })
+      const status = await window.electron.backup.schedulerStatus(user.id)
+      setSchedulerStatus(status as SchedulerStatus)
     } catch (err: any) {
       console.warn('Failed to load scheduler status:', err)
     }
@@ -245,21 +281,29 @@ export function SettingsPage(): React.JSX.Element {
     }
   }
 
-  const handleRestoreBackup = async (backupPath: string): Promise<void> => {
-    if (!user?.id) {
-      setBackupMsg('Error: User not authenticated')
-      return
-    }
-    if (!confirm('Restore from this backup? This will replace all current data.')) return
+  /** Opens the restore dialog. Electron has no window.prompt(), so the password
+   *  must be collected in-app — the previous prompt() call simply threw. */
+  const openRestoreDialog = (backupPath: string): void => {
+    setRestoreTarget(backupPath)
+    setRestorePassword('')
+    setBackupMsg('')
+  }
 
-    const password = prompt('Enter backup password (leave empty if no password):')
-    if (password === null) return // Cancelled
+  const handleRestoreConfirm = async (): Promise<void> => {
+    if (!user?.id || !restoreTarget) return
 
     setBackupBusy(true)
     setBackupMsg('')
     try {
-      await window.electron.backup.restore(user.id, backupPath, password || undefined)
-      setBackupMsg('Backup restored successfully. Please restart the application.')
+      await window.electron.backup.restore(
+        user.id,
+        restoreTarget,
+        restorePassword || undefined
+      )
+      setRestoreTarget(null)
+      // The main process has closed the database and swapped the file; continuing
+      // to run would checkpoint stale WAL frames over the restored data.
+      window.electron.ipcRenderer.send('app:relaunch')
     } catch (err: any) {
       setBackupMsg(`Error: ${err.message}`)
     } finally {
@@ -268,31 +312,32 @@ export function SettingsPage(): React.JSX.Element {
   }
 
   const handleDeleteBackup = async (backupPath: string): Promise<void> => {
-    if (!confirm('Delete this backup? This cannot be undone.')) return
-
+    if (!user?.id) return
     setBackupBusy(true)
     setBackupMsg('')
     try {
-      await window.electron.backup.deleteLocal(backupPath)
+      await window.electron.backup.deleteLocal(user.id, backupPath)
       setBackupMsg('Backup deleted successfully')
       await loadLocalBackups()
     } catch (err: any) {
       setBackupMsg(`Error: ${err.message}`)
     } finally {
       setBackupBusy(false)
+      setDeleteTarget(null)
     }
   }
 
   const handleSchedulerToggle = async (): Promise<void> => {
+    if (!user?.id) return
     setBackupBusy(true)
     setBackupMsg('')
     try {
       if (schedulerStatus.running) {
-        await window.electron.backup.schedulerStop()
-        setBackupMsg('Automatic backup scheduler stopped')
+        await window.electron.backup.schedulerStop(user.id)
+        setBackupMsg('Automatic backups turned off')
       } else {
-        await window.electron.backup.schedulerStart()
-        setBackupMsg('Automatic backup scheduler started')
+        await window.electron.backup.schedulerStart(user.id)
+        setBackupMsg('Automatic backups turned on')
       }
       await loadSchedulerStatus()
     } catch (err: any) {
@@ -624,32 +669,35 @@ export function SettingsPage(): React.JSX.Element {
                         key={backup.path}
                         className="flex items-center justify-between p-3 border rounded-lg"
                       >
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">{backup.filename}</p>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {backup.path.split(/[\\/]/).pop()}
+                          </p>
                           <p className="text-xs text-muted-foreground">
                             {new Date(backup.timestamp).toLocaleString()} •{' '}
                             {(backup.size / 1024 / 1024).toFixed(2)} MB
+                            {!backup.valid && (
+                              <span className="text-destructive"> • empty — cannot be restored</span>
+                            )}
                           </p>
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-3">
                           <Button
                             variant="outline"
-                            size="sm"
-                            onClick={() => handleRestoreBackup(backup.path)}
-                            disabled={backupBusy}
+                            onClick={() => openRestoreDialog(backup.path)}
+                            disabled={backupBusy || !backup.valid}
                             className="flex items-center gap-1"
                           >
-                            <Download className="h-3 w-3" />
+                            <Download className="h-4 w-4" />
                             Restore
                           </Button>
                           <Button
                             variant="outline"
-                            size="sm"
-                            onClick={() => handleDeleteBackup(backup.path)}
+                            onClick={() => setDeleteTarget(backup.path)}
                             disabled={backupBusy}
                             className="flex items-center gap-1 text-destructive"
                           >
-                            <Trash2 className="h-3 w-3" />
+                            <Trash2 className="h-4 w-4" />
                             Delete
                           </Button>
                         </div>
@@ -684,6 +732,17 @@ export function SettingsPage(): React.JSX.Element {
                           Next backup: {new Date(schedulerStatus.nextRun).toLocaleString()}
                         </p>
                       )}
+                      <p className="text-xs text-muted-foreground">
+                        Last backup:{' '}
+                        {schedulerStatus.lastBackup
+                          ? new Date(schedulerStatus.lastBackup).toLocaleString()
+                          : 'never'}
+                      </p>
+                      {schedulerStatus.lastError && (
+                        <p className="text-xs text-destructive font-medium">
+                          Last attempt failed: {schedulerStatus.lastError}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <Button
@@ -706,7 +765,8 @@ export function SettingsPage(): React.JSX.Element {
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Automatic backups run daily at 2:00 AM and are stored locally
+                  Automatic backups run daily at 2:00 AM and are stored locally. If the machine was
+                  switched off at that time, a catch-up backup runs at the next startup.
                 </p>
               </CardContent>
             </Card>
@@ -721,8 +781,81 @@ export function SettingsPage(): React.JSX.Element {
           </div>
         </TabsContent>
 
-        {/* ── AI Tab ───────────────────────────────────────────── */}
       </Tabs>
+
+      {/* Restore — Electron has no window.prompt(), so the password is collected here */}
+      <Dialog open={restoreTarget !== null} onOpenChange={(o) => !o && setRestoreTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Restore this backup?</DialogTitle>
+            <DialogDescription>
+              This replaces all current data with the contents of the backup. The application will
+              restart immediately afterwards. Your current database is saved as a
+              &ldquo;pre-restore&rdquo; backup first.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="restore-password">Backup password</Label>
+            <Input
+              id="restore-password"
+              type="password"
+              placeholder="Leave empty if the backup is not encrypted"
+              value={restorePassword}
+              onChange={(e) => setRestorePassword(e.target.value)}
+              className="h-12"
+            />
+          </div>
+          {backupMsg.startsWith('Error') && (
+            <p className="text-sm text-destructive font-medium">{backupMsg}</p>
+          )}
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="outline"
+              className="flex-1 h-12"
+              onClick={() => setRestoreTarget(null)}
+              disabled={backupBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1 h-12 font-semibold"
+              onClick={handleRestoreConfirm}
+              disabled={backupBusy}
+            >
+              {backupBusy ? 'Restoring…' : 'Restore & Restart'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this backup?</DialogTitle>
+            <DialogDescription>This cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-3 pt-2">
+            <Button
+              variant="outline"
+              className="flex-1 h-12"
+              onClick={() => setDeleteTarget(null)}
+              disabled={backupBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1 h-12 font-semibold"
+              onClick={() => deleteTarget && handleDeleteBackup(deleteTarget)}
+              disabled={backupBusy}
+            >
+              Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

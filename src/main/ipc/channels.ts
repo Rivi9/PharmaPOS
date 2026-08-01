@@ -159,7 +159,8 @@ export const IPC_CHANNELS = {
 
   // App lifecycle
   APP_CLOSE_REQUESTED: 'app:close-requested',
-  APP_CONFIRM_CLOSE: 'app:confirm-close'
+  APP_CONFIRM_CLOSE: 'app:confirm-close',
+  APP_RELAUNCH: 'app:relaunch'
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

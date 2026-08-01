@@ -157,22 +157,26 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.BACKUP_CREATE, { userId, password }),
     restore: (userId: string, backupPath: string, password?: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RESTORE, { userId, backupPath, password }),
-    listLocal: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_LIST_LOCAL),
-    deleteLocal: (backupPath: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DELETE_LOCAL, backupPath),
+    listLocal: (userId: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_LIST_LOCAL, userId),
+    deleteLocal: (userId: string, backupPath: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DELETE_LOCAL, { userId, backupPath }),
 
-    driveAuth: (accessToken: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_AUTH, accessToken),
-    driveUpload: (filePath: string, fileName: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_UPLOAD, { filePath, fileName }),
-    driveList: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_LIST),
-    driveDownload: (fileId: string, fileName: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_DOWNLOAD, { fileId, fileName }),
-    driveDelete: (fileId: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_DELETE, fileId),
+    driveAuth: (userId: string, accessToken: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_AUTH, { userId, accessToken }),
+    driveUpload: (userId: string, filePath: string, fileName: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_UPLOAD, { userId, filePath, fileName }),
+    driveList: (userId: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_LIST, userId),
+    driveDownload: (userId: string, fileId: string, fileName: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_DOWNLOAD, { userId, fileId, fileName }),
+    driveDelete: (userId: string, fileId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_DELETE, { userId, fileId }),
 
-    schedulerStart: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_START),
-    schedulerStop: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_STOP),
-    schedulerStatus: () => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_STATUS)
+    schedulerStart: (userId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_START, userId),
+    schedulerStop: (userId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_STOP, userId),
+    schedulerStatus: (userId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_STATUS, userId)
   },
 
   // Users

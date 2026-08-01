@@ -11,10 +11,10 @@ export function initializeErrorTracking(): void {
   if (isInitialized) return
 
   // Only initialize Sentry in production
-  if (process.env.NODE_ENV === 'production') {
+  if (app.isPackaged) {
     Sentry.init({
       dsn: process.env.SENTRY_DSN, // Set in environment or build config
-      environment: process.env.NODE_ENV,
+      environment: app.isPackaged ? 'production' : 'development',
       release: app.getVersion(),
       beforeSend(event) {
         // Don't send events if user hasn't opted in to error reporting
@@ -35,7 +35,7 @@ export function setupGlobalErrorHandlers(): void {
   process.on('uncaughtException', (error) => {
     logError('Uncaught Exception', error, { fatal: true })
 
-    if (process.env.NODE_ENV === 'production') {
+    if (app.isPackaged) {
       Sentry.captureException(error)
     }
 
@@ -49,7 +49,7 @@ export function setupGlobalErrorHandlers(): void {
   process.on('unhandledRejection', (reason, promise) => {
     logError('Unhandled Promise Rejection', reason as Error, { promise: String(promise) })
 
-    if (process.env.NODE_ENV === 'production') {
+    if (app.isPackaged) {
       Sentry.captureException(reason)
     }
   })
@@ -61,7 +61,7 @@ export function setupGlobalErrorHandlers(): void {
 export function reportError(error: Error, context?: Record<string, any>): void {
   logError('Reported Error', error, context)
 
-  if (process.env.NODE_ENV === 'production') {
+  if (app.isPackaged) {
     Sentry.withScope((scope) => {
       if (context) {
         scope.setContext('additional', context)
@@ -75,7 +75,7 @@ export function reportError(error: Error, context?: Record<string, any>): void {
  * Set user context for error tracking
  */
 export function setErrorTrackingUser(user: { id: string; username: string }): void {
-  if (process.env.NODE_ENV === 'production') {
+  if (app.isPackaged) {
     Sentry.setUser({
       id: user.id,
       username: user.username
@@ -87,7 +87,7 @@ export function setErrorTrackingUser(user: { id: string; username: string }): vo
  * Clear user context
  */
 export function clearErrorTrackingUser(): void {
-  if (process.env.NODE_ENV === 'production') {
+  if (app.isPackaged) {
     Sentry.setUser(null)
   }
 }

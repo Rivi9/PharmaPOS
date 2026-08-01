@@ -20,6 +20,7 @@ interface SaleData {
 import { initializeDatabase, closeDatabase } from './services/database'
 import { registerIpcHandlers } from './ipc/handlers'
 import { initializeAggregationJob } from './jobs/aggregation'
+import { startBackupScheduler, stopBackupScheduler } from './services/backup/scheduler'
 import { initializeErrorTracking, setupGlobalErrorHandlers } from './services/logging/error-handler'
 import { logInfo, logError } from './services/logging/logger'
 import { initializeAutoUpdater } from './services/updates/auto-updater'
@@ -91,6 +92,11 @@ app.whenReady().then(() => {
   // Initialize daily aggregation job
   initializeAggregationJob()
 
+  // Start automatic backups. Nothing used to call this at launch, so scheduled
+  // backups never ran; it also performs a catch-up if one was missed while the
+  // machine was switched off overnight.
+  startBackupScheduler()
+
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
 
@@ -123,6 +129,16 @@ app.whenReady().then(() => {
   ipcMain.on(IPC_CHANNELS.APP_CONFIRM_CLOSE, () => {
     closingConfirmed = true
     mainWindow.destroy()
+  })
+
+  // Used after a database restore. app.exit() bypasses `before-quit`, so the
+  // End-Shift guard cannot trap us here — the database has already been closed
+  // and swapped by restoreBackup(), and continuing to run would be unsafe.
+  ipcMain.on(IPC_CHANNELS.APP_RELAUNCH, () => {
+    closingConfirmed = true
+    stopBackupScheduler()
+    app.relaunch()
+    app.exit(0)
   })
 
   // ── Pole display — auto-connect from saved settings ───────────────────────
@@ -243,6 +259,7 @@ app.on('before-quit', (event) => {
     return
   }
   // Confirmed — run cleanup before the process exits
+  stopBackupScheduler()
   poleDisplay.closeDisplay().catch(() => {})
   closeDatabase()
 })

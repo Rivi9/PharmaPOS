@@ -1,177 +1,190 @@
 import schedule from 'node-schedule'
-import { getDatabase } from '../database'
-import { createBackup } from './database-backup'
-import { uploadBackupToDrive, isDriveConfigured, initializeDrive } from './google-drive'
+import fs from 'fs'
 import path from 'path'
+import { getDatabase } from '../database'
+import { createBackup, getBackupDir } from './database-backup'
+import { uploadBackupToDrive, isDriveConfigured, initializeDrive } from './google-drive'
+import { logError, logInfo, logWarning } from '../logging/logger'
 
 let scheduledJob: schedule.Job | null = null
 
-/**
- * Start automatic backup scheduler
- */
-export function startBackupScheduler(): void {
-  const db = getDatabase()
+const FREQUENCY_MS: Record<string, number> = {
+  daily: 24 * 60 * 60 * 1000,
+  weekly: 7 * 24 * 60 * 60 * 1000,
+  monthly: 30 * 24 * 60 * 60 * 1000
+}
 
-  // Get backup settings
-  const settings = {
-    enabled: db.prepare('SELECT value FROM settings WHERE key = ?').get('backup_enabled') as
-      | { value: string }
-      | undefined,
-    frequency: db.prepare('SELECT value FROM settings WHERE key = ?').get('backup_frequency') as
-      | { value: string }
-      | undefined,
-    time: db.prepare('SELECT value FROM settings WHERE key = ?').get('backup_time') as
-      | { value: string }
-      | undefined
-  }
+function readSetting(key: string): string | undefined {
+  const row = getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined
+  return row?.value
+}
 
-  if (settings.enabled?.value !== '1') {
-    console.log('Auto-backup is disabled')
-    return
-  }
+/** `settings.updated_at` is NOT NULL with no default — omitting it throws. */
+function writeSetting(key: string, value: string): void {
+  getDatabase()
+    .prepare(
+      `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+    )
+    .run(key, value)
+}
 
-  const frequency = settings.frequency?.value || 'daily'
-  const backupTime = settings.time?.value || '02:00' // Default 2 AM
+/** Backups are opt-out: an absent setting means enabled. */
+function backupsEnabled(): boolean {
+  return readSetting('backup_enabled') !== '0'
+}
 
-  // Parse time (HH:MM format)
+function scheduleConfig(): { frequency: string; backupTime: string; cron: string } {
+  const frequency = readSetting('backup_frequency') || 'daily'
+  const backupTime = readSetting('backup_time') || '02:00'
   const [hour, minute] = backupTime.split(':').map(Number)
+  const h = Number.isFinite(hour) ? hour : 2
+  const m = Number.isFinite(minute) ? minute : 0
 
-  let cronExpression: string
+  const cron =
+    frequency === 'weekly'
+      ? `${m} ${h} * * 0`
+      : frequency === 'monthly'
+        ? `${m} ${h} 1 * *`
+        : `${m} ${h} * * *`
 
-  switch (frequency) {
-    case 'daily':
-      cronExpression = `${minute} ${hour} * * *`
-      break
-    case 'weekly':
-      cronExpression = `${minute} ${hour} * * 0` // Sunday
-      break
-    case 'monthly':
-      cronExpression = `${minute} ${hour} 1 * *` // 1st of month
-      break
-    default:
-      cronExpression = `${minute} ${hour} * * *`
-  }
-
-  // Cancel existing job if any
-  if (scheduledJob) {
-    scheduledJob.cancel()
-  }
-
-  // Schedule backup job
-  scheduledJob = schedule.scheduleJob(cronExpression, async () => {
-    console.log('Running scheduled backup...')
-    try {
-      await performScheduledBackup()
-    } catch (error) {
-      console.error('Scheduled backup failed:', error)
-    }
-  })
-
-  console.log(`Backup scheduler started: ${frequency} at ${backupTime}`)
+  return { frequency, backupTime, cron }
 }
 
 /**
- * Stop backup scheduler
+ * Start the automatic backup scheduler. Called at app startup, not only from Settings —
+ * previously nothing invoked it on launch, so scheduled backups never ran at all.
  */
+export function startBackupScheduler(): void {
+  if (!backupsEnabled()) {
+    logInfo('Automatic backups are disabled')
+    return
+  }
+
+  const { frequency, backupTime, cron } = scheduleConfig()
+
+  if (scheduledJob) scheduledJob.cancel()
+
+  scheduledJob = schedule.scheduleJob(cron, async () => {
+    logInfo('Running scheduled backup')
+    try {
+      await performScheduledBackup()
+    } catch (error) {
+      logError('Scheduled backup failed', error as Error)
+      writeSetting('last_backup_error', (error as Error).message)
+    }
+  })
+
+  logInfo('Backup scheduler started', { frequency, backupTime })
+  void runCatchUpIfMissed(frequency)
+}
+
+/**
+ * A POS is usually powered off at 02:00, and node-schedule has no missed-run
+ * catch-up — so without this a shop that closes at night would never be backed up.
+ */
+async function runCatchUpIfMissed(frequency: string): Promise<void> {
+  const last = readSetting('last_backup_time')
+  const interval = FREQUENCY_MS[frequency] ?? FREQUENCY_MS.daily
+  if (last && Date.now() - new Date(last).getTime() < interval) return
+
+  logWarning('No recent backup found — running catch-up backup now', { lastBackup: last ?? 'never' })
+  try {
+    await performScheduledBackup()
+  } catch (error) {
+    logError('Catch-up backup failed', error as Error)
+    writeSetting('last_backup_error', (error as Error).message)
+  }
+}
+
 export function stopBackupScheduler(): void {
   if (scheduledJob) {
     scheduledJob.cancel()
     scheduledJob = null
-    console.log('Backup scheduler stopped')
+    logInfo('Backup scheduler stopped')
   }
 }
 
-/**
- * Perform scheduled backup
- */
 async function performScheduledBackup(): Promise<void> {
-  const db = getDatabase()
+  const backupPath = await createBackup(readSetting('backup_password'))
+  logInfo('Local backup created', { path: backupPath })
 
-  // Get encryption password if set
-  const passwordSetting = db
-    .prepare('SELECT value FROM settings WHERE key = ?')
-    .get('backup_password') as { value: string } | undefined
+  // Record success regardless of Drive — previously this only ran on the Drive
+  // path, so lastBackup stayed null for every local-only install.
+  writeSetting('last_backup_time', new Date().toISOString())
+  writeSetting('last_backup_error', '')
 
-  // Create local backup
-  const backupPath = await createBackup(passwordSetting?.value)
-  console.log('Local backup created:', backupPath)
-
-  // Upload to Google Drive if configured
   if (isDriveConfigured()) {
-    const tokenSetting = db
-      .prepare('SELECT value FROM settings WHERE key = ?')
-      .get('google_drive_token') as { value: string } | undefined
-
-    if (tokenSetting?.value) {
-      initializeDrive(tokenSetting.value)
-
-      const fileName = path.basename(backupPath)
-      const result = await uploadBackupToDrive(backupPath, fileName)
-      console.log('Backup uploaded to Google Drive:', result.fileId)
-
-      // Update last backup timestamp
-      db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
-        'last_backup_time',
-        new Date().toISOString()
-      )
+    const token = readSetting('google_drive_token')
+    if (token) {
+      try {
+        initializeDrive(token)
+        const result = await uploadBackupToDrive(backupPath, path.basename(backupPath))
+        logInfo('Backup uploaded to Google Drive', { fileId: result.fileId })
+      } catch (error) {
+        // A Drive failure must not abort retention below.
+        logError('Google Drive upload failed', error as Error)
+      }
     }
   }
 
-  // Cleanup old local backups (keep last 7)
   cleanupOldBackups(7)
 }
 
 /**
- * Cleanup old local backups
+ * Prune old archives, keeping `keepCount` *valid* ones. Zero-byte residue from a
+ * failed run does not count as a survivor, and the newest valid archive is never
+ * deleted — otherwise a week of failures could evict the last good backup.
  */
 function cleanupOldBackups(keepCount: number): void {
-  const fs = require('fs')
-  const { app } = require('electron')
-  const backupDir = path.join(app.getPath('userData'), 'backups')
-
+  const backupDir = getBackupDir()
   if (!fs.existsSync(backupDir)) return
 
   const files = fs
     .readdirSync(backupDir)
-    .filter(
-      (f: string) =>
-        f.startsWith('pharmapos-backup-') && (f.endsWith('.zip') || f.endsWith('.encrypted'))
-    )
-    .map((f: string) => ({
-      name: f,
-      path: path.join(backupDir, f),
-      time: fs.statSync(path.join(backupDir, f)).mtime.getTime()
-    }))
-    .sort((a: any, b: any) => b.time - a.time)
+    .filter((f) => /^pharmapos-backup-.+\.(zip|encrypted)$/.test(f))
+    .map((f) => {
+      const full = path.join(backupDir, f)
+      const stats = fs.statSync(full)
+      return { name: f, path: full, time: stats.mtime.getTime(), valid: stats.size > 0 }
+    })
+    .sort((a, b) => b.time - a.time)
 
-  // Delete old backups
-  files.slice(keepCount).forEach((file: any) => {
-    fs.unlinkSync(file.path)
-    console.log('Deleted old backup:', file.name)
-  })
+  const valid = files.filter((f) => f.valid)
+  const keep = new Set(valid.slice(0, Math.max(keepCount, 1)).map((f) => f.path))
+
+  for (const file of files) {
+    if (keep.has(file.path)) continue
+    try {
+      fs.unlinkSync(file.path)
+      logInfo('Deleted old backup', { name: file.name, empty: !file.valid })
+    } catch (error) {
+      logError('Could not delete old backup', error as Error, { name: file.name })
+    }
+  }
 }
 
-/**
- * Get backup status
- */
 export function getBackupStatus(): {
   enabled: boolean
+  running: boolean
   lastBackup: string | null
-  nextBackup: string | null
+  lastError: string | null
+  nextRun: string | null
 } {
-  const db = getDatabase()
-
-  const enabled = db.prepare('SELECT value FROM settings WHERE key = ?').get('backup_enabled') as
-    | { value: string }
-    | undefined
-
-  const lastBackup = db
-    .prepare('SELECT value FROM settings WHERE key = ?')
-    .get('last_backup_time') as { value: string } | undefined
-
   return {
-    enabled: enabled?.value === '1',
-    lastBackup: lastBackup?.value || null,
-    nextBackup: scheduledJob?.nextInvocation()?.toISOString() || null
+    enabled: backupsEnabled(),
+    running: scheduledJob !== null,
+    lastBackup: readSetting('last_backup_time') || null,
+    lastError: readSetting('last_backup_error') || null,
+    nextRun: scheduledJob?.nextInvocation()?.toISOString() || null
   }
+}
+
+/** Enable or disable automatic backups, (re)starting the job to match. */
+export function setBackupsEnabled(enabled: boolean): void {
+  writeSetting('backup_enabled', enabled ? '1' : '0')
+  if (enabled) startBackupScheduler()
+  else stopBackupScheduler()
 }

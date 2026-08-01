@@ -1,4 +1,5 @@
 import { getDatabase, generateId } from './database'
+import { logError } from './logging/logger'
 
 export type AuditAction =
   | 'SALE_CREATED'
@@ -58,22 +59,58 @@ export interface LogAuditParams {
  * Append-only audit log entry. Never call UPDATE or DELETE on audit_log.
  */
 export function logAudit(params: LogAuditParams): void {
-  try {
-    const db = getDatabase()
+  const db = getDatabase()
+
+  const insert = (userId: string | null, details: Record<string, unknown> | undefined): void => {
     db.prepare(
       `INSERT INTO audit_log (id, timestamp, user_id, user_name, action, entity_type, entity_id, details)
-       VALUES (?, datetime('now'), ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
       generateId(),
-      params.userId ?? null,
-      params.userName ?? null,
+      // Stored as ISO-8601 UTC to match every other table. datetime('now') yields
+      // "YYYY-MM-DD HH:MM:SS", which JS parses as *local* time and rendered 5.5h early.
+      new Date().toISOString(),
+      userId,
+      params.userName ?? resolveUserName(params.userId),
       params.action,
       params.entityType,
       params.entityId ?? null,
-      params.details ? JSON.stringify(params.details) : null
+      details ? JSON.stringify(details) : null
     )
+  }
+
+  try {
+    insert(params.userId ?? null, params.details)
+  } catch (error) {
+    // audit_log.user_id has an FK to users(id). A stale or unknown id used to make the
+    // whole entry disappear silently. Keep the record — attribute it as unknown instead.
+    try {
+      insert(null, { ...(params.details ?? {}), claimed_user_id: params.userId ?? null })
+      logError('Audit entry written without an actor — user id was not valid', error as Error, {
+        action: params.action,
+        claimed_user_id: params.userId
+      })
+    } catch (fallbackError) {
+      // Auditing must never crash the operation, but the loss must be diagnosable.
+      logError('AUDIT WRITE FAILED — entry lost', fallbackError as Error, {
+        action: params.action,
+        entityType: params.entityType,
+        entityId: params.entityId
+      })
+    }
+  }
+}
+
+/** Fill in the display name so entries do not render as "system". */
+function resolveUserName(userId?: string): string | null {
+  if (!userId) return null
+  try {
+    const row = getDatabase()
+      .prepare('SELECT full_name FROM users WHERE id = ?')
+      .get(userId) as { full_name: string } | undefined
+    return row?.full_name ?? null
   } catch {
-    // Audit logging must never crash the main operation
+    return null
   }
 }
 

@@ -5,11 +5,16 @@ import path from 'path'
 
 const logsDir = path.join(app.getPath('userData'), 'logs')
 
+// Electron never sets NODE_ENV and nothing injects it at build time, so gating on
+// it left the packaged app permanently in "development" mode. app.isPackaged is
+// the only reliable signal.
+const isProduction = app.isPackaged
+
 /**
  * Create Winston logger instance
  */
 export const logger = winston.createLogger({
-  level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+  level: isProduction ? 'info' : 'debug',
   format: winston.format.combine(
     winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     winston.format.errors({ stack: true }),
@@ -39,7 +44,7 @@ export const logger = winston.createLogger({
 })
 
 // Console output in development
-if (process.env.NODE_ENV !== 'production') {
+if (!isProduction) {
   logger.add(
     new winston.transports.Console({
       format: winston.format.combine(winston.format.colorize(), winston.format.simple())

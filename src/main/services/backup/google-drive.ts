@@ -164,7 +164,12 @@ export function isDriveConfigured(): boolean {
  */
 export function storeDriveToken(accessToken: string): void {
   const db = getDatabase()
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(
+  // settings.updated_at is NOT NULL with no default — omitting it threw, which is why
+  // Google Drive could never be configured.
+  db.prepare(
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+  ).run(
     'google_drive_token',
     accessToken
   )

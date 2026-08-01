@@ -1,4 +1,4 @@
-import { autoUpdater } from 'electron'
+import { app, autoUpdater } from 'electron'
 import { updateElectronApp, UpdateSourceType } from 'update-electron-app'
 import { BrowserWindow } from 'electron'
 import { logInfo, logError } from '../logging/logger'
@@ -11,7 +11,7 @@ let mainWindow: BrowserWindow | null = null
 export function initializeAutoUpdater(window: BrowserWindow): void {
   mainWindow = window
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (!app.isPackaged) {
     logInfo('Auto-updater skipped (development mode)')
     return
   }
@@ -55,7 +55,7 @@ export function initializeAutoUpdater(window: BrowserWindow): void {
  * Trigger an immediate update check (also starts download in Squirrel)
  */
 export function checkForUpdates(): void {
-  if (process.env.NODE_ENV !== 'production') {
+  if (!app.isPackaged) {
     logInfo('Update check skipped (development mode)')
     return
   }
