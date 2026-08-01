@@ -1,308 +1,401 @@
 # PharmaPOS QA Report
 
-**Date:** 2026-03-11 (originally raised) · last updated 2026-08-01 after session 5
-**Reviewed by:** Code review (source-level analysis)
-**Environment:** Windows 10 POS touchscreen + customer pole display
+**Date:** 2026-08-02
+**Version reviewed:** 1.0.11 (commit `03bc4b1`)
+**Method:** Full source-level review of all ~17,900 lines across `src/main`, `src/preload`, `src/renderer` and `src/shared`, plus the migration SQL, `forge.config.ts`, CI workflow, dependency tree and the E2E suite. Findings were then **re-verified against the live database** (`%APPDATA%/pharma-pos/pharmapos.db`, inspected read-only on a copy).
+**Environment:** Windows 10 POS machine, capacitive touchscreen, USB barcode scanner, 80mm thermal printer + cash drawer, serial VFD pole display. Sri Lankan pharmacy — LKR, VAT, tax-reporting obligations.
+
+> This report **supersedes `QA-REPORT.md.old`**, which is retained only as history. Nothing in it was carried forward; every finding below was re-derived from the current code.
 
 ---
 
 ## Summary
 
-| Severity | Raised | Fixed | Open |
-|----------|-------|-------|------|
-| 🔴 Critical | 4 | 4 | 0 |
-| 🟠 High | 10 | 10 | 0 |
-| 🟡 Medium | 13 | 11 | 2 |
-| ⚪ Low | 12 | 9 | 3 |
-| 📱 Touch-specific | 12 | 12 | 0 |
-| **Total** | **51** | **46** | **5** |
+| Severity | Count |
+|----------|-------|
+| 🔴 Critical | 14 |
+| 🟠 High | 24 |
+| 🟡 Medium | 21 |
+| ⚪ Low | 10 |
+| **Total** | **69** |
 
-### Still open
+**Confirmed against live data.** Four Critical findings were reproduced numerically from the operator's own database, including both figures reported from the running app:
 
-All five remaining items are feature/polish work — no known correctness bugs remain.
+| Observed in the app | Actual data | Verdict |
+|---|---|---|
+| Analytics: Total Sales `Rs. 4799.50`, Profit `Rs. 4799.50` (100.0% margin), Items Sold `46` | True revenue `Rs. 2399.75`, true items `23`, true cost `Rs. 0` | Every figure doubled by a join defect (C1); margin fictitious (C5) |
+| End Shift: Cash Sales `Rs. 5500.00`, Expected in drawer `Rs. 5500.00`, Total Sales `Rs. 2831.70` | Cash actually retained `Rs. 2831.70`; change given `Rs. 2668.30` | Drawer overstated by exactly `Rs. 2668.30` (C2) |
+| Receipt `R-2026-000001` total | Stored as `2701.905` — three decimal places | Unpayable amount persisted (C4) |
+| VAT on both sales | Header tax `19.80` / `412.155`; line-item tax `0` / `0` | Two contradictory VAT models (C3) |
 
-| # | File | Issue |
-|---|------|-------|
-| M9 | `AuditLogPage.tsx` | Only an action filter — no date-range or user filter for compliance review |
-| M13 | `ShoppingCart.tsx` | `applySaleDiscount` exists in the store but has no UI entry point |
-| L3 | `SearchModal.tsx` | No "in-stock only" toggle; zero-stock results clutter the list |
-| L4 | `AnalyticsPage.tsx` | Dashboard data goes stale after sales — manual Refresh only |
-| L7 | `ReceiptPreview.tsx` | Receipt width constant `W = 42` duplicated from the formatter |
+### The short version
+
+The transactional core is sound — `createSale` is genuinely atomic, stock cannot go negative, foreign keys are enforced. **What is broken is nearly everything that reports or reconciles money**, plus authorisation, which is effectively decorative. In its current state the app will mis-state revenue, profit, VAT and drawer cash on every single day of trading, and a cashier can grant themselves admin from the DevTools console.
 
 ---
-
-> **Note:** the sections below are the **original findings as first raised**, kept as a historical
-> record. Most are now resolved — see the per-session "Fixed" tables at the end of this document,
-> and the "Still open" table above for what actually remains.
 
 ## 🔴 Critical
 
-<!-- ### C1 — Expired products can be added to cart without blocking the transaction
-**File:** `src/renderer/src/components/pos/ProductEntry.tsx`
+### C1 — Every analytics KPI is multiplied by the number of transactions that day
+**File:** `src/main/services/analytics/queries.ts:30-31` (and identically `:60-61`)
+**Reported from the running app.**
 
-The expiry check only sets an `expiryWarning` string — it never blocks the item from being added. `addItem` is called unconditionally even when `days <= 0`. A cashier scanning an expired product sees a yellow warning text but the item still enters the cart and the sale completes. A pharmacy legally cannot dispense expired medicines.
+`getDailyMetrics` joins a per-product table to a per-sale table with no aggregation boundary, producing a cartesian product. With *N* product rows and *M* completed sales for the date, every `SUM(psd.…)` is summed *M* times over:
 
-`handleSuggestionSelect` checks for `total_stock === 0` and returns early, but there is no equivalent early return for expired products.
-
-**Fix:** Add a hard block (return early, set an error, do not call `addItem`) when `days <= 0`, matching the out-of-stock guard already present. -->
-
----
-
-### C2 — `createSale` result not checked before clearing cart
-**File:** `src/renderer/src/components/pos/PaymentModal.tsx`
-
-If `createSale` returns a success-shaped object with `result.success === false`, `clearCart()` still runs (wiping the cart), `addToTodaySales` increments the header total, and `onComplete(undefined, undefined)` opens the receipt preview for a non-existent sale — crashing `getReceipt` in `ReceiptPreview.tsx`.
-
-**Fix:** Check `result.success` before clearing the cart and calling `onComplete`.
-
----
-
-### C3 — Today's Sales total is hardcoded to `Rs. 0.00`
-**File:** `src/renderer/src/pages/POSPage.tsx` line 72
-
-```tsx
-<p className="text-lg font-bold">Rs. 0.00</p>
+```sql
+FROM product_sales_daily psd
+LEFT JOIN sales s ON date(s.created_at) = psd.date AND s.status = 'completed'
+WHERE psd.date = ?
 ```
 
-This never reads from `shiftStore.todaySalesTotal` and always shows zero regardless of completed sales.
+`COUNT(DISTINCT s.id)` is correct (the `DISTINCT` saves it), so `transaction_count` is right while **`total_sales`, `total_profit`, `total_cost` and `items_sold` are all inflated by exactly that count.** Reproduced from live data — true revenue `2399.75`, 2 completed sales, so the dashboard displays `4799.50`; true quantity 23 displays as 46. `avg_transaction` divides the inflated revenue by the honest count, so it coincidentally lands on the *correct* revenue figure — which is why `Rs. 2399.75` appears as "Avg Transaction" while the real day's revenue is hidden.
 
-**Fix:** Subscribe to `useShiftStore` and display `todaySalesTotal`, or remove this duplicate display since the header already shows it.
+At 50 sales/day this over-reports revenue **fiftyfold**. `getPeriodMetrics` has the identical defect and feeds the trend chart, so history is wrong too.
+
+**Fix:** Never join the two fact tables. Aggregate `product_sales_daily` alone, and obtain `transaction_count` from an independent scalar subquery:
+```sql
+SELECT ?, COALESCE(SUM(revenue),0), COALESCE(SUM(profit),0), COALESCE(SUM(cost),0),
+       (SELECT COUNT(*) FROM sales WHERE date(created_at)=? AND status='completed'),
+       COALESCE(SUM(quantity_sold),0)
+FROM product_sales_daily WHERE date = ?
+```
+`getTopProducts` and `getCategoryBreakdown` were checked and are **not** affected — they join `products` by primary key.
 
 ---
 
-### C4 — Default admin credentials hardcoded in source
-**File:** `src/renderer/src/pages/LoginPage.tsx`
+### C2 — Expected drawer cash adds the cash tendered and never subtracts the change given
+**File:** `src/main/services/sales.ts:269-276`
+**Reported from the running app.**
 
-`password: 'admin123'` and `pin: '0000'` are committed in plaintext. No forced-change flow exists after first login.
+`cash_received` stores what the customer *handed over*; `change_given` stores what went back. Expected cash must net the two. It does not:
 
-**Fix:** Prompt for credentials on first-run setup, or generate a random PIN and display it once at first boot.
+```sql
+SELECT COALESCE(SUM(cash_received), 0) as total FROM sales WHERE shift_id = ? AND status = 'completed'
+```
+
+Verified on live data for the operator's only shift: the formula yields **5500.00**, the cash actually retained is **2831.70**, overstatement **2668.30** — matching the End Shift screen exactly. Every cash sale inflates the expectation by its change, so the cashier is accused of being short by the entire day's change, and that shortfall is written into the audit log as fact. The same number is mislabelled as the "Cash Sales" tile, where it reads *higher than total sales* — the visible tell that something is wrong.
+
+**Fix:** `SUM(cash_received - COALESCE(change_given, 0))`. Single point of change: both the End Shift display and the `SHIFT_ENDED` audit record call this one function. Rename the tile to "Cash Tendered" or compute retained cash for it.
+
+---
+
+### C3 — Two contradictory VAT models; the default install adds 18% to prices the schema calls tax-inclusive
+**File:** `src/renderer/src/stores/posStore.ts:157-162` vs `src/main/services/sales.ts:193-201`
+
+The renderer takes the single global `settings.vat_rate` and **adds** it on top (`total = subtotal − discount + tax`). The main process independently computes each `sale_items.tax_amount` from the **per-product** `tax_rate` / `is_tax_inclusive`. The seeded defaults make these irreconcilable: `vat_rate = '18'`, while `products.tax_rate` defaults to `0` and `is_tax_inclusive` defaults to `1`.
+
+Verified on live data — both sales carry a header tax (`19.80`, `412.155`) against line-item tax of **`0`**. So:
+- A product entered at its printed MRP of Rs. 115 is charged to the customer at Rs. 135.70.
+- **Any VAT return built from line items reports zero VAT on VAT-charged sales.**
+- If an operator later sets a product's `tax_rate` to 18 while `is_tax_inclusive` stays 1, VAT is charged twice — once inside the price, once by the renderer.
+- A mixed basket of exempt and standard-rate goods is taxed uniformly, because the cart ignores per-product rates entirely.
+
+**Fix:** Choose one model — for Sri Lankan tax-inclusive shelf pricing, extract per line (`line_total − line_total/(1+rate/100)`) using the product's own rate, and make `total = subtotal − discount` with no add-on. Have the renderer call the *same shared function* the main process uses so cart, receipt and DB cannot diverge, and snapshot the effective rate onto the sale row. Do not ship an 18% default that silently marks up every price on first run.
+
+---
+
+### C4 — No rounding anywhere in the money math; sub-cent amounts are charged and stored
+**File:** `src/renderer/src/lib/calculations.ts:3-37`
+
+Nothing in `calculateLineTotal → calculateSubtotal → calculateTax → calculateTotal → calculateChange` rounds. Rounding exists **only** in `formatCurrency`'s `toFixed(2)`, i.e. for display. Verified in live data: sale `R-2026-000001` is stored with `total = 2701.905`, `tax_amount = 412.155`, `change_given = 2298.095` — an amount that cannot be tendered in cents, let alone in rupees.
+
+Two consequences:
+1. **Exact cash is rejected.** `Exact` sends `total.toFixed(2)`, then `validatePayment` compares it against the *unrounded* float. Where the float exceeds its own 2dp display, `cashReceivedNum < total` is true and the sale is blocked with the self-contradicting `Insufficient cash. Need Rs. 0.00 more.` Both reviewers measured this independently at roughly 37–49% of realistic price/quantity combinations at 18% VAT.
+2. Stored totals disagree with printed receipts, and `SUM(total)` disagrees with both.
+
+**Fix:** Add `const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100` and apply it in all five functions — ideally compute in integer cents throughout. Independently, make the tender comparison tolerant: `if (cashReceivedNum < total - 0.005)`.
+
+---
+
+### C5 — Profit and margin are fiction: no cost basis is ever captured
+**File:** `src/main/services/sales.ts:190`, `src/main/db/schema.ts:53`
+**Reported from the running app.**
+
+`cost = (product?.costPrice ?? 0) × quantity`, so `profit = line_total − 0 = line_total`. Verified on live data: **all 257 products and all 257 stock batches have `cost_price = 0`**, and all 4 recorded line items have `cost_price = 0`. Hence the dashboard's `Profit Rs. 4799.50 / 100.0% margin` — profit is just revenue restated, and it is *also* doubled by C1.
+
+Two distinct defects compound here:
+- Nothing requires or defaults a real cost. `cost_price` is `NOT NULL DEFAULT 0` with no validation at any layer, and the Excel importer accepts a sheet with no cost column.
+- Cost is read from `products.cost_price` even though the pharmacy enters cost **per batch** when receiving stock (`stock_batches.cost_price`). Batch cost is captured and then never used, so even a diligent operator gets 100% margin.
+
+**Fix:** Take the cost from the batch actually dispensed (`deductStockFEFO` already returns them — see H4), fall back to `products.cost_price`, and refuse to compute a margin at all when cost is 0: show "—" or "cost not set" rather than "100.0%". Require `cost_price > 0` on product create/import, and add a one-off report listing products with no cost so the existing 257 can be corrected.
+
+---
+
+### C6 — Every card sale blanks the entire application
+**File:** `src/renderer/src/components/pos/ReceiptPreview.tsx:25,165,168`
+
+The interface declares `card_amount`, but the column is `card_received` (`schema.ts:134`) and `getReceipt` does `SELECT s.*`. So `receipt.sale.card_amount` is `undefined` and `undefined.toFixed(2)` throws — inside **`formatReceiptText()`, which is called during render** (`:219`), not in an event handler. There is **no `ErrorBoundary` anywhere in the codebase** (verified: zero matches for `ErrorBoundary|componentDidCatch`), so React unmounts the entire root. The POS goes blank immediately after every card sale and needs a restart. The sale itself commits, so money and stock are safe — but the till stops selling.
+
+**Fix:** Rename to `card_received` in the interface and both usages, guard with `if (!receipt?.sale) return ''`, and add an error boundary around the POS route so no formatting bug can ever take the till down again.
+
+---
+
+### C7 — The printed grand total is silently truncated on any sale ≥ Rs. 10,000
+**File:** `src/main/services/printer/receipt-formatter.ts:170`
+
+The TOTAL row prints at double character size, so the column budget is halved to `floor(42/2) = 21`, giving the amount column `floor(0.5 × 21) = 10` characters. `"Rs." + total.toFixed(2)` is 11 characters at Rs. 10,000 — and `tableRow` **truncates rather than overflows** (`:41`). Verified by executing the real formatter:
+
+```
+real Rs. 10000.00  prints  "TOTAL:    Rs.10000.0"
+real Rs. 12345.67  prints  "TOTAL:    Rs.12345.6"
+real Rs. 125000.50 prints  "TOTAL:    Rs.125000."
+```
+
+The customer's only legal record of what they were charged shows a different, smaller number. The on-screen preview uses a 12-character field and shows it correctly, so the cashier cannot see the discrepancy.
+
+**Fix:** Emit the label and the amount as separate double-width segments and never truncate the amount — truncate only the label. Add a regression test asserting a Rs. 1,000,000 total round-trips intact.
+
+---
+
+### C8 — Holding or double-tapping Enter commits the sale twice
+**File:** `src/renderer/src/components/pos/PaymentModal.tsx:131`, `src/renderer/src/components/ui/cash-numpad.tsx:67`
+
+`CashNumpad` binds a **global** `keydown` listener that maps Enter straight to `onSubmit` → `handleComplete`. `handleComplete` has **no reentrancy guard** — `setProcessing(true)` disables the *button*, which the keyboard path bypasses. The first call then awaits one IPC round-trip per cart line (`:145-151`), a window of tens to hundreds of milliseconds. OS key-repeat or a second tap re-enters; both pass the stock recheck and both call `createSale`.
+
+Result: two sale rows, two receipt numbers, stock deducted twice, `product_sales_daily` inflated twice, drawer expectation double-counted. `EndShiftModal.handleEndShift` shares the defect (and can close a shift twice, see H20).
+
+**Fix:** An in-flight ref latch as the first statement of `handleComplete`, released in `finally`. Ignore auto-repeat (`if (e.repeat) return`). Best of all, stop binding an irreversible action to a bare Enter.
+
+---
+
+### C9 — Scanning a barcode with the payment dialog open commits the sale with the barcode as cash received
+**File:** `src/renderer/src/components/ui/cash-numpad.tsx:61-83`
+
+The barcode scanner is a keyboard. `CashNumpad`'s global listener swallows every digit whenever focus is **not** in a text input — and Radix autofocuses the dialog's first focusable node, which is a `<Button>`, not the cash field. So the very common reflex of scanning one more item while the payment dialog is up types e.g. `8901234567890` into Cash Received, and the scanner's trailing CR fires `handleComplete`. Validation passes (`cash >= total`), and the sale commits instantly and unconfirmed with `cash_received = 8901234567890`.
+
+That single value destroys the shift's drawer reconciliation (C2 sums it) and prints an absurd change amount. The same shape applies to `StartShiftModal` (opens a shift with a multi-billion float) and to `PinPad`, which has **no input guard at all**, so scanner digits become PIN attempts.
+
+**Fix:** Scope the listener to the dialog rather than `window`. Add scanner detection — ignore keys arriving <30ms apart (scanners emit at 1–5ms; humans cannot). Reject a tender wildly above the total without explicit confirmation. Remove the bare-Enter submit.
+
+---
+
+### C10 — Expired medicine is sellable, and FEFO deliberately dispenses the expired batch first
+**File:** `src/main/services/sales.ts:76-88`, `src/renderer/src/components/pos/ProductEntry.tsx:137-147`
+
+The batch query filters only `quantity > 0` and orders `expiry_date ASC`, so an expired batch is **preferentially** depleted. Nothing blocks the sale at any layer: `ProductEntry` sets an advisory orange banner and then calls `addItem` regardless; `QuickItems.handleQuickAdd` has no expiry check at all; `checkStockAvailability` has no expiry predicate. For a pharmacy this is a regulatory failure, not a UX nit.
+
+*Latent in the current dataset* — the live DB has 0 expired batches holding stock today — but the code path is fully open and will fire the first time stock ages on the shelf.
+
+**Fix:** Add `AND (expiry_date IS NULL OR expiry_date >= date('now','localtime'))` to `deductStockFEFO` and `checkStockAvailability` so expired stock can never be dispensed even if the UI is bypassed. Exclude expired quantity from sellable `total_stock`, hard-block `addItem` on `days <= 0` in all four entry paths, and surface expired stock as a quarantine queue in Inventory rather than a warning at the till. If an override is ever needed, gate it behind a manager PIN and audit it.
+
+---
+
+### C11 — Authorisation trusts a user id supplied by the renderer, and three channels have no check at all
+**File:** `src/main/ipc/middleware.ts:4`, `src/main/ipc/handlers.ts:54,128,159`, `src/main/ipc/setup-handlers.ts:10`
+
+There is **no session state in the main process**. Every gated handler authorises against a `userId` that arrives in the IPC payload:
+
+```ts
+export async function withPermission<T>(userId: string, permission: Permission, handler: …) {
+  const user = getUserById(userId)          // ← from the renderer
+```
+
+And `AUTH_GET_USERS` is ungated, returning every active user's `id` **and** `role` before anyone logs in — so the admin's id is simply handed out. Combined, any renderer code can act as admin against every `withPermission` channel (users, inventory, analytics, audit, backup, void, refund), and the audit rows that do get written name the admin as the actor.
+
+Three channels are worse — **no permission check whatsoever**:
+- `AUTH_CREATE_USER` (`handlers.ts:128`) — takes no `userId`, accepts any string as `role`, writes no audit row. One console call mints an admin.
+- `SETUP_INITIALIZE` (`setup-handlers.ts:10`) — re-runnable at any time; inserts another admin and overwrites business name, address, phone and currency mid-shift.
+- `SETTINGS_SET` (`handlers.ts:159`) — no permission, no key whitelist, no validation. `setSetting('vat_rate','0')` changes the tax on every subsequent sale immediately, because the live cart reads it.
+
+**Fix:** Hold the authenticated user in main, keyed by `event.sender.id`, set only by `AUTH_LOGIN` and cleared on logout. Change the signature to `withPermission(event, permission, handler)` and ignore any renderer-supplied id. Delete `AUTH_CREATE_USER`; make `initializeDatabase` throw unless the users table is empty; gate `SETTINGS_SET` on `settings:update` with a key whitelist and numeric validation for `vat_rate`.
+
+---
+
+### C12 — The bcrypt hash of every 4-digit PIN is shipped to the renderer
+**File:** `src/main/ipc/handlers.ts:84,106`, `src/main/ipc/user-handlers.ts:31`
+
+Login deliberately strips one secret and leaves the other:
+
+```ts
+const { password_hash, ...safeUser } = user   // pin_code survives
+```
+
+and `mapUser` returns `pin_code: u.pinCode` for **every** user in `USER_LIST`. A 4-digit PIN is 10,000 candidates; bcrypt at cost 10 makes that an offline dictionary attack of minutes on a laptop. Combined with C11 (any role can call `USER_LIST`), any cashier can silently recover the admin PIN with no failed-login trace anywhere.
+
+**Fix:** Never send hash material over IPC. Return `pin_set: !!u.pinCode` and destructure both secrets out of the login result: `const { password_hash, pin_code, ...safeUser } = user`.
+
+---
+
+### C13 — Refund-with-restock always throws and rolls back, after the cash has been handed over
+**File:** `src/main/services/sales.ts:392-394`
+
+```ts
+rawDb.prepare(`UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?`)
+```
+
+There is **no `stock_quantity` column** — verified absent from both `schema.ts` and the migration; stock lives only in `stock_batches`, and `total_stock` is a `SUM()` alias. So the statement raises `no such column` inside `rawDb.transaction(...)`, discarding the whole refund: no `sale_refunds` row, no stock returned, while the customer has already been paid at the counter. Not reachable from the current UI, but the handler is registered and the preload exposes it, so it fails the moment refunds are wired up.
+
+**Fix:** Delete those three lines — the preceding `stock_batches` increment is correct and sufficient. Restock into the **originating** `sale_items.batch_id` so expiry tracking stays truthful, and write an `inventory_adjustments` row per item.
+
+---
+
+### C14 — No migration versioning: the next schema change will break every deployed machine
+**File:** `src/main/db/index.ts:16`
+
+```ts
+const schemaExists = sqlite.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_log'`).get()
+if (!schemaExists) { sqlite.exec(migrationSql) }
+```
+
+Two failures. First, there is no `user_version` or `__drizzle_migrations` check, so `0001_*.sql` will **never** be applied to an existing install — given this app auto-updates via Squirrel, the next migration ships an update that crashes with `no such column` on the pharmacy's live database. Second, `audit_log` is the *first* `CREATE TABLE` in the file and `exec` is not wrapped in a transaction, so a power cut mid-bootstrap (a POS reality) creates `audit_log` and nothing else — and on next launch the sentinel says "schema exists", leaving the database permanently unusable.
+
+**Fix:** Wrap the bootstrap in `sqlite.transaction(...)`, and drive migrations off `PRAGMA user_version` (or Drizzle's `migrate()` with the journal already present in `meta/`) so each numbered migration applies exactly once and future ones are picked up. Do this **before** the next release, because it cannot be fixed retroactively on machines already in the field.
 
 ---
 
 ## 🟠 High
 
-### H1 — Search bar not responding to touch on touchscreen displays
-**Files:** `src/renderer/src/components/pos/ProductEntry.tsx`, `src/renderer/src/components/pos/SearchModal.tsx`
+### H1 — Print failure is swallowed twice; the cashier is never told the receipt did not print
+**File:** `src/main/ipc/printer-handlers.ts:54-63`, `src/renderer/src/components/pos/ReceiptPreview.tsx:190-204`
+The handler catches everything and **resolves** `{success:false, error}`. The caller `await`s it with only a `catch`, which therefore never runs, and never inspects `success`. Printer unplugged, port claimed, or TCP timeout → the button flips back to "Print" with no message. The customer leaves with no receipt and, because the drawer pulse rides in the same buffer, the till never opens.
+**Fix:** Inspect the result, surface the error prominently with a Retry, and keep the modal open until the cashier prints or explicitly dismisses.
 
-On capacitive touchscreens, input fields inside certain flex/overflow containers can become unresponsive to touch events. This is a known Chromium/Electron issue where `overflow: hidden` or `overflow: auto` parent containers intercept touch events before they reach the input. The barcode/search input in `ProductEntry` sits inside a `relative` wrapper inside a `flex` container inside an `overflow-auto` parent — this chain creates conditions where touch focus fails intermittently.
+### H2 — The cash drawer only opens if the cashier manually presses Print and it succeeds
+**File:** `src/main/services/printer/receipt-formatter.ts:213-215`
+The drawer pulse is emitted **only** inside the receipt byte stream, and nothing prints automatically — `handlePaymentComplete` just opens the preview. Press Close instead of Print (or hit any print fault) and you have a committed cash sale with a locked drawer. A working `printer.openDrawer()` IPC exists and is called by nothing.
+**Fix:** Auto-print after commit, and kick the drawer via an independent `openDrawer()` for cash/mixed so a paper fault cannot lock the till. Remove `cashdraw` from `printReceipt` so reprints don't re-open it.
 
-**Fix:** Add `touch-action: manipulation` via `style={{ touchAction: 'manipulation' }}` on affected inputs, and ensure parent containers do not use `overflow: hidden` directly around the input wrapper. Also add explicit `onClick={() => inputRef.current?.focus()}` handlers as a fallback.
+### H3 — Voiding a sale restores nothing
+**File:** `src/main/services/sales.ts:248-263`
+`voidSale` flips `status` and stops. Deducted `stock_batches` stay deducted; `product_sales_daily` revenue/cost/profit stay inflated. Inventory permanently under-reports and profit over-reports. Separately `getTodaySalesTotal` (`:312`) has **no status filter**, so voided sales still count toward the header and the End Shift "Total Sales" tile — while `computeShiftExpectedCash` *does* filter, so the two disagree by construction.
+**Fix:** Transactionally re-add each `sale_items` quantity to its recorded `batch_id` and apply negative deltas to `product_sales_daily`. Add `AND status='completed'` to `getTodaySalesTotal`.
 
----
+### H4 — Multi-batch lines record only the first batch, and cost comes from the product not the batch
+**File:** `src/main/services/sales.ts:209,190`
+`deductStockFEFO` returns every batch it touched; the insert stores `batches[0].batch_id`. Selling 10 units across a 4-unit and a 6-unit batch records one batch id — **a manufacturer recall cannot identify which customers received the affected lot**, which is a traceability requirement for a pharmacy. The same line takes cost from `products.cost_price` rather than the batches actually dispensed (compounding C5).
+**Fix:** One `sale_items` row per batch touched (or a `sale_item_batches` child table), each using its own batch `cost_price`.
 
-### H2 — Shopping cart quantity input too narrow — only shows one digit
-**File:** `src/renderer/src/components/pos/CartItem.tsx` line 86
+### H5 — A sale can be refunded without limit, for more than was sold
+**File:** `src/main/services/sales.ts:353-355`
+`createRefund` guards on `status !== 'completed'` but **never sets the status to `refunded`**, so the guard always passes and the same sale can be refunded repeatedly, restocking each time. The caller's `items` array is trusted and stored as opaque JSON with no check against what was sold, so a refund of 100 units against a 1-unit sale is accepted.
+**Fix:** Inside the transaction, aggregate prior refunds, validate cumulative quantity ≤ sold quantity and unit price against the sold price, then set `status='refunded'` (or track `refunded_total` for partials).
 
-```tsx
-className="w-12 h-9 text-center text-sm"
-```
+### H6 — The graphical customer-facing display is entirely dead code
+**File:** `src/renderer/src/pages/CustomerDisplayPage.tsx:47-48`, `src/main/index.ts:153-172`
+The page listens for `display:cart-updated` and `display:sale-completed`. **Nothing ever sends either channel** — the only `webContents.send` calls in main are `app:close-requested` and `update-status` (verified). The page is also never imported by any router or window, and `createWindow()` is called once. The display IPC handlers write only to the serial pole display and return `{success:true}` unconditionally even with nothing connected, while the renderer's `.catch(() => {})` guarantees silence. So the second customer-facing screen never shows anything.
+**Fix:** Create a second `BrowserWindow` on the secondary display rendering this page, have both handlers forward to it as well as the serial port, and return a falsy result when neither sink is present.
 
-`w-12` (48px) is not wide enough for two-digit quantities like `10`, `25`, `100`. At `text-sm` on a standard POS font scale, values of `10+` get clipped or the browser auto-shrinks the font, effectively displaying only one digit or showing an illegible truncated number. On a touch-only device the cashier cannot see the actual quantity without zooming.
+### H7 — `getQuickItems` fan-out multiplies displayed stock
+**File:** `src/main/services/products.ts:176`
+Same class of bug as C1: two independent one-to-many joins under one `GROUP BY`. A product with 2 batches (60+40=100) that sold on 3 of the last 7 days yields 6 rows, so `SUM(sb.quantity)` reports **300**. The POS quick-items panel shows triple the real stock, and "best seller" ordering is weighted by batch count.
+**Fix:** Replace both aggregates with correlated scalar subqueries.
 
-**Fix:** Increase to `w-16` (64px) minimum, or use `w-14` with `text-xs` to balance space. Also consider a wider touch target for the quantity input itself (`h-11 w-16`) since at `h-9` (36px) it falls below the recommended 44px touch target height.
+### H8 — Blank expiry is stored as `''`, which silently suppresses every expiry warning for that product
+**File:** `src/main/services/inventory.ts:472`
+`expiryDate: data.expiry_date ?? null` — `??` does not convert the empty string that react-hook-form submits. Because `'' < '2025-01-01'`, `MIN(sb.expiry_date)` returns `''`, and `if (product.nearest_expiry)` is **false** for `''` — so the product shows *no* expiry warning even when another batch expired last year. FEFO is also inverted (`''` scores as not-null and sorts first, so unknown-expiry stock is consumed before near-expiry stock), and the expiry-alert report matches `''` with a NULL day count. `updateStockBatch:526` uses `|| null` and so disagrees with the create path. *Latent in the current dataset (0 rows), live in the code.*
+**Fix:** `expiryDate: data.expiry_date?.trim() || null` (same for `batchNumber`, `supplierId`), plus a one-off repair `UPDATE stock_batches SET expiry_date=NULL WHERE expiry_date=''`.
 
----
+### H9 — `nearest_expiry` and `total_stock` include depleted batches, so good stock is flagged EXPIRED
+**File:** `src/main/services/products.ts:37,82,176`
+`searchProducts`, `getProductByBarcode` and `getQuickItems` join `stock_batches` with no `quantity > 0` filter — unlike `getProductsWithStock:217`, which has it. A batch that expired in 2024 and sold out still sets `nearest_expiry`, so the till shows a red **EXPIRED** banner on perfectly good stock. This trains staff to ignore the banner, which is precisely what makes C10 dangerous. The same product shows different expiry data on the POS and the Inventory screen.
+**Fix:** Add `AND sb.quantity > 0` to all three, and return sellable stock separately from expired stock.
 
-### H3 — `onMouseDown` on dropdown suggestions unreliable on touch
-**File:** `src/renderer/src/components/pos/ProductEntry.tsx` line 127
+### H10 — Renaming a category can never succeed, and fails silently
+**File:** `src/main/ipc/inventory-handlers.ts:67`, `src/main/services/inventory.ts:247`
+The handler passes the whole data object where a string is expected (`updateCategory(id, name, description?)`), so Drizzle binds an object and better-sqlite3 throws `can only bind numbers, strings…`. `wrap()` converts it to `{success:false}` and the submit handler has no failure branch — the dialog just sits there. Category rename is 100% broken with zero feedback, and `parent_id` is never written even once fixed (the correctly-shaped `updateCategoryLegacy:299` is dead code).
+**Fix:** Call the legacy 1-object version, rename it, delete the 3-arg one.
 
-```tsx
-onMouseDown={() => handleSuggestionSelect(product)}
-```
+### H11 — Failed inventory saves are invisible *and* wipe the user's input
+**File:** `src/renderer/src/pages/InventoryPage.tsx:112`, `src/renderer/src/components/inventory/ProductFormDialog.tsx:113`
+All four submit handlers are `if (result.success) { …close… }` with no `else`, while the dialog **always** calls `reset()`. A duplicate barcode therefore blanks the entire form (create) or silently reverts the edits (update) with no message shown. A cashier — who holds `inventory:view` and can reach the page — gets this on every save attempt.
+**Fix:** Add `else { setFormError(result.error) }` to all four, surface it in the dialog, and only `reset()` on success.
 
-On physical touchscreens the event order is `touchstart → blur → click`. `onMouseDown` fires before `blur` on mouse devices (enabling the 150ms blur trick), but on touch devices `mousedown` may fire after `blur`, causing the suggestion list to close before the selection is registered. The product is never added to cart and there is no error shown — the tap silently does nothing.
+### H12 — Expiry dates are never validated
+**File:** `src/renderer/src/components/inventory/StockBatchFormDialog.tsx:29`, `src/main/services/inventory.ts:459`
+`z.string().optional()` with no date parse and no bounds; main copies the string straight into TEXT. `2020-01-01`, `2026-13-45` and locale-formatted `20/08/2026` all save cleanly, and a batch may expire before it was received. Given expiry is legally critical here, entry is the last place to catch a typo.
+**Fix:** Validate the format and parseability, reject past dates (with an explicit opt-in for receiving stock destined for return), enforce `expiry_date > received_date`, and mirror all of it in the main process.
 
-**Fix:** Use `onPointerDown` instead of `onMouseDown`, which fires before `blur` on both mouse and touch input.
+### H13 — Batch quantity can be rewritten with no adjustment record, and no inventory mutation is audited at all
+**File:** `src/main/services/inventory.ts:506`, `src/main/ipc/inventory-handlers.ts:107-127`
+The Edit pencil issues an absolute `UPDATE … SET quantity = ?` — 5 to 500 or back — with no `inventory_adjustments` row and no `logAudit`. Across the whole inventory handler file `logAudit` appears **twice** (`STOCK_ADJUSTED` on the broken channel of M14, and the Excel import). Creating, updating or deleting products, categories, suppliers and batches leaves **no trace whatsoever**, so shrinkage cannot be attributed and price history cannot be reconstructed for tax.
+**Fix:** Route quantity changes through `adjustStockBatch` (delta + reason + user, which already writes adjustments) and drop `quantity` from `updateStockBatch`. Add `logAudit` with before/after values to every mutating handler.
 
----
+### H14 — No main-process validation and no CHECK constraints: negative prices and negative stock are storable
+**File:** `src/main/services/inventory.ts:53`, `src/main/db/migrations/0000_chilly_alice.sql:64-85`
+The UI zod schemas are the only gate and the Excel importer bypasses them entirely, so `unit_price = -50` imports fine. `adjustStockBatch` applies `quantity + ?` with no floor, so `-999` leaves `quantity = -900`, which then *subtracts* from `SUM(sb.quantity)` and understates that product's stock. The migration has zero `CHECK` clauses.
+**Fix:** One shared zod schema used by the IPC handler **and** the importer; add `CHECK (quantity >= 0)`, `CHECK (unit_price >= 0)`, `CHECK (cost_price >= 0)`; clamp adjustments at 0.
 
-### H4 — Recall overwrites live cart silently with no confirmation
-**Files:** `src/renderer/src/stores/posStore.ts`, `src/renderer/src/components/pos/CartActions.tsx`
+### H15 — CSV export corrupts on embedded quotes, is formula-injectable, and has no BOM
+**File:** `src/main/services/inventory.ts:639`
+`row.map(cell => `"${cell}"`)` — a product named `6" Crepe Bandage` shifts **every subsequent column** for that row in Excel. A name starting `=`, `+`, `-` or `@` is executed as a formula on open. No UTF-8 BOM, so Sinhala/Tamil names open as mojibake.
+**Fix:** Escape by doubling quotes, prefix `'` to cells matching `/^[=+\-@\t\r]/`, and prepend `﻿`.
 
-`recallHeldSale` sets `items` to the held sale items, discarding the current cart without any warning. The Recall button is only disabled when there is no held sale, not when the cart has items. A cashier who taps Recall mid-transaction loses the current sale with no recovery path.
+### H16 — Excel import silently discards expiry date, batch number, category and supplier
+**File:** `src/main/ipc/inventory-handlers.ts:264-287`
+Only ten columns are read; `createStockBatch` is called with just product, quantity and cost. A supplier price list containing `Expiry Date` and `Batch No` imports "successfully" with `expiry_date = NULL`. So a 10,000-line opening-stock import produces an entire inventory **with no expiry tracking**, reported as a clean success, while `track_expiry` defaults to 1 and claims otherwise.
+**Fix:** Read and resolve those columns; reject a row with `current_stock > 0` and no expiry when `track_expiry = 1`.
 
-**Fix:** If `items.length > 0`, show a confirmation dialog before overwriting (similar to the existing Clear Cart confirmation).
+### H17 — Import mangles numbers, half-applies, and can freeze the app
+**File:** `src/main/ipc/inventory-handlers.ts:246-278`
+`parseFloat('1,234.50')` returns **1** — the product is created at Rs. 1.00 and counted as imported with no error. `|| 0` on `tax_rate` and `|| 5` on `reorder_level` silently rewrite legitimate values. The transaction is **per row**, so a failure at row 4,000 leaves 3,999 committed with no rollback. A missing `name` column produces one error per row, all rendered as `<li>` — 10k DOM nodes in a modal. The whole loop is synchronous on the main process with no progress indicator.
+**Fix:** Reject non-numeric cells outright (or read the native cell type), validate the header row up front, wrap the whole import in one transaction after a dry-run pass, and cap displayed errors at ~50.
 
----
+### H18 — 10k products will lock up the touchscreen
+**File:** `src/main/services/inventory.ts:29,483`, `src/renderer/src/components/inventory/ProductsTable.tsx:145`
+`listProducts()` has no `LIMIT` and no pagination — it aggregates every product against every batch, sorts by an **unindexed** `products.name`, ships ~10k rows over IPC, and the table renders them all (8 columns ≈ 80k DOM nodes, no virtualisation). Every save re-runs all of it three times over. Search is client-side, so the full fetch is unavoidable.
+**Fix:** Server-side pagination and search pushed into SQL, `CREATE INDEX idx_products_name`, and virtualise the two large tables.
 
-### H5 — Customer save result ignored — IPC failures are silent
-**File:** `src/renderer/src/pages/CustomersPage.tsx`
+### H19 — Editing any user silently destroys their PIN login
+**File:** `src/renderer/src/components/users/UserFormModal.tsx:37`, `src/main/services/users/user-management.ts:114`
+The form pre-fills `pin_code` with what the API returns — which per C12 is the **bcrypt hash**. Saving any unrelated change (a name typo) sends that 60-character hash back as the new PIN and `updateUser` hashes it again, storing `bcrypt(bcrypt(pin))`. The cashier's PIN pad stops working, nobody knows why, and the original PIN is unrecoverable.
+**Fix:** Never load an existing PIN. Leave the field blank with "leave blank to keep current PIN", include it in the payload only when typed, and validate `/^\d{4,6}$/`.
 
-Both `window.electron.customers.update()` and `window.electron.customers.create()` results are not checked. If the IPC call fails (e.g. duplicate phone number, DB error), the dialog closes and `loadCustomers()` is called with no error shown. The cashier assumes the save succeeded.
+### H20 — The last-admin guard is bypassable; one careless edit locks everyone out permanently
+**File:** `src/main/services/users/user-management.ts:107,199`
+`deactivateUser` refuses to deactivate the last active admin, but `updateUser` has no such guard for **either** path: change the only admin's role to Cashier via the UI, or call `users.update(adminId, adminId, {is_active: 0})`. There are then zero admins, nobody can create users, restore backups or change settings, and there is no out-of-app recovery.
+**Fix:** Extract `assertNotLastAdmin(id)` and call it from `updateUser` whenever `role !== 'admin'` or `is_active === 0`. Also refuse role/active changes to the acting user's own account.
 
-**Fix:** Check the returned result and display an error on failure instead of closing the dialog.
+### H21 — PIN login has no rate limiting, lockout, or failed-attempt record
+**File:** `src/main/ipc/handlers.ts:69`
+No attempt counter, no delay, no lockout, and `logAudit` fires only on success — there is no `USER_LOGIN_FAILED` action at all. From the login screen a script can enumerate all 10,000 PINs and **nothing in the database or audit log ever shows it happened**. `PinPad` accepts any length ≥ 1 and `UserFormModal` imposes no minimum, so 1-digit PINs are creatable. A legacy plain-text comparison branch (`user.pin_code === pin`) also remains.
+**Fix:** Persist `failed_attempts` / `locked_until`, back off after 3 and hard-lock around 8, audit every failure, enforce 4–6 digits, and delete the plain-text branch.
 
----
+### H22 — Shift and sale channels are ungated and take the shift/user from the renderer
+**File:** `src/main/ipc/handlers.ts:179,207`, `src/main/ipc/pos-handlers.ts:36`
+`SHIFT_START/END/GET_ACTIVE/COMPUTE_EXPECTED_CASH` and `SALE_CREATE` perform no permission check and no ownership validation. Consequently: `endShift({shiftId: <someone else's>, closingCash: 0})` closes another cashier's shift and rewrites their cash figure; with no status check an already-closed shift can be re-closed repeatedly, overwriting `closing_cash`/`ended_at` and duplicating audit rows; `SHIFT_END` returns `{success:true}` when `shiftId` matches nothing (0 rows updated, no audit row) — a pure silent failure; and `SALE_CREATE` takes `user_id`/`shift_id` from the payload, so a sale can be booked against a **closed, already-reconciled** shift and never appear in any cash count.
+**Fix:** Resolve the actor from the main-process session, require the permission, add `AND status='active' AND user_id=?` to the End Shift update and throw if `changes === 0`, and look up the caller's own active shift server-side in `createSale`.
 
-### H6 — Product and supplier delete failures are silent
-**File:** `src/renderer/src/pages/InventoryPage.tsx`
+### H23 — PaymentModal and EndShiftModal are taller than the screen; the confirm button is unreachable by touch
+**File:** `src/renderer/src/components/pos/EndShiftModal.tsx:108`, `src/renderer/src/components/ui/dialog.tsx:39`, `src/renderer/src/components/pos/PaymentModal.tsx:228`
+Measured against the available ~696px on a maximised 1366×768 POS:
+- **EndShiftModal ≈ 842px** with `max-w-md` only — the base `DialogContent` sets **no `max-h` and no overflow**, so ~73px is clipped off the bottom and the entire 48px action row sits inside it. `onInteractOutside` is prevented and the X is clipped off the top, so **the shift cannot be closed by touch at all** — only a physical Escape key escapes.
+- **PaymentModal ≈ 875px** against `max-h-[95vh]` ≈ 661px. It *can* scroll, but "Complete Sale" starts ~215px below the fold on every sale, and the only thing under the finger in the scroll region is the numpad — a drag inside Chromium's ~8px touch slop registers as a **click**, injecting a stray digit into the amount being confirmed. A returning customer's purchase history adds another ~200px.
+**Fix:** Add `max-h-[90vh] overflow-y-auto` to the base `DialogContent`, and make both action rows `sticky bottom-0`. Reclaim height by collapsing EndShiftModal's 2×2 summary to one compact row and hiding PaymentModal's customer block behind a toggle.
 
-`handleProductDelete` and `handleSupplierDelete` have no error branch when the IPC returns a failure. `handleCategoryDelete` and `handleBatchDelete` do show an alert on failure — the inconsistency means product and supplier failures are invisible.
-
-**Fix:** Add `else { alert(result.error || 'Failed to delete') }` to both handlers.
-
----
-
-### H7 — No pre-payment stock recheck
-**Files:** `src/renderer/src/stores/posStore.ts`, `src/renderer/src/components/pos/PaymentModal.tsx`
-
-Stock is checked once when the item is added to the cart. If stock goes to zero between cart-add and payment completion (inventory adjustment, another terminal), the sale still goes through and can drive stock negative.
-
-**Fix:** Before calling `createSale`, fetch current stock for each cart item and abort with an itemised error if any item is now out of stock.
-
----
-
-<!-- ### H8 — Mixed payment card field gives no live mismatch feedback
-**File:** `src/renderer/src/components/pos/PaymentModal.tsx`
-
-Manually editing the card amount field does not recalculate cash. The cashier can enter Rs. 500 cash + Rs. 500 card on a Rs. 800 total, see no immediate error, and only get blocked on submit with no indication of which value to fix.
-
-**Fix:** Add live mismatch feedback showing remaining balance as the card amount is changed. -->
-
----
-
-### H9 — `formatCurrency` hardcodes `Rs.` instead of using configured currency symbol
-**File:** `src/renderer/src/lib/calculations.ts` line 39
-
-```typescript
-export function formatCurrency(amount: number): string {
-  return `Rs. ${amount.toFixed(2)}`
-}
-```
-
-If a pharmacy changes `currency_symbol` in Settings, every formatted amount still shows `Rs.` throughout the entire app.
-
-**Fix:** Accept the currency symbol as a parameter or read from the store.
-
----
-
-### H10 — AI Insights tab renders raw JSON in production
-**File:** `src/renderer/src/pages/AnalyticsPage.tsx` line 203
-
-```tsx
-<pre className="whitespace-pre-wrap font-sans">{JSON.stringify(item, null, 2)}</pre>
-```
-
-Placeholder dev UI is exposed in production. A manager tapping "AI Insights" sees raw JSON objects.
-
-**Fix:** Render structured fields from the AI response, or hide the tab until the feature is complete.
+### H24 — The E2E suite cannot pass and is never run
+**File:** `tests/e2e/pos-workflow.spec.ts`, `.github/workflows/release.yml:26`
+The specs target `input[name="username"]`, `input[name="password"]`, `input[name="cashReceived"]` and the strings `Point of Sale` / `Sale Completed` — **none exist**: login is user tiles plus a PIN pad, the password input has no `name`, the cash field is `id="cash-received"`, and the page says "POS Terminal". `beforeEach` is an empty comment stub ("This would insert test products"). CI runs only `npm run publish`, so nothing executes them. The project therefore believes it has regression cover for the POS workflow and has none — which is how the C1–C14 class of defect reached production.
+**Fix:** Either repair the selectors and seed fixtures and add a CI job, or delete the suite so it stops implying coverage. Given the money defects above, the first sale-to-receipt test is worth more than any other single change in this report.
 
 ---
 
 ## 🟡 Medium
 
-### M1 — Sidebar nav buttons cramped for touchscreen (48×48px, 3-char labels)
-**File:** `src/renderer/src/components/layout/Sidebar.tsx`
+| # | File | Issue |
+|---|------|-------|
+| M1 | `posStore.ts:173-182` | One hold slot, overwritten unconditionally. Holding a second sale silently destroys the first, with no warning — while the Recall path *does* confirm, showing the intent. |
+| M2 | `useKeyboardShortcuts.ts:17-23` | The input guard returns before the F-key switch, and `ProductEntry` keeps the barcode box focused permanently — so **F2/F4/F5/F8/F9 never fire during normal checkout**. Also `[handlers]` deps re-register the listener every render. |
+| M3 | `ProductEntry.tsx:44-54`, `SearchModal.tsx:41-53` | Debounced searches have no staleness guard; an in-flight response can reopen a stale dropdown over an already-cleared input, and the next tap adds the wrong medicine. |
+| M4 | `posStore.ts:88-109` | The cart holds a frozen stock snapshot; after a restock, one tap of "−" can silently drop the quantity charged (5 → 3). |
+| M5 | `posStore.ts:62` | Scanning an item already at its stock limit is a completely silent no-op — no error, no beep. The cashier rescans or assumes it was added. |
+| M6 | `pole-display.ts:116-122` | `showSaleComplete` writes the total, then `clearCart()`'s subscription overwrites it with `0.00` milliseconds later; 3s later the change is written and **stays on the VFD indefinitely**, showing the previous customer's change to the next one. |
+| M7 | `pole-display.ts:19` vs `index.ts:138,181` | `DEFAULT_BAUD = 2400` (the documented device default) is dead code; auto-connect and the seeded setting both use **9600** (confirmed in live DB), so the VFD shows garbage out of the box — indistinguishable from "no display fitted". |
+| M8 | `settingsStore.ts:30-37` | `loadSettings` has no `catch` and is fired unawaited. A failed read leaves `isLoading` true forever and the **hardcoded fallbacks in force — `vat_rate: '0'`** — so the POS trades all day charging no VAT with no visible error. |
+| M9 | `sales.ts:203-218,295-304` | Product names are not snapshotted onto `sale_items`; `getReceipt` recovers them by join, so renaming a product **retroactively rewrites every past receipt**, and deleting one yields a `null` name. |
+| M10 | `receipt-formatter.ts:108` | Item names hard-truncated to 16 chars, not wrapped. "Paracetamol 500mg Tablet" and "…Syrup" both print as `Paracetamol 500m` — indistinguishable on a dispensing record. |
+| M11 | `escpos-builder.ts:19` | Non-ASCII maps to `0x3f`, so Sinhala/Tamil product, business or footer text prints as `????????`. |
+| M12 | `ReceiptPreview.tsx:190-204` | Reprints are unlimited and unmarked — two byte-identical documents that each look like the original invoice, and each one re-kicks the drawer. |
+| M13 | `pos-handlers.ts:39-49`, `audit.ts:75-77` | The `SALE_CREATED` audit insert sits **outside** the sale transaction and is wrapped in a bare `catch {}`, so a disk-full or locked DB yields a committed sale with no audit record and no signal. |
+| M14 | `preload/index.ts:101`, `inventory-handlers.ts:129` | `stock:batchAdjust` never sends `productId`, which is `NOT NULL` — the insert fails and rolls back the quantity change. The **only audited stock-adjustment path in the app is unreachable**, and this handler alone isn't wrapped in `wrap()`. |
+| M15 | `PaymentModal.tsx:145-151` | The pre-payment recheck looks products up by **name** against a `LIMIT 20` search, so a product named "Zinc" (sorting after "Calcium + Zinc" etc.) is reported out of stock when it is not, with no way to proceed. Also one IPC round-trip per cart line. |
+| M16 | `inventory.ts:186`, `queries.ts:166` | Low-stock alerts include every product that has **never** been stocked (`0 <= reorder_level`), so after a partial import the banner reads "8,000+" and real reorder signals are lost. |
+| M17 | `inventory.ts:173,483,343` | Soft-deleted products keep live batches visible and can even **receive new stock**; deactivated suppliers stay selectable with no marker; and a soft-deleted product can never be reactivated from the UI. |
+| M18 | `inventory.ts:506` | `updateStockBatch` silently drops `received_date` and `product_id` — correcting a mis-keyed received date appears to succeed and changes nothing. Empty `fields` would also produce invalid SQL. |
+| M19 | `InventoryPage.tsx:76-109` | Every loader is `if (success)` with no else, so a failed read renders "No products found — create your first product" to a pharmacy with 10,000 products. |
+| M20 | `schema.ts:53-55` | All money is SQLite `REAL`. Combined with C4 this is how `2701.905` got stored. Day totals drift from the sum of printed receipts. |
+| M21 | `inventory.ts:463`, `StockBatchesTable.tsx:52` | Dates use `toISOString()` (UTC) while the shop is UTC+5:30 — stock received at 02:00 local is dated the previous day, and from 05:30 local on the expiry day a batch renders "(Expired)" a day early. |
 
-`w-12 h-12` = 48×48px with labels truncated to 3 characters ("Aud", "Ana", "Inv"). With only `gap-2` (8px) between buttons, fat-finger misses are frequent. `title` tooltips are invisible on touch.
-
-**Fix:** Increase to at least `h-14 w-14` (56px), show full labels below icons, and replace `title` with a press-and-hold tooltip or visible label.
-
----
-
-### M2 — Manual quantity input silently clamps to max stock with no feedback
-**File:** `src/renderer/src/components/pos/CartItem.tsx`
-
-A cashier typing `999` for a product with 5 in stock sees the value silently snap back to 5 with no explanation.
-
-**Fix:** Show a brief "Max: X in stock" message when the entered value exceeds stock.
-
----
-
-### M3 — Cart item key uses array index
-**File:** `src/renderer/src/components/pos/ShoppingCart.tsx` line 47
-
-```tsx
-key={`${item.product.id}-${index}`}
-```
-
-When an item is removed, all subsequent items are fully remounted. Use `item.product.id` alone as the key.
-
----
-
-### M4 — VAT rate has no bounds validation
-**File:** `src/renderer/src/pages/SettingsPage.tsx`
-
-A cashier can accidentally type `-5` or `150` into the VAT rate field. `parseFloat` in `posStore.ts` would then compute negative or impossibly high tax, corrupting every total in the session.
-
-**Fix:** Clamp to 0–100 on change, or show a validation error on save.
-
----
-
-### M5 — Currency symbol has no validation
-**File:** `src/renderer/src/pages/SettingsPage.tsx`
-
-An empty symbol causes amounts to render as bare numbers. A long string breaks receipt formatting.
-
-**Fix:** Prevent saving an empty symbol, trim whitespace, and cap at ~5 characters.
-
----
-
-### M6 — Default admin creation can recurse infinitely on DB error
-**File:** `src/renderer/src/pages/LoginPage.tsx`
-
-If `createDefaultAdmin()` fails silently, `loadUsers()` is called again (without `await`), finds 0 users, calls `createDefaultAdmin` again — unbounded recursion with no error state.
-
-**Fix:** `await loadUsers()` and add a retry limit or error state.
-
----
-
-### M7 — StartShiftModal clock never ticks
-**File:** `src/renderer/src/components/pos/StartShiftModal.tsx`
-
-`now` is computed once at render time. If the screen is idle, the displayed time is stale.
-
-**Fix:** Use a `useEffect` with a 1-minute interval to update the time state.
-
----
-
-### M8 — EndShiftModal does not reset closing cash / notes on re-open
-**File:** `src/renderer/src/components/pos/EndShiftModal.tsx`
-
-`closingCash` and `notes` are never reset when the dialog reopens. Previous values persist between opens.
-
-**Fix:** Add a `useEffect` that resets fields when `open` becomes `true`.
-
----
-
-### M9 — AuditLog: only action filter, no date range or user filter
-**File:** `src/renderer/src/pages/AuditLogPage.tsx`
-
-With dozens of sales per day, the action-only filter is insufficient for compliance review.
-
-**Fix:** Add date range picker and user selector filters.
-
----
-
-### M10 — Receipt dialog auto-prints on every re-open
-**File:** `src/renderer/src/components/pos/ReceiptPreview.tsx`
-
-`loadReceipt` triggers auto-print whenever `open` changes to `true`. Re-opening the receipt dialog queues a second print job, wasting thermal paper.
-
-**Fix:** Only auto-print once per `saleId` using a `useRef` flag.
-
----
-
-### M11 — Customer purchase history shows "Loading..." permanently on API failure
-**File:** `src/renderer/src/pages/CustomersPage.tsx`
-
-`history` is initialised as `null` and stays `null` if the API call fails. The UI shows "Loading..." indefinitely with no error state.
-
-**Fix:** Set `history` to `[]` after a failed load, or add an explicit error state.
-
----
-
-### M12 — Product delete does not reload stock batches
-**File:** `src/renderer/src/pages/InventoryPage.tsx`
-
-After deleting a product, `loadProducts()` is called but `stockBatches` is not refreshed. Orphaned batches remain visible in the Stock Batches tab until the user manually triggers a reload.
-
----
-
-### M13 — Sale-level discount has no UI entry point
-**File:** `src/renderer/src/components/pos/ShoppingCart.tsx`
-
-`applySaleDiscount` exists in the store and `CartTotals` displays a discount amount when non-zero, but there is no UI in `ShoppingCart` to apply a cart-level discount. The feature is incomplete.
+Also Medium, from the auth review: logout does not clear the cart or held sale (**cashier B can complete cashier A's basket against B's shift**); there is no idle lock and no way to log out without ending the shift; End Shift commits on a bare Enter with a blank count; Start/End Shift and Login swallow IPC errors entirely (a duplicate-shift rejection leaves the button doing nothing forever); an interrupted setup wizard silently discards the admin password; there is **no single-instance lock**, so double-tapping the shortcut runs two processes against one SQLite file with two receipt-number generators; shift figures mix "today in UTC" with "whole shift" so an overnight shift reports Total Sales 0 against a full drawer; user management writes **no audit trail at all**; and passwords have no strength rules. Touch-side: `SelectContent` clamps its scroll viewport to the 40px trigger height (one visible option); `SelectTrigger`/`SelectItem`/`TabsTrigger` are all under 44px with no `active:` state; destructive confirms place Cancel 8px from the destructive action; a stray overlay tap discards a keyed-in payment; ~21 native `confirm()`/`alert()` calls remain across the admin screens.
 
 ---
 
@@ -310,299 +403,72 @@ After deleting a product, `loadProducts()` is called but `stockBatches` is not r
 
 | # | File | Issue |
 |---|------|-------|
-| L1 | `POSPage.tsx` | F8 shortcut clears cart without the confirmation dialog shown on the button |
-| L2 | `QuickItems.tsx` | Stock indicator stale mid-sale (shows "1" after last unit is added to cart) |
-| L3 | `SearchModal.tsx` | Disabled 0-stock results clutter search — no "in-stock only" toggle |
-| L4 | `AnalyticsPage.tsx` | Dashboard data stale after sales — no auto-refresh, manual Refresh button only |
-| L5 | `Header.tsx` | "End Shift" label hidden below `sm:` breakpoint — icon-only on small screens |
-| L6 | `InventoryPage.tsx` | "0 products imported successfully" is confusing when nothing imported |
-| L7 | `ReceiptPreview.tsx` | Receipt width constant `W = 42` duplicated from formatter — single source of truth needed |
-| L8 | `EndShiftModal.tsx` | Shows "Cash Sales" only, no combined Total Sales (cash + card) visible to manager |
-| L9 | `Sidebar.tsx` | `title` tooltip invisible on touch — cashiers cannot identify icon-only nav items |
-| L10 | `ShoppingCart.tsx` | No "Total Sales" on shift summary — manager cannot see combined revenue at a glance |
-| L11 | `ReceiptPreview.tsx` | Receipt auto-prints on every dialog open — wastes paper when cashier reopens to check |
-| L12 | `StockBatchFormDialog.tsx` | Product dropdown in Receive Stock has no search — unusable with large product catalogue |
+| L1 | `receipt-formatter.ts:124-128` | Totals rows are 41 of 42 chars, so every amount sits one column short of the rules above and below. |
+| L2 | `receipt-formatter.ts:197-203` | Card receipts print no amount at all; mixed derives the card figure instead of reading `card_received`. |
+| L3 | `ReceiptPreview.tsx:74,155` | Reprints label VAT with **today's** rate against the historical amount; a zero-VAT receipt omits the VAT line entirely, and no VAT registration number is ever printed. |
+| L4 | `shiftStore.ts:31-35` | `todaySalesTotal` is an optimistic renderer counter never decremented on void/refund and only re-synced at login, so the header drifts upward all shift. |
+| L5 | `pole-display.ts:41-58` | A failed serial open leaks the `SerialPort` object; the reuse guard misses a port that closed itself. |
+| L6 | `receipt-formatter.ts:223` | `printShiftReport` is implemented and exposed but never called — the X-report handed over with the drawer is never produced. |
+| L7 | `posStore.ts:43-48` | Cart and held sale are memory-only; `Ctrl+R` (the default menu is still installed) or a power blip discards both. |
+| L8 | `ProductEntry.tsx:197`, `QuickItems.tsx:83`, `SearchModal.tsx:131` | Currency hardcoded `Rs.` in the three product-picking surfaces while the cart honours the setting — two currencies on one screen. |
+| L9 | `CartItem.tsx:9-14` (+3 copies) | Days-to-expiry compares a UTC-parsed date against local midnight, so every countdown is a day optimistic and "expires today" never appears. |
+| L10 | `schema.ts:106` vs `:156` | Batch quantity is `REAL` but sale quantity is `INTEGER`: fractional units can be received and never sold, and float residue keeps a batch matching `quantity > 0` forever. |
+
+Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can deactivate their own account; `user:stats` and `shift:compute-expected-cash` are ungated; the discount engine is wired into store and schema but has **no UI** and its amount is unclamped (a percentage over 100 would produce a negative total); `Product.sku` is typed non-nullable so `(null)` is rendered to users; dialog close buttons are 16×16px with hover-only feedback; `title` is the only label on the header Settings button.
 
 ---
 
-## 📱 Touchscreen-Specific Issues
+## 🏗️ Build, CI, dependencies
 
-Second-pass review focused exclusively on touch interaction quality. These are distinct from the general bugs above.
-
-### T1 — Sidebar nav buttons have no active/press state — zero tap feedback
-**File:** `src/renderer/src/components/layout/Sidebar.tsx` line 57–61
-
-```tsx
-'hover:bg-accent text-muted-foreground hover:text-foreground'
-```
-
-`hover:` CSS never fires on capacitive touchscreens — the browser skips it entirely. The inactive nav buttons have **no visual feedback when tapped**: no colour change, no press animation, nothing. On a fast POS workflow a cashier cannot tell if their tap registered.
-
-**Fix:** Add `active:bg-accent active:text-foreground` to the button className. This fires on both touch and mouse press.
+- **CI runs no tests and no lint.** `release.yml` runs `npm ci --legacy-peer-deps` then `npm run publish`. Typecheck runs (it's chained into `publish`); lint and Playwright do not. `--legacy-peer-deps` is also now unnecessary.
+- **`npm audit`: 62 vulnerabilities — 2 critical, 33 high.** Most are the Electron Forge build chain (`tar`, `@electron/rebuild`), which is build-time only. Three ship in the app and matter: **`drizzle-orm@0.45.1`** (high — SQL injection via improperly escaped identifiers; fixed in 0.45.2), **`jspdf@4.2.0`** (critical — PDF object injection / HTML injection; used by the PDF report export), and **`electron@39.6.1`** / **`vite@7.3.1`** (high). All four have fixes available.
+- **DevTools is reachable in the packaged app.** `Menu.setApplicationMenu` is never called, so Electron installs its default menu with View → Toggle Developer Tools; `autoHideMenuBar` only hides it until Alt. `optimizer.watchWindowShortcuts` blocks the *keystrokes* but not the menu item. This is the enabling step for C11 and C12 — set `Menu.setApplicationMenu(null)` in production and close DevTools on open.
+- **Good:** the CSP is present and tight (`default-src 'self'; script-src 'self'`), `contextIsolation` is left at its secure default with a `contextBridge` preload, and `PRAGMA foreign_keys = ON` and WAL are both set on the single shared connection. `sandbox: false` is the one webPreferences weakness.
 
 ---
 
-### T2 — Header Settings and End Shift buttons below 44px touch minimum
-**File:** `src/renderer/src/components/layout/Header.tsx` lines 48, 53–62
+## ✅ Verified correct
 
-- Settings: `size="icon"` = 36×36px in shadcn — below 44px minimum
-- End Shift: `size="sm"` = 36px height — below 44px minimum, and it's a **critical action** (logs out the cashier)
+Recorded so the report shows coverage, not just defects.
 
-A cashier rushing at end-of-shift can easily miss the 36px target, especially at arm's reach from a pole display.
-
-**Fix:** Settings → `size="icon"` with `className="h-11 w-11"`; End Shift → `size="default"` with `className="h-11"`.
-
----
-
-### T3 — LoginPage "Back" and "Use PIN/Password" buttons are 36px
-**File:** `src/renderer/src/pages/LoginPage.tsx` lines 157, 160
-
-```tsx
-<Button variant="ghost" size="sm" onClick={...}>Back</Button>
-<Button variant="ghost" size="sm" onClick={...}>Use Password</Button>
-```
-
-`size="sm"` = `h-9` (36px). These are the two most frequently tapped navigation controls on the login screen. Users select the wrong user, then can't reliably tap Back. First interaction with the app fails on touch.
-
-**Fix:** Change to `size="default"` (`h-10`) minimum, or `className="h-12"` to match other login buttons.
+- **`createSale` is genuinely atomic.** Header insert, line items, FEFO decrements and the daily rollup all run in one `db.transaction(...)()`, and Drizzle and raw SQL share the *same* better-sqlite3 connection — so a partial failure really does roll everything back. No async work inside the transaction.
+- **Stock cannot go negative.** `deductStockFEFO` selects only `quantity > 0`, clamps each deduction, and throws **before** any `UPDATE` if the requirement isn't met. A batch appears once in the ordered set, so no double-decrement.
+- **Sale history survives product deletion** — `deleteProduct` is a soft delete and the `sale_items` FK is `no action`, so the tax/audit trail cannot be destroyed. `sale_items` correctly cascades from `sales`.
+- **No Drizzle-vs-migration drift.** All 14 tables, columns, types, defaults, NOT NULL, UNIQUE and FK definitions match exactly; the migration's extra partial index and seed rows are deliberate.
+- **Password hashing is correct** — bcrypt cost 10 for both passwords and PINs, compared with `bcrypt.compare`; no plaintext credential is written by any current path, and no credential is logged.
+- **One active shift per user is enforced in the DB** by a partial unique index (the renderer just handles the resulting error badly, M-list).
+- **Receipt numbers** are zero-padded so `ORDER BY` string-sorts correctly, generated inside the transaction, and UNIQUE-constrained.
+- **Login honours deactivation**, and `withPermission` re-checks `isActive` on every call.
+- **`getTopProducts` and `getCategoryBreakdown`** join by primary key and are free of the C1 fan-out. `listCategories`/`listSuppliers` correctly use `COUNT(DISTINCT …)`.
+- **Touch baseline is now sound** in `button.tsx`, `input.tsx` and `alert-dialog.tsx` (all variants ≥44px, every `hover:` paired with `active:`), and `globals.css` already sets `touch-action: manipulation` and `user-select: none` globally. The `min-h-0` flex chain is correct end-to-end on the POS page. `ReceiptPreview`, `SearchModal`, `StartShiftModal`, `LoginPage`, `Sidebar` and `CartActions` were each measured and fit the screen.
+- **`ProductEntry` focus discipline** is right — `autoComplete="off"` on the scanner input and refocus after every add path, so the scanner is never left without a target.
+- **`CashNumpad.applyKey`** cannot produce a negative or malformed amount, and `calculateChange` is floored at 0.
+- **USB/TCP printer transports** release the interface in a `finally`, and TCP times out at 5s and destroys the socket — no handle leak on an offline printer.
+- **Windows close-interception** works as designed, with the renderer listener registered once via a ref so it cannot go stale.
 
 ---
 
-### T4 — LoginPage password Input has no height — defaults to ~36px
-**File:** `src/renderer/src/pages/LoginPage.tsx` line 141
+## Coverage and gaps
 
-```tsx
-<Input type="password" placeholder="Enter password" ... />
-```
+Reviewed in full: the POS cart and money math; payment, sale persistence, receipts, printing, drawer and pole display; auth, session, shift lifecycle, RBAC, user management and first-run setup; inventory, products, categories, suppliers, batches, import/export and the database schema and migration; the analytics query layer; the shared UI primitives and the POS/shell screens for touch; build, CI, dependencies and the test suite.
 
-No `className` is provided, so the input renders at the browser/shadcn default (~36px). Every other input across the app explicitly sets `h-12`. This inconsistency makes the password field noticeably smaller and harder to tap on touch.
+**Not yet reviewed** — two reviewers were lost to a session limit before finishing, so these areas are outstanding and should not be read as clean:
 
-**Fix:** Add `className="h-12 text-base"` to match the rest of the app.
-
----
-
-### T5 — PinPad keydown listener re-registers on every digit typed — race condition on fast input
-**File:** `src/renderer/src/components/auth/PinPad.tsx` line 61
-
-```tsx
-useEffect(() => {
-  window.addEventListener('keydown', handleKeyDown)
-  return () => window.removeEventListener('keydown', handleKeyDown)
-}, [pin, maxLength, onSubmit])   // ← changes on every digit
-```
-
-The listener is torn down and re-attached on every `pin` state change. On a physical keyboard or a rapid-tap touchscreen, a digit pressed during the 1-frame gap between removal and re-add is silently dropped. This causes intermittent missed digits — a PIN of `1234` typed quickly might register as `134`.
-
-**Fix:** Move `handleNumber`, `handleDelete`, `handleSubmit` inside the effect using refs (the same pattern used correctly in `CashNumpad`), then use `[]` as the dependency array.
+1. **Backup and restore** (`services/backup/*`) — including whether the SQLite file is copied safely while open (a naive copy of a WAL database can yield a corrupt backup), where the encryption password lives, Google Drive token handling, and retention pruning.
+2. **AI insights** (`services/ai/insights.ts`) — whether the Gemini key is stored in plaintext, whether customer PII or sales data leaves the machine, prompt injection via product names, and cost/timeout bounds.
+3. **Audit log service** (`services/audit.ts`) and **customers service** — append-only guarantees and tamper resistance.
+4. **Report generation** (`services/analytics/reports.ts`, `ReportsPanel.tsx`) — the P&L and inventory-valuation SQL, and the jsPDF/Excel export paths. Note these inherit C1's fan-out if they share those queries, and the critical `jspdf` advisory applies here.
+5. **Logging and auto-update** (`services/logging/*`, `services/updates/*`).
+6. **Touch review of the admin and data screens** — the six admin pages and the inventory/users/analytics tables. Specifically unverified: whether table row actions are hover-only (unreachable on touch), whether `ProductFormDialog`/`StockBatchFormDialog` fit on screen, and the ~21 native `confirm()`/`alert()` call sites.
 
 ---
 
-### T6 — EndShiftModal Notes input is 40px — below minimum touch target
-**File:** `src/renderer/src/components/pos/EndShiftModal.tsx` line 192
+## Suggested order of work
 
-```tsx
-<Input placeholder="Any notes for this shift…" className="h-10" />
-```
-
-`h-10` = 40px, the only input in the entire app shorter than 44px. On a touch device a pharmacist typing shift notes frequently misses this field and activates the scrollable dialog content behind it instead.
-
-**Fix:** Change to `className="h-12"`.
-
----
-
-### T7 — CashNumpad and PinPad buttons lack `touch-action: manipulation` and `select-none`
-**Files:** `src/renderer/src/components/ui/cash-numpad.tsx`, `src/renderer/src/components/auth/PinPad.tsx`
-
-Both numpad grids allow double-tap-to-zoom (browser default) and text selection on long press. On a POS touchscreen this means:
-- Rapid cash entry (e.g. `5`, `0`, `0`) triggers the double-tap zoom on the `0` button, zooming the entire dialog.
-- Long-pressing a numpad key shows a text selection popup, blocking the interface.
-
-**Fix:** Add `style={{ touchAction: 'manipulation' }}` to each `<Button>` in both components, and wrap the grid `<div>` with `className="select-none"`.
-
----
-
-### T8 — No `inputMode` on phone and amount inputs — wrong soft keyboard shown
-**Files:** `src/renderer/src/components/pos/PaymentModal.tsx`, `src/renderer/src/components/pos/EndShiftModal.tsx`
-
-On touch devices, tapping an `<input type="text">` opens the full QWERTY keyboard. For numeric-only fields (phone number, cash amounts not using the numpad) this forces cashiers to find the number row or switch keyboard layout.
-
-| Field | Current type | Should be |
-|-------|-------------|-----------|
-| Customer phone | `text` | `inputMode="tel"` |
-| Cash received | `number` | already correct, but lacks `inputMode="decimal"` for iOS |
-| Card amount | `number` | `inputMode="decimal"` |
-| Notes / names | `text` | `inputMode="text"` (fine, already default) |
-
-**Fix:** Add `inputMode="tel"` to the phone input, `inputMode="decimal"` to cash/card number inputs.
-
----
-
-### T9 — AlertDialog confirmation buttons are ~40px — too small for destructive touch actions
-**File:** `src/renderer/src/components/pos/CartActions.tsx` lines 95–101
-
-```tsx
-<AlertDialogCancel>Cancel</AlertDialogCancel>
-<AlertDialogAction onClick={handleClearConfirm} ...>Clear Cart</AlertDialogAction>
-```
-
-Shadcn's `AlertDialogAction` and `AlertDialogCancel` default to `h-10` (40px). "Clear Cart" is a destructive, irreversible action — if the button is too small, a cashier might accidentally confirm instead of cancel (or vice versa) by tapping the wrong area.
-
-**Fix:** Add `className="h-14 text-base"` to both buttons in the cart clear dialog.
-
----
-
-### T10 — `hover:` states throughout the app provide zero feedback on touch
-**Scope:** App-wide (`Sidebar.tsx`, `SearchModal.tsx`, `InventoryPage.tsx`, tables, etc.)
-
-Patterns like `hover:bg-muted/50`, `hover:bg-accent`, `hover:text-foreground` are used on nearly every interactive element. On touch these states never activate, leaving rows, buttons, and list items with no visual press response. The user cannot tell if their tap landed on the intended target.
-
-**Fix:** Pair each `hover:` with a matching `active:` class:
-- `hover:bg-muted/50` → add `active:bg-muted/50`
-- `hover:bg-accent` → add `active:bg-accent`
-- Interactive table rows in `InventoryPage`, `CustomersPage`, `AuditLogPage` — add `active:bg-muted/60`
-
----
-
-### T11 — `main` wrapper `overflow-auto` causes scroll conflict with inner scroll areas on touch
-**File:** `src/renderer/src/components/layout/MainLayout.tsx` line 47
-
-```tsx
-<main className="flex-1 overflow-auto">{renderPage()}</main>
-```
-
-On touch, when a user swipes inside `ShoppingCart`'s `overflow-auto` items list, the browser must decide which scroll container to move. Because `main` also has `overflow-auto`, the outer container intercepts swipes that start outside the inner scroll region, scrolling the whole page instead of the cart list. This is most noticeable when there are many cart items.
-
-**Fix:** Change `main` to `overflow-hidden` for pages that manage their own internal scrolling (POS, most pages). Pages that need full-page scroll (InventoryPage, SettingsPage) can opt in with their own `overflow-auto` wrapper.
-
----
-
-### T12 — Suggestion dropdown in ProductEntry has no max-height — overflows below screen on small displays
-**File:** `src/renderer/src/components/pos/ProductEntry.tsx` line 119
-
-```tsx
-<div className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border rounded-lg shadow-lg overflow-hidden">
-```
-
-No `max-h-*` is set. With 6 suggestions and each row ~48px, the dropdown is ~288px tall. If `ProductEntry` is near the bottom of its container on a 768px-tall screen, the list overflows below the visible area with no scroll — the bottom suggestions are unreachable without scrolling the page, which closes the dropdown via `onBlur`.
-
-**Fix:** Add `max-h-72 overflow-y-auto` to the dropdown container.
-
----
-
-## Summary Table — Touch Issues
-
-| ID | File | Severity | Issue |
-|----|------|----------|-------|
-| T1 | `Sidebar.tsx` | High | No `active:` press state — zero tap feedback on nav buttons |
-| T2 | `Header.tsx` | High | Settings (36px) and End Shift (36px) below 44px touch minimum |
-| T3 | `LoginPage.tsx` | High | Back / Use-PIN buttons are `h-9` (36px) — first-screen touch failure |
-| T4 | `LoginPage.tsx` | Medium | Password input has no height — renders at ~36px |
-| T5 | `PinPad.tsx` | High | Keydown listener re-registers on every digit — drops keys on fast input |
-| T6 | `EndShiftModal.tsx` | Medium | Notes input `h-10` (40px) — below 44px minimum |
-| T7 | `cash-numpad.tsx`, `PinPad.tsx` | High | No `touch-action: manipulation` — double-tap zoom on numpad '0' |
-| T8 | `PaymentModal.tsx` | Medium | No `inputMode` on phone/amount fields — wrong soft keyboard |
-| T9 | `CartActions.tsx` | Medium | Alert dialog buttons `h-10` (40px) for destructive "Clear Cart" action |
-| T10 | App-wide | Medium | `hover:` states unused on touch — no visual tap feedback anywhere |
-| T11 | `MainLayout.tsx` | High | `overflow-auto` on `main` conflicts with inner scroll areas |
-| T12 | `ProductEntry.tsx` | Medium | Dropdown has no `max-h` — bottom suggestions unreachable on small screen |
-
----
-
-## Fixed (2026-08-01, session 5) — all 12 touch issues + remaining Medium/Low bugs
-
-### Base UI components (fixes the majority of touch findings at the source)
-
-| Issue | Fix |
-|-------|-----|
-| T7, T10 — no press feedback or double-tap suppression anywhere | `ui/button.tsx`: added `touch-manipulation select-none` to the base class and paired an `active:` state with every `hover:` variant. Fixes press feedback app-wide in one place instead of per call site. |
-| T2, T3, T9 — undersized touch targets | `ui/button.tsx`: size variants raised to the 44px floor — `default` h-9→h-11, `sm` h-8→h-10, `lg` h-10→h-12, `icon` h-9→h-11 w-11. `cn()` uses `tailwind-merge`, so call sites with an explicit height still win. |
-| T4 — inputs render at ~36px | `ui/input.tsx`: base height h-9→h-11 plus `touch-manipulation`. |
-| T9 — destructive confirm buttons at 40px | `ui/alert-dialog.tsx`: `AlertDialogAction`/`Cancel` h-10→h-12, `text-sm`→`text-base`, added `active:` + `touch-manipulation select-none`. |
-
-### Touch-specific
-
-| Issue | Fix |
-|-------|-----|
-| T1, M1, L9 — sidebar 48px, 3-char labels, no tap feedback, `title` invisible on touch | `Sidebar.tsx`: buttons 48→64px, aside `w-16`→`w-20`, full labels replace `label.slice(0, 3)` (and the `title` tooltip they depended on), `active:` press state added, "Audit Log"→"Audit" so it fits one line. |
-| T2 — End Shift below touch minimum | `Header.tsx`: explicit `h-11` on the End Shift button (a critical action) plus an `active:` state. |
-| T3, T4 — login controls at 36px | `LoginPage.tsx`: Back / Use-PIN buttons `size="sm"`→`className="h-12"`; password input given `h-12 text-base` to match every other input. |
-| T5 — PinPad dropped digits on fast input | `PinPad.tsx`: rewritten to register the keydown listener **once**, mirroring the ref pattern already used in `cash-numpad.tsx`. `pinRef` is updated synchronously inside the handler (not via a sync effect) so a fast `1234`+Enter can't read a stale PIN. Keys also enlarged to 64px. |
-| T6 — Notes input 40px | `EndShiftModal.tsx`: `h-10`→`h-12`. |
-| T7 — numpad long-press text selection | `cash-numpad.tsx` + `PinPad.tsx`: `select-none` on the grid containers. |
-| T8 — wrong soft keyboard on numeric fields | `PaymentModal.tsx`: `inputMode="decimal"` on cash + card amounts, `type="tel" inputMode="tel"` on customer phone. |
-| T10 — `hover:`-only rows across the app | Added matching `active:` states to interactive rows in `ProductsTable`, `CategoriesTable`, `SuppliersTable`, `StockBatchesTable`, `AuditLogPage`, `CustomersPage`, plus `CartItem` remove and `CartActions` destructive buttons. |
-| T11 — `main` scroll competed with inner scroll areas | `MainLayout.tsx`: `main` → `overflow-hidden` so chrome never scrolls. **Each page then had to opt in**, since Settings/Analytics/Users previously relied on `main` to scroll: added `flex-1 min-h-0 overflow-y-auto overscroll-contain` scroll regions to `SettingsPage` (5 tabs), `AnalyticsPage` (4 tabs) and `UsersPage`, and the missing `min-h-0` to `InventoryPage`/`AuditLogPage` — without it `flex-1 overflow-auto` silently never engages. |
-| T12 — dropdown ran off-screen | `ProductEntry.tsx`: `max-h-72 overflow-y-auto` on the suggestion list. |
-
-### Medium
-
-| Issue | Fix |
-|-------|-----|
-| M2 — quantity silently clamped to stock | `CartItem.tsx`: shows a transient "Only X in stock" notice (auto-clears after 2.5s) when the typed quantity exceeds available stock. |
-| M3 — cart key used the array index | `ShoppingCart.tsx`: `key={item.product.id}` — safe because `addItem` stacks by product id, so ids are unique per cart. |
-| M4, M5 — no VAT / currency validation | `SettingsPage.tsx`: added `validateSettings()` blocking save on a VAT rate outside 0–100 or non-numeric, and on an empty or >5-char currency symbol; errors render inline per field and clear on edit. The symbol is trimmed before persisting; the VAT input gained `min`/`max`/`step`. Validation at save (not silent clamping) matches the M2 lesson. |
-| M6 — default-admin creation could recurse forever | `LoginPage.tsx`: a `bootstrapAttempted` ref guards the first-run path, the reload is awaited instead of re-entering `loadUsers`, and a failure now surfaces an error (also rendered on the user-select screen, where it previously could not appear). |
-| M7 — start-shift clock never ticked | `StartShiftModal.tsx`: `now` moved into state with a 30s interval. |
-| M8 — end-shift fields persisted between opens | `EndShiftModal.tsx`: effect resets `closingCash` / `notes` when the dialog opens, so a cancelled count can't be submitted against a later shift. |
-| M11 — purchase history stuck on "Loading..." | `CustomersPage.tsx`: `loadHistory` wrapped in try/catch, falling back to `[]` so the panel shows "No purchases yet". |
-| M12 — stale batches after product delete | `InventoryPage.tsx`: `handleProductDelete` now reloads products **and** stock batches. |
-
-### Low
-
-| Issue | Fix |
-|-------|-----|
-| L1 — F8 cleared the cart with no confirmation | Routed F8 through the same dialog as the Clear button. `CartActions` now accepts optional `clearConfirmOpen`/`onClearConfirmOpenChange` (controlled-with-uncontrolled-fallback, the pattern `ProductEntry` already uses for `searchOpen`), threaded via `ShoppingCart` from `POSPage`. A first attempt used a counter prop + effect; ESLint's `react-hooks/set-state-in-effect` correctly flagged that as an antipattern and it was redesigned. |
-| L5 — End Shift label hidden below `sm:` | `Header.tsx`: label always visible — the POS runs at a fixed size, so hiding it only risked an icon-only destructive button. |
-| L6 — "0 products imported successfully" | `InventoryPage.tsx`: shows "No products were imported." in the destructive colour when the count is zero. |
-| L8 — no combined total at end of shift | `EndShiftModal.tsx`: added a "Total Sales" tile (from `shiftStore.todaySalesTotal`, which covers all payment methods) alongside Cash Sales; summary grid re-laid out 3→2 columns × 4 tiles. |
-| L9, L10 | Covered by the Sidebar full-label change and the Total Sales tile above. |
-
-**Verification:** `npm run typecheck` clean (node + web); `eslint` shows **zero net new errors** repo-wide against a stashed baseline (234 pre-existing errors, mostly `explicit-function-return-type`/`no-explicit-any`, left untouched); renderer bundles successfully via `vite build`. Not yet exercised on the physical touchscreen.
-
----
-
-## Fixed (2026-03-19, session 4)
-
-| Issue | Fix |
-|-------|-----|
-| C2 — Cart cleared even on failed sale | `PaymentModal.tsx`: guard on `result?.sale_id` before clearing cart / calling `onComplete` |
-| C3 — Today's Sales always shows `Rs. 0.00` | `POSPage.tsx`: subscribe to `useShiftStore.todaySalesTotal` + `useSettingsStore.currency_symbol`; use `formatCurrency` |
-| C4 — Default admin credentials hardcoded | `LoginPage.tsx`: generate random PIN + password via `crypto.getRandomValues`; show first-run credentials banner |
-| H4 — Recall silently discards active cart | `CartActions.tsx`: prompt confirmation dialog when `hasItems && hasHeldSale` before calling `onRecall` |
-| H5 — Customer save silently fails | `CustomersPage.tsx`: check `result.success === false`, surface `result.error` in `formError` |
-| H6 — Product/supplier delete swallows errors | `InventoryPage.tsx`: `else { alert(result.error) }` branch added to both delete handlers |
-| H7 — No stock recheck before payment commit | `PaymentModal.tsx`: sequential `for…of` loop re-checks live stock before `createSale`; aborts with named items if insufficient |
-| H9 — `formatCurrency` ignores configured currency | `calculations.ts`: added optional `symbol` param (default `'Rs.'`); all 7 callers updated to pass `currencySymbol` from `settingsStore` |
-| H10 — InsightSection renders raw JSON | `AnalyticsPage.tsx`: replaced `JSON.stringify` with labelled field layout (`product_name`, `current_stock`, `order qty`, `priority`, `confidence`, `reason`) |
-
----
-
-## Fixed (2026-03-19, session 3)
-
-| Issue | Fix |
-|-------|-----|
-| Receipt auto-prints on every dialog open (L11) | Removed auto-print block from `loadReceipt()`; print only fires from the explicit Print button (`handlePrint`) |
-| Restock modal product select has no search (L12) | Replaced shadcn `<Select>` with a typed searchable combobox — client-side filter, absolute dropdown, `onPointerDown` selection |
-
----
-
-## Fixed (2026-03-11, session 2)
-
-| Issue | Fix |
-|-------|-----|
-| Search bar unresponsive to touch on touchscreen | Added `style={{ touchAction: 'manipulation' }}` + `onClick` focus fallback to `ProductEntry` and `SearchModal` inputs; changed suggestion `onMouseDown` → `onPointerDown` |
-| Cart quantity input clips to one digit | Widened from `w-12` (48px) to `w-16` (64px) in `CartItem.tsx` |
-
----
-
-## Fixed (2026-03-11, session 1)
-
-The following issues were identified and resolved during the 2026-03-11 dev session:
-
-| Issue | Fix |
-|-------|-----|
-| Quick items showing stale stock after sale | Added `refreshTrigger` prop; reloads after each `handlePaymentComplete` |
-| Checkout dialog retained previous error on reopen | Added `useEffect(() => { if (open) setError('') }, [open])` |
-| No inline search suggestions in barcode input | Added debounced dropdown with `onPointerDown`-safe selection |
-| Cart items could not scroll past 3 items | Added `min-h-0` to `ShoppingCart` outer div and items container |
-| Cart items had box borders with large spacing | Redesigned to flat `border-b` separator style, compact padding |
+1. **C2, C1, C5** — the three money/reporting defects the operator can already see. All are small, local fixes with immediate visible effect.
+2. **C6** — one-word rename plus an error boundary; stops the till dying on card sales.
+3. **C4, C3** — rounding first (mechanical), then choose one VAT model. C3 needs a decision about tax-inclusive pricing before code.
+4. **C14** — must land before the next release ships a migration, or field databases break.
+5. **C8, C9, C7** — sale integrity and the printed total.
+6. **C11, C12, C10** — the main-process session, then hash exposure, then the expiry block.
+7. **H24** — a single sale-to-receipt E2E test, so the above cannot silently regress.
