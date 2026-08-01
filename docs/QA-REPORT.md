@@ -13,11 +13,13 @@
 
 | Severity | Count |
 |----------|-------|
-| 🔴 Critical | 14 |
-| 🟠 High | 24 |
-| 🟡 Medium | 21 |
-| ⚪ Low | 10 |
-| **Total** | **69** |
+| 🔴 Critical | 15 |
+| 🟠 High | 25 |
+| 🟡 Medium | 22 |
+| ⚪ Low | 11 |
+| **Total** | **73** |
+
+Plus **5 operator requirements** raised from the shop floor — see [Operator requirements](#-operator-requirements).
 
 **Confirmed against live data.** Four Critical findings were reproduced numerically from the operator's own database, including both figures reported from the running app:
 
@@ -27,6 +29,7 @@
 | End Shift: Cash Sales `Rs. 5500.00`, Expected in drawer `Rs. 5500.00`, Total Sales `Rs. 2831.70` | Cash actually retained `Rs. 2831.70`; change given `Rs. 2668.30` | Drawer overstated by exactly `Rs. 2668.30` (C2) |
 | Receipt `R-2026-000001` total | Stored as `2701.905` — three decimal places | Unpayable amount persisted (C4) |
 | VAT on both sales | Header tax `19.80` / `412.155`; line-item tax `0` / `0` | Two contradictory VAT models (C3) |
+| Backup: `ENOENT … stat 'pharma-pos\database.db'`, list shows `Invalid Date • 0.00 MB` | Real DB is `pharmapos.db` | Backup **and restore** both target the wrong filename (C15) |
 
 ### The short version
 
@@ -127,6 +130,8 @@ Two distinct defects compound here:
 The interface declares `card_amount`, but the column is `card_received` (`schema.ts:134`) and `getReceipt` does `SELECT s.*`. So `receipt.sale.card_amount` is `undefined` and `undefined.toFixed(2)` throws — inside **`formatReceiptText()`, which is called during render** (`:219`), not in an event handler. There is **no `ErrorBoundary` anywhere in the codebase** (verified: zero matches for `ErrorBoundary|componentDidCatch`), so React unmounts the entire root. The POS goes blank immediately after every card sale and needs a restart. The sale itself commits, so money and stock are safe — but the till stops selling.
 
 **Fix:** Rename to `card_received` in the interface and both usages, guard with `if (!receipt?.sale) return ''`, and add an error boundary around the POS route so no formatting bug can ever take the till down again.
+
+**Also required by the operator:** ship a `card_payment_enabled` setting (default on) that hides the Card button in `PaymentModal` and forces `payment_method = 'cash'`. A pharmacy with no card terminal should not be able to reach this path at all, and turning it off is the immediate mitigation while the crash is being fixed. Note the Mixed button is already commented out (`PaymentModal.tsx:252-259`), so the toggle governs Cash-only vs Cash+Card. Validate it server-side too — `createSale` should reject a card payment when the setting is off, rather than trusting the renderer.
 
 ---
 
@@ -243,6 +248,29 @@ Two failures. First, there is no `user_version` or `__drizzle_migrations` check,
 
 ---
 
+### C15 — Backup and restore both target a database file that does not exist; there is no working disaster recovery
+**File:** `src/main/services/backup/database-backup.ts:19,43,75,108`
+**Reported from the running app.**
+
+The app's database is `pharmapos.db` (`services/database.ts:14`), but the backup service hardcodes `database.db` in **four** places. Hence the operator's error:
+
+```
+Error invoking remote method 'backup:create':
+ENOENT: no such file or directory, stat 'C:\Users\Rivindu\AppData\Roaming\pharma-pos\database.db'
+```
+
+Backup failing loudly is the *lesser* problem. Three worse ones sit behind it:
+
+1. **Restore would silently restore nothing.** `restoreBackup` copies the archived file to `path.join(userData, 'database.db')` (`:108`) — a path the application never opens. If a backup did exist, an operator recovering from data loss would see "restore successful", reopen the app, and find their live `pharmapos.db` completely untouched. That is worse than no backup feature, because it converts a recoverable incident into a confident data loss.
+2. **A failed backup leaves a corrupt artifact that is offered for restore.** The screenshot shows one entry at `0.00 MB` — `archiver` created the output file before the source `stat` failed. Nothing validates a backup's integrity, and that empty zip has a Restore button next to it.
+3. **Timestamps are unparseable.** `listBackups:140` recovers the timestamp with `timestampMatch[1].replace(/-/g, ':')`, which replaces *every* hyphen including the date separators: `2026-08-01T19-05-46-769Z` → `2026:08:01T19:05:46:769Z` → **Invalid Date**, exactly as displayed.
+
+Separately, even with the filename corrected the backup would be **unsafe**: `archive.file(dbPath)` is a raw copy of a live SQLite database opened in WAL mode. Committed transactions still in `pharmapos.db-wal` would be missing, and the copy can be internally inconsistent. (The `-wal` file on this machine is currently 4 MB against a 299 KB main database — i.e. most recent data lives in the WAL.)
+
+**Fix:** Derive the path from one exported constant shared with `services/database.ts` — never repeat the filename. Use SQLite's online backup API or `VACUUM INTO 'target.db'` so the copy is transactionally consistent and WAL-inclusive, instead of `fs` copying. After writing, reopen the archive and run `PRAGMA integrity_check` before reporting success; delete the artifact if it fails. Fix the timestamp by capturing the ISO string in the manifest rather than reverse-engineering it from the filename, and show size from `stats.size` only for validated archives. Finally, make `restoreBackup` verify the target path is the live database and require the app to relaunch afterwards.
+
+---
+
 ## 🟠 High
 
 ### H1 — Print failure is swallowed twice; the cashier is never told the receipt did not print
@@ -252,8 +280,11 @@ The handler catches everything and **resolves** `{success:false, error}`. The ca
 
 ### H2 — The cash drawer only opens if the cashier manually presses Print and it succeeds
 **File:** `src/main/services/printer/receipt-formatter.ts:213-215`
-The drawer pulse is emitted **only** inside the receipt byte stream, and nothing prints automatically — `handlePaymentComplete` just opens the preview. Press Close instead of Print (or hit any print fault) and you have a committed cash sale with a locked drawer. A working `printer.openDrawer()` IPC exists and is called by nothing.
-**Fix:** Auto-print after commit, and kick the drawer via an independent `openDrawer()` for cash/mixed so a paper fault cannot lock the till. Remove `cashdraw` from `printReceipt` so reprints don't re-open it.
+The drawer pulse is emitted **only** inside the receipt byte stream. Press Close instead of Print (or hit any print fault) and you have a committed cash sale with a locked drawer. A working `printer.openDrawer()` IPC exists and is called by nothing.
+
+**Confirmed operator requirement: printing must stay manual.** Verified that it already is — `printReceipt` has exactly one caller in the whole renderer, `handlePrint` on the Print button (`ReceiptPreview.tsx:190`), and the auto-print that once lived in `loadReceipt` is gone. So the fix must **not** be "auto-print after commit".
+
+**Fix:** Decouple the drawer from the receipt. Remove `cashdraw(2)` from `printReceipt` (which also stops reprints re-opening the till, M12) and instead fire the independent `printer.openDrawer()` immediately after `createSale` succeeds for cash and mixed payments. The drawer then opens on every cash sale regardless of whether the cashier prints, and a paper or printer fault can never lock the till.
 
 ### H3 — Voiding a sale restores nothing
 **File:** `src/main/services/sales.ts:248-263`
@@ -362,7 +393,16 @@ Measured against the available ~696px on a maximised 1366×768 POS:
 - **PaymentModal ≈ 875px** against `max-h-[95vh]` ≈ 661px. It *can* scroll, but "Complete Sale" starts ~215px below the fold on every sale, and the only thing under the finger in the scroll region is the numpad — a drag inside Chromium's ~8px touch slop registers as a **click**, injecting a stray digit into the amount being confirmed. A returning customer's purchase history adds another ~200px.
 **Fix:** Add `max-h-[90vh] overflow-y-auto` to the base `DialogContent`, and make both action rows `sticky bottom-0`. Reclaim height by collapsing EndShiftModal's 2×2 summary to one compact row and hiding PaymentModal's customer block behind a toggle.
 
-### H24 — The E2E suite cannot pass and is never run
+### H24 — Seven screens send an empty-string user id into permission-gated IPC
+**File:** `AnalyticsPage.tsx:17`, `InventoryPage.tsx:28`, `AuditLogPage.tsx:35`, `CustomersPage.tsx:30` (also `UsersPage.tsx:27`, `AIInsightsPanel.tsx:16`, `ReportsPanel.tsx:475`)
+
+Every one derives `const userId = user?.id ?? ''` and passes it straight to `withPermission`, where `getUserById('')` returns undefined and the handler throws **`User not found`**. This fires whenever a component's effect runs before the auth store has hydrated, and again if a component is still mounted after logout.
+
+The failure is then invisible or misleading, depending on the screen: the Inventory loaders have no error branch (M19), so the page renders *"No products found — create your first product"* to a pharmacy with 10,000 products; elsewhere the raw string surfaces in a native `alert()`. A cashier reporting "my inventory disappeared" is most likely hitting this, not data loss.
+
+**Fix:** Don't fabricate an id. Type the value as `string | undefined`, skip the load entirely while it is undefined (`if (!userId) return`), and render a distinct "not signed in" state rather than an empty list. Once C11's main-process session lands, the renderer stops passing an id at all and this class of bug disappears — so treat this as the interim guard.
+
+### H25 — The E2E suite cannot pass and is never run
 **File:** `tests/e2e/pos-workflow.spec.ts`, `.github/workflows/release.yml:26`
 The specs target `input[name="username"]`, `input[name="password"]`, `input[name="cashReceived"]` and the strings `Point of Sale` / `Sale Completed` — **none exist**: login is user tiles plus a PIN pad, the password input has no `name`, the cash field is `id="cash-received"`, and the page says "POS Terminal". `beforeEach` is an empty comment stub ("This would insert test products"). CI runs only `npm run publish`, so nothing executes them. The project therefore believes it has regression cover for the POS workflow and has none — which is how the C1–C14 class of defect reached production.
 **Fix:** Either repair the selectors and seed fixtures and add a CI job, or delete the suite so it stops implying coverage. Given the money defects above, the first sale-to-receipt test is worth more than any other single change in this report.
@@ -394,6 +434,7 @@ The specs target `input[name="username"]`, `input[name="password"]`, `input[name
 | M19 | `InventoryPage.tsx:76-109` | Every loader is `if (success)` with no else, so a failed read renders "No products found — create your first product" to a pharmacy with 10,000 products. |
 | M20 | `schema.ts:53-55` | All money is SQLite `REAL`. Combined with C4 this is how `2701.905` got stored. Day totals drift from the sum of printed receipts. |
 | M21 | `inventory.ts:463`, `StockBatchesTable.tsx:52` | Dates use `toISOString()` (UTC) while the shop is UTC+5:30 — stock received at 02:00 local is dated the previous day, and from 05:30 local on the expiry day a batch renders "(Expired)" a day early. |
+| M22 | `AlertsPanel.tsx:12`, `AnalyticsPage.tsx:80` | Low-stock and expiry alerts are pure props with no refresh of their own — the only way to update them is the page-level Refresh, which re-runs the whole dashboard. Alerts therefore go stale as soon as stock moves, and there is no auto-refresh. See [R4](#-operator-requirements). |
 
 Also Medium, from the auth review: logout does not clear the cart or held sale (**cashier B can complete cashier A's basket against B's shift**); there is no idle lock and no way to log out without ending the shift; End Shift commits on a bare Enter with a blank count; Start/End Shift and Login swallow IPC errors entirely (a duplicate-shift rejection leaves the button doing nothing forever); an interrupted setup wizard silently discards the admin password; there is **no single-instance lock**, so double-tapping the shortcut runs two processes against one SQLite file with two receipt-number generators; shift figures mix "today in UTC" with "whole shift" so an overnight shift reports Total Sales 0 against a full drawer; user management writes **no audit trail at all**; and passwords have no strength rules. Touch-side: `SelectContent` clamps its scroll viewport to the 40px trigger height (one visible option); `SelectTrigger`/`SelectItem`/`TabsTrigger` are all under 44px with no `active:` state; destructive confirms place Cancel 8px from the destructive action; a stray overlay tap discards a keyed-in payment; ~21 native `confirm()`/`alert()` calls remain across the admin screens.
 
@@ -413,8 +454,39 @@ Also Medium, from the auth review: logout does not clear the cart or held sale (
 | L8 | `ProductEntry.tsx:197`, `QuickItems.tsx:83`, `SearchModal.tsx:131` | Currency hardcoded `Rs.` in the three product-picking surfaces while the cart honours the setting — two currencies on one screen. |
 | L9 | `CartItem.tsx:9-14` (+3 copies) | Days-to-expiry compares a UTC-parsed date against local midnight, so every countdown is a day optimistic and "expires today" never appears. |
 | L10 | `schema.ts:106` vs `:156` | Batch quantity is `REAL` but sale quantity is `INTEGER`: fractional units can be received and never sold, and float residue keeps a batch matching `quantity > 0` forever. |
+| L11 | `StockBatchFormDialog.tsx:109` | `setProductSearch(\`${product.name} (${product.sku})\`)` is unguarded, so a product with no SKU shows literally **`Panadol 500mg (null)`** in the Receive Stock field. `LowStockAlert.tsx:25` guards the same expression correctly — copy that. Related: eight `alert(error.message)` call sites print **`undefined`** when a non-`Error` is thrown. |
 
 Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can deactivate their own account; `user:stats` and `shift:compute-expected-cash` are ungated; the discount engine is wired into store and schema but has **no UI** and its amount is unclamped (a percentage over 100 would produce a negative total); `Product.sku` is typed non-nullable so `(null)` is rendered to users; dialog close buttons are 16×16px with hover-only feedback; `title` is the only label on the header Settings button.
+
+---
+
+## 📋 Operator requirements
+
+Raised from the shop floor. These are **feature gaps, not defects** — but several are the correct long-term fix for a Critical above, so they are sequenced against them.
+
+### R1 — Per-batch selling price
+**Today:** `stock_batches` records `cost_price` only; the selling price always comes from `products.unit_price`. When the same medicine is bought at two different costs, or an old batch must be cleared at a lower price, the system cannot represent it.
+**Needs:** `stock_batches.selling_price` (nullable — fall back to `products.unit_price` when unset), exposed in the Receive Stock and Edit Batch dialogs. Because the cart is built before a batch is chosen, the POS must resolve the price from the batch FEFO *will* pick, and re-resolve if the quantity spans batches. Simplest correct behaviour: price each unit at the price of the batch it is actually drawn from, and show the cashier a per-line breakdown when a line spans two prices.
+**Interacts with:** C3 (whatever VAT model is chosen must apply per batch price), C5.
+
+### R2 — Stock batch history: what each batch cost and what it sold for
+**Today:** `sale_items` stores a single `batch_id` — the **first** batch touched (H4) — and a `cost_price` copied from the product, which is `0` for all 257 products (C5). So batch-level margin is unanswerable, and a recall cannot identify who received an affected lot.
+**Needs:** one row per batch consumed, each carrying batch id, quantity, the batch's `cost_price` and the `selling_price` actually charged. Either split `sale_items` per batch or add a `sale_item_batches` child table. Then a per-batch ledger becomes derivable: received qty/cost, sold qty/price, remaining, realised margin, and full recall traceability.
+**Confirms the FEFO assumption:** oldest-expiry-first is already what `deductStockFEFO` does (`sales.ts:76-88`) — verified, and it is the right basis for this. It must first be corrected to skip **expired** batches (C10).
+**This requirement is the proper fix for C5 and H4** — implement them together rather than patching cost separately.
+
+### R3 — Add cash to the drawer mid-shift
+**Today:** the only cash inputs are `shifts.opening_cash` at start and `closing_cash` at end. A mid-shift float top-up, a petty-cash payout, or a bank drop cannot be recorded, so any such movement shows up as an unexplained drawer discrepancy.
+**Needs:** a `cash_movements` table (`shift_id`, `user_id`, `type: 'in'|'out'`, `amount`, `reason`, `created_at`), a Cash In / Cash Out action on the POS screen behind a permission, an audit entry per movement, and — critically — inclusion in the reconciliation:
+`expected = opening + Σ(cash_received − change_given) + Σ(cash_in) − Σ(cash_out) − Σ(cash_refunds)`
+**Blocked by / blocks:** this is the same function as C2. Fix C2's change-given term and add these terms in one change, or the drawer will still not balance.
+
+### R4 — Refresh alerts on demand
+**Today:** `AlertsPanel` takes `lowStockAlerts` / `expiryAlerts` as props with no refresh of its own (M22); only the dashboard-wide Refresh updates them, and nothing is automatic. Alerts go stale the moment stock moves.
+**Needs:** a refresh control on the panel itself, plus a refresh after any stock mutation (sale, receive, adjust) and a periodic poll. Note the underlying queries need fixing first or the refreshed numbers will still be wrong: low-stock counts every never-stocked product (M16) and expiry alerts match empty-string dates (H8).
+
+### R5 — Setting to disable card payments
+Covered in full under **C6**. Ship the toggle with the crash fix.
 
 ---
 
@@ -445,6 +517,7 @@ Recorded so the report shows coverage, not just defects.
 - **`CashNumpad.applyKey`** cannot produce a negative or malformed amount, and `calculateChange` is floored at 0.
 - **USB/TCP printer transports** release the interface in a `finally`, and TCP times out at 5s and destroys the socket — no handle leak on an offline printer.
 - **Windows close-interception** works as designed, with the renderer listener registered once via a ref so it cannot go stale.
+- **Printing is triggered only by the Print button** — confirmed against the operator's requirement. `printReceipt` has exactly one caller in the renderer (`ReceiptPreview.handlePrint`), and the auto-print previously in `loadReceipt` has been removed. No code path prints a receipt without an explicit tap. H2 has been rewritten to preserve this.
 
 ---
 
@@ -454,7 +527,7 @@ Reviewed in full: the POS cart and money math; payment, sale persistence, receip
 
 **Not yet reviewed** — two reviewers were lost to a session limit before finishing, so these areas are outstanding and should not be read as clean:
 
-1. **Backup and restore** (`services/backup/*`) — including whether the SQLite file is copied safely while open (a naive copy of a WAL database can yield a corrupt backup), where the encryption password lives, Google Drive token handling, and retention pruning.
+1. **Backup and restore** — `database-backup.ts` has now been reviewed (see C15). Still outstanding: `google-drive.ts` (token handling and refresh), `scheduler.ts` (drift, overlap, missed runs while the POS is powered off at the scheduled 02:00, retention pruning deleting the only good archive), and where the backup encryption password is stored.
 2. **AI insights** (`services/ai/insights.ts`) — whether the Gemini key is stored in plaintext, whether customer PII or sales data leaves the machine, prompt injection via product names, and cost/timeout bounds.
 3. **Audit log service** (`services/audit.ts`) and **customers service** — append-only guarantees and tamper resistance.
 4. **Report generation** (`services/analytics/reports.ts`, `ReportsPanel.tsx`) — the P&L and inventory-valuation SQL, and the jsPDF/Excel export paths. Note these inherit C1's fan-out if they share those queries, and the critical `jspdf` advisory applies here.
@@ -465,10 +538,13 @@ Reviewed in full: the POS cart and money math; payment, sale persistence, receip
 
 ## Suggested order of work
 
-1. **C2, C1, C5** — the three money/reporting defects the operator can already see. All are small, local fixes with immediate visible effect.
-2. **C6** — one-word rename plus an error boundary; stops the till dying on card sales.
-3. **C4, C3** — rounding first (mechanical), then choose one VAT model. C3 needs a decision about tax-inclusive pricing before code.
-4. **C14** — must land before the next release ships a migration, or field databases break.
-5. **C8, C9, C7** — sale integrity and the printed total.
-6. **C11, C12, C10** — the main-process session, then hash exposure, then the expiry block.
-7. **H24** — a single sale-to-receipt E2E test, so the above cannot silently regress.
+1. **C15** — backup/restore is a one-line filename fix away from working, and until it does there is **no disaster recovery at all**. Do the consistent-copy and integrity-check work in the same pass; everything below is safer once a restorable backup exists.
+2. **C6 + R5** — one-word rename, an error boundary, and the card-payment toggle. Stops the till dying on card sales, and the toggle is an immediate mitigation.
+3. **C2 + R3** — fix the change-given term and add cash in/out in one change to `computeShiftExpectedCash`, or the drawer still will not balance.
+4. **C1** — the analytics join; small, local, and makes the dashboard honest.
+5. **C4, C3** — rounding first (mechanical), then choose one VAT model. C3 needs a pricing decision before code.
+6. **C14** — must land before the next release ships a migration, or field databases break.
+7. **C5 + H4 + R1 + R2** — do batch pricing and batch history together as one piece of work; that is what makes profit real, and patching cost separately would be thrown away.
+8. **C8, C9, C7** — sale integrity and the printed total.
+9. **C11, C12, C10, H24** — the main-process session (which also retires H25), then hash exposure, then the expiry block.
+10. **H25** — a single sale-to-receipt E2E test, so none of the above can silently regress.
