@@ -13,13 +13,17 @@
 
 | Severity | Count |
 |----------|-------|
-| 🔴 Critical | 15 |
-| 🟠 High | 25 |
-| 🟡 Medium | 22 |
-| ⚪ Low | 11 |
-| **Total** | **73** |
+| 🔴 Critical | 25 |
+| 🟠 High | 40 |
+| 🟡 Medium | 32 |
+| ⚪ Low | 16 |
+| **Total** | **113** |
 
 Plus **5 operator requirements** raised from the shop floor — see [Operator requirements](#-operator-requirements).
+
+**Two passes.** Pass 1 (C1–C15, H1–H25) covered the POS, payments, printing, auth/RBAC, inventory and the schema. Pass 2 (C16–C25, H26–H40) covered the areas pass 1 listed as gaps — the full money/analytics verification, report generation, backup/restore, scheduling, logging, auto-update, the audit log, customers, and the admin-screen touch review. **Coverage is now complete**; there is no remaining unreviewed area.
+
+Seven items have since been **fixed** — see [Fixed in this session](#-fixed-in-this-session).
 
 **Confirmed against live data.** Four Critical findings were reproduced numerically from the operator's own database, including both figures reported from the running app:
 
@@ -271,6 +275,105 @@ Separately, even with the filename corrected the backup would be **unsafe**: `ar
 
 ---
 
+### C16 — The nightly job deleted a day of analytics and never rebuilt it ✅ FIXED
+**File:** `src/main/jobs/aggregation.ts:2` → `src/main/services/analytics.ts:11`
+
+`jobs/aggregation.ts` imported `aggregateDailySales` from `'../services/analytics'`. There is no `analytics/index.ts`, so that resolved to **`services/analytics.ts`** — a broken duplicate — rather than the working `services/analytics/aggregation.ts` that the IPC handlers use. That implementation runs the delete **first**, unwrapped in a transaction, then throws while *preparing* an INSERT that references `sales.completed_at` and `sale_items.subtotal`, neither of which exists (the real columns are `created_at` and `line_total`):
+
+```ts
+db.prepare('DELETE FROM product_sales_daily WHERE date = ?').run(date)   // commits
+// …then throws: no such column: s.completed_at
+```
+
+The job **is** wired up (`main/index.ts:92`) and the error is swallowed to `console`, which goes nowhere in a packaged app. So every night at 00:05, a day's aggregated revenue, cost, profit and quantity vanished permanently — taking the P&L, category breakdown, top products and trend chart with it. The date arithmetic was also off by a day (local `getDate()` mixed with UTC `toISOString()`), and `runIncrementalAggregation` could never repair it (C24).
+
+**Fixed:** import repointed at the working module, the broken duplicate deleted (it had no other importers), date arithmetic made UTC-consistent.
+
+---
+
+### C17 — Scheduled backups have never run, and cannot
+**File:** `src/main/services/backup/scheduler.ts:28`, `src/main/index.ts:84-216`
+
+Two independent blockers. `startBackupScheduler()` is only reachable from an IPC channel — **nothing calls it at startup**, so after every launch there is no job. And even when the Settings button fires it, it reads `backup_enabled` and bails; **no code in the repository ever writes that key**. It logs `Auto-backup is disabled` to a console nobody sees. `stopBackupScheduler()` is never called on quit either. Compounding it, `node-schedule` has no missed-run catch-up, so a POS switched off at 02:00 — the normal state for a shop that closes at night — would get no backup even once the above is fixed.
+
+**Fix:** call `startBackupScheduler()` in `app.whenReady()` after DB init and `stopBackupScheduler()` on confirmed quit; default `backup_enabled` to on (opt-out); add a startup catch-up when `last_backup_time` is older than one interval.
+
+---
+
+### C18 — Restore corrupts the database: the live connection stays open and the stale WAL is left in place
+**File:** `src/main/services/backup/database-backup.ts:107-109`, `src/main/services/database.ts:16`
+
+`getDatabase()` opens the database in WAL mode and holds the handle for the process lifetime. `restoreBackup` overwrites the `.db` file **underneath that open handle** and never touches `-wal` / `-shm`. The still-open connection then checkpoints *pre-restore* WAL frames onto the freshly restored file. Best case the restore is silently undone; realistic case is a cross-generation page mix — a corrupt database. The only mitigation is a string asking the user to restart, which nothing enforces. The pre-restore "safety" snapshot has the same flaw, so the rollback copy is itself untrustworthy.
+
+**Fix:** close the DB, delete `-wal`/`-shm`, copy, then `app.relaunch(); app.exit(0)`. Never hand control back to the renderer with a stale handle.
+
+---
+
+### C19 — Restore is unusable from the UI: `window.prompt()` throws in Electron
+**File:** `src/renderer/src/pages/SettingsPage.tsx:257`
+
+Electron does not implement `prompt()` — verified empirically against this project's Electron 39 binary, which returns `prompt() is not supported.` The call sits **outside** the `try` block, so it becomes an unhandled rejection: no error, no spinner, nothing happens. This affects encrypted *and* plain backups, and there is no other restore path in the app. Together with C15, C17 and C18, **there is no working disaster recovery of any kind.**
+
+**Fix:** replace with a Radix `Dialog` + password `Input` (both already dependencies) and move the whole flow inside `try/catch`.
+
+---
+
+### C20 — Auto-update and Sentry are inert in the shipped app: `NODE_ENV` is never set
+**File:** `src/main/services/updates/auto-updater.ts:14`, `src/main/services/logging/error-handler.ts:14`, `logger.ts:12`
+
+Every update and error-reporting path is gated on `process.env.NODE_ENV === 'production'`. Electron does not set `NODE_ENV`, and nothing in `forge.config.ts`, the Vite configs or the npm scripts injects it. Confirmed **not** statically replaced at build time — the comparison survives as a runtime lookup in the shipped `app.asar`. So on the POS: `updateElectronApp()` is never called, `Sentry.init()` never runs, winston runs at `debug` with a Console transport attached. **The pharmacy will never receive an update and no crash will ever be reported.** The Sentry DSN is unset anyway.
+
+**Fix:** gate on `app.isPackaged`, not `NODE_ENV`. Inject the DSN via a Vite `define`.
+
+---
+
+### C21 — Backup encryption password is never persisted, and scheduled backups are never encrypted
+**File:** `src/renderer/src/pages/SettingsPage.tsx:239`, `src/main/services/backup/scheduler.ts:91`
+
+The password is typed, used, and cleared — stored nowhere, with no escrow, hint or verification. PBKDF2-SHA256 100k → AES-256-GCM is sound, which is precisely the problem: one typo makes the archive permanently unreadable, and the pharmacist sees a raw OpenSSL error. Meanwhile the scheduler reads a `backup_password` setting that **no code ever writes**, so every scheduled backup would be unencrypted — and that plain ZIP is what gets uploaded to Drive (C22).
+
+**Fix:** derive the key from `safeStorage` (DPAPI) so backups are always encrypted with no memorised password; if a user password is kept, store a PBKDF2 verifier so a wrong one fails fast.
+
+---
+
+### C22 — An unencrypted database containing customer PII and password hashes is the default Drive upload
+**File:** `src/main/services/backup/database-backup.ts:30`, `scheduler.ts:96-109`
+
+With no password — the only reachable state for scheduled backups — the archive is a plain ZIP, and that exact file is streamed to Google Drive. It contains the full `customers` table (name, phone, email, address, date of birth, notes), every sale line item linking a named customer to specific medicines dispensed (de facto health records), and the `users` table with bcrypt password and PIN hashes. The same archives sit unencrypted in `%APPDATA%` where any local process can read them.
+
+**Fix:** refuse to upload anything but an `.encrypted` archive. Also fix the leak on the encryption path: if the final write fails, the plaintext temp ZIP is never unlinked and is then listed as a normal backup.
+
+---
+
+### C23 — `logAudit` silently discards entries whose user id is not a live user
+**File:** `src/main/services/audit.ts:60-78`
+
+`audit_log.user_id` has an FK to `users(id)` and foreign keys are enforced. Any `logAudit` with an unknown id throws `SQLITE_CONSTRAINT_FOREIGNKEY`, which the bare `catch {}` discards while the operation itself commits. Combined with C11 (the actor id comes from the renderer), passing a random uuid doesn't merely mis-attribute the action — **the audit row vanishes entirely**. The same happens for a user deleted mid-shift. Affects every call site: sale created, sale refunded, stock adjusted, Excel import, login, shift start/end.
+
+**Fix:** keep the operation alive but never lose the record — log the failure via `logError` and write to a fallback append-only file, or insert with `user_id = NULL` plus `details.claimed_user_id`.
+
+---
+
+### C24 — Voids are never reversed anywhere, and re-aggregation can never repair it
+**File:** `src/main/services/sales.ts:248-263`, `src/main/services/analytics/aggregation.ts:67-87`
+
+`createSale` writes the `product_sales_daily` row live; `voidSale` flips the status and leaves it. Every psd consumer — P&L, category breakdown, top products, trend chart — reads psd directly and **cannot** filter by status, because psd has no status dimension. Voiding is also completely unaudited: `SALE_VOIDED` is declared but never emitted, and `voidSale` takes `_userId` and discards it, so the single most likely mechanism for till theft leaves no record of who did it.
+
+The only correction path is unreachable: `runIncrementalAggregation` starts at `MAX(psd.date) + 1 day`, so once any sale happens today it returns `{daysProcessed: 0}` and never recomputes today or any earlier day. Net effect: a mistaken Rs. 15,000 sale that a manager voids is excluded from the Sales Report but still counted in the P&L and the dashboard — the two reports disagree by the full value of every void, permanently.
+
+**Fix:** reverse the psd contribution and restore stock inside a transaction in `voidSale`; record `voided_by`/`voided_at` and emit `SALE_VOIDED`; change incremental aggregation to start at `MAX(psd.date)` and re-aggregate a rolling window.
+
+---
+
+### C25 — Refunds are recorded net of VAT and are invisible to every report and to the drawer
+**File:** `src/main/services/sales.ts:357`
+
+Three compounding errors. **Amount:** `totalRefunded = Σ line_total` is pre-VAT and pre-discount — a sale the customer paid Rs. 1,180 for records a Rs. 1,000 refund, so either the customer is shorted or the books are Rs. 180 light. **Status:** `sales.status` is never set to `'refunded'`, so a fully refunded sale still satisfies `status='completed'` in every report and in the drawer calculation, and revenue is never reversed. **Reporting:** `sale_refunds` is read by **no aggregate anywhere** in `src/main`, and no offsetting psd row is written. A month with Rs. 500,000 of sales and Rs. 50,000 of refunds reports Rs. 500,000 in both the Sales Report and the P&L, and the shift expects Rs. 50,000 of cash that is no longer in the drawer.
+
+**Fix:** refund the customer-facing amount (pro-rate `tax_amount` and `discount_amount` across refunded lines), set the status when fully refunded, validate cumulative refunds against the original, write a negative psd row, and subtract cash refunds in `computeShiftExpectedCash`.
+
+---
+
 ## 🟠 High
 
 ### H1 — Print failure is swallowed twice; the cashier is never told the receipt did not print
@@ -409,6 +512,28 @@ The specs target `input[name="username"]`, `input[name="password"]`, `input[name
 
 ---
 
+### H26–H40 — second pass
+
+| # | File | Issue |
+|---|------|-------|
+| H26 | `reports.ts:86-90`, `:119-123` | **Sales-report gross profit counts VAT as profit.** `SUM(total − COGS)` uses the VAT-inclusive `total`. A Rs. 1,000 sale at 18% VAT with Rs. 600 COGS reports Rs. 580 profit instead of Rs. 400 — overstated by exactly the VAT liability. The Top Products table in the *same PDF* computes it correctly ex-VAT, so the two tables cannot be reconciled. |
+| H27 | `reports.ts:268-270` vs `:85` | **P&L revenue and Sales-report revenue are different numbers for the same period.** P&L sums `psd.revenue` (ex-VAT, pre-discount); the Sales report sums `sales.total` (VAT-inclusive, post-discount). Neither is net revenue, and if a sale-level discount is ever applied the P&L ignores it entirely. |
+| H28 | `reports.ts:197-241` | **Inventory valuation counts expired and depleted batches at full retail**, and values at `products.cost_price` rather than the populated `stock_batches.cost_price`. 500 units of an expired antibiotic at Rs. 85 inflates "Total Stock Value" by Rs. 42,500 of unsaleable goods. |
+| H29 | `google-drive.ts:167`, `scheduler.ts:113` | **Every backup-related settings write throws.** `settings.updated_at` is `NOT NULL` with no default and both writes omit it. So Drive can never be configured, `last_backup_time` is never recorded, and the throw aborts `performScheduledBackup` before retention runs. Every other settings writer in the codebase includes the column. |
+| H30 | `google-drive.ts:12-17` | **Drive holds a bare access token in plaintext with no refresh token, no client credentials and no OAuth flow.** Google tokens last ~1 hour, after which uploads 401 forever with the failure reaching only `console.error`. The token is stored in the `settings` table — which is then packed into every backup, so an unencrypted archive contains the credential for the account it was uploaded to. |
+| H31 | `backup-handlers.ts:44-78` | **Backup IPC bypasses the permission middleware.** `BACKUP_DELETE_LOCAL` takes an arbitrary absolute path and `unlinkSync`s it with no permission and no containment check — a cashier session can delete `pharmapos.db` itself. `BACKUP_DRIVE_DOWNLOAD` joins a renderer-supplied filename into a path, so `../../..` escapes the backups directory. |
+| H32 | `database-backup.ts:33-55` | **Disk-full hangs the backup promise and crashes main.** Only `archive.on('error')` is registered; the write stream has none, so `ENOSPC` escalates to an uncaught exception (a modal error box over the sales screen) and the IPC call never settles — the UI sticks on "Creating…" forever. |
+| H33 | `scheduler.ts:62-150` | **Backup failures are invisible.** The whole backup subsystem logs to `console`, never to winston, so a nightly failure lasting months leaves nothing in the log directory, no dialog, no Sentry event, and no UI indicator. |
+| H34 | `main/index.ts:231-244` | **`quitAndInstall()` is blocked by the close guard.** `before-quit` sees `closingConfirmed === false`, calls `preventDefault()` and re-shows the window — while Squirrel has already launched the new process. With no single-instance lock, two processes end up on the same WAL database. Latent only because C20 keeps updates dead. |
+| H35 | `audit.ts:65`, `AuditLogPage.tsx:69` | **Audit timestamps display 5.5 hours early.** `datetime('now')` stores UTC as `"YYYY-MM-DD HH:MM:SS"`, which V8 parses as *local*. A void at 12:00 LKT renders as 6:30 AM, and everything before 05:30 local lands on the previous day. Every other table uses `toISOString()`, so the audit log cannot even be correlated with sales by string comparison. |
+| H36 | `audit.ts:3-25` | **13 of 22 declared audit actions are never written.** Missing: all product, batch and user mutations, settings changes, backup create/restore, price changes, void, and failed logins. Password/PIN changes are unlogged; PIN brute-forcing is invisible. |
+| H37 | `pos-handlers.ts:39`, `AuditLogPage.tsx:177` | **Four of the nine emitted actions are attributed to "system".** `logAudit` writes `user_name` only when passed, and sale/refund/stock/import omit it. The viewer renders NULL as *system* and never falls back to `user_id`, so every sale, refund and stock adjustment appears to have been done by nobody. |
+| H38 | `customers.ts:58-77`, `sales.ts:139` | **Phone numbers are stored raw**, so `0771234567`, `+94771234567` and `077 123 4567` are three distinct customers past the UNIQUE index — and `createSale` auto-links by exact equality, so a differently-formatted entry silently fails to link and the purchase history is quietly incomplete. |
+| H39 | `customers.ts:35-41,105-152`, `CustomersPage.tsx:100-136` | **Customer errors are dead code and there is no erasure path.** The duplicate-phone `UNIQUE` violation rejects the IPC promise, but the handler only checks `result.success === false` — which never happens because create/update return a `Customer` — so the dialog sits there silently. Separately `deleteCustomer` is only a flag flip, and `getCustomerById`/`getByPhone` ignore it, so a "deleted" customer is still fully readable and still auto-links to new sales. |
+| H40 | `ProductsTable.tsx:92` (+3 tables), `InventoryPage.tsx:76` | **Row actions are 32×32px with Delete 8px from Edit, and all rows render at once.** `h-8 w-8 p-0` beats the variant via tailwind-merge, so the effective target is 27% under the minimum with the destructive action adjacent. No pagination or virtualisation anywhere in the four inventory tables — ~10,000 products is ~80,000 DOM nodes in one scroll container. `AuditLogPage` already does this correctly at 50/page. |
+
+---
+
 ## 🟡 Medium
 
 | # | File | Issue |
@@ -436,6 +561,8 @@ The specs target `input[name="username"]`, `input[name="password"]`, `input[name
 | M21 | `inventory.ts:463`, `StockBatchesTable.tsx:52` | Dates use `toISOString()` (UTC) while the shop is UTC+5:30 — stock received at 02:00 local is dated the previous day, and from 05:30 local on the expiry day a batch renders "(Expired)" a day early. |
 | M22 | `AlertsPanel.tsx:12`, `AnalyticsPage.tsx:80` | Low-stock and expiry alerts are pure props with no refresh of their own — the only way to update them is the page-level Refresh, which re-runs the whole dashboard. Alerts therefore go stale as soon as stock moves, and there is no auto-refresh. See [R4](#-operator-requirements). |
 
+**Second pass (M23–M32).** `KPICards.tsx:53` computes `total_profit / total_sales` with **no divide-by-zero guard**, so a day with no sales renders "**NaN% margin**" (the neighbouring card guards correctly with `|| 1`). Every date-bounded report uses the **UTC day**, shifting the Asia/Colombo reporting boundary by 5h30m — a monthly VAT return excludes 00:00–05:29 on the first and includes it on the following month's first. `getBackupStatus()` returns `{enabled,lastBackup,nextBackup}` but the renderer casts it to `{running,nextRun}`, so the scheduler dot is permanently grey, "Stop" is unreachable, and repeated clicks silently stack jobs. Retention (`cleanupOldBackups`) can delete the last good archive — manual backups count toward the quota and zero-byte failures are counted as survivors — and Drive-side retention is never called at all. Drive download resolves on the *source* stream's `end` rather than the destination's `finish`, so a restore immediately afterwards can read a truncated file, and there is no upload verification or retry. Nothing validates a backup before overwriting live data: no SQLite header check, no `integrity_check`, no size comparison, and an `.encrypted` archive restored with an empty password fails with an opaque error. The update UI has a dead progress branch, renders "Version **undefined** is ready to install", and forwards update errors to a blocking `alert()` on an hourly poll — a modal freezing the till mid-sale, with no defer option. The audit log has **no indexes at all** and paginates on `ORDER BY timestamp DESC` with no tiebreaker, so rows can be skipped or duplicated between pages; its date/user/entity filters are unreachable from the UI and would not work anyway given H35. Customer purchase history is N+1 with no index on `sale_items(sale_id)` or `sales(customer_id)`, counts fully-refunded sales at full value, and presents a page-limited sum as a lifetime total. Phone and email cannot be cleared once set (`|| undefined` means "leave alone"), and there is no server-side validation of customer input at all.
+
 Also Medium, from the auth review: logout does not clear the cart or held sale (**cashier B can complete cashier A's basket against B's shift**); there is no idle lock and no way to log out without ending the shift; End Shift commits on a bare Enter with a blank count; Start/End Shift and Login swallow IPC errors entirely (a duplicate-shift rejection leaves the button doing nothing forever); an interrupted setup wizard silently discards the admin password; there is **no single-instance lock**, so double-tapping the shortcut runs two processes against one SQLite file with two receipt-number generators; shift figures mix "today in UTC" with "whole shift" so an overnight shift reports Total Sales 0 against a full drawer; user management writes **no audit trail at all**; and passwords have no strength rules. Touch-side: `SelectContent` clamps its scroll viewport to the 40px trigger height (one visible option); `SelectTrigger`/`SelectItem`/`TabsTrigger` are all under 44px with no `active:` state; destructive confirms place Cancel 8px from the destructive action; a stray overlay tap discards a keyed-in payment; ~21 native `confirm()`/`alert()` calls remain across the admin screens.
 
 ---
@@ -457,6 +584,22 @@ Also Medium, from the auth review: logout does not clear the cart or held sale (
 | L11 | `StockBatchFormDialog.tsx:109` | `setProductSearch(\`${product.name} (${product.sku})\`)` is unguarded, so a product with no SKU shows literally **`Panadol 500mg (null)`** in the Receive Stock field. `LowStockAlert.tsx:25` guards the same expression correctly — copy that. Related: eight `alert(error.message)` call sites print **`undefined`** when a non-`Error` is thrown. |
 
 Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can deactivate their own account; `user:stats` and `shift:compute-expected-cash` are ungated; the discount engine is wired into store and schema but has **no UI** and its amount is unclamped (a percentage over 100 would produce a negative total); `Product.sku` is typed non-nullable so `(null)` is rendered to users; dialog close buttons are 16×16px with hover-only feedback; `title` is the only label on the header Settings button.
+
+---
+
+## ✅ Fixed in this session
+
+| Item | Change |
+|---|---|
+| **C16** — nightly job wiped analytics | `jobs/aggregation.ts` repointed from the broken `services/analytics.ts` duplicate to the working `services/analytics/aggregation.ts`; the duplicate deleted (no other importers); date arithmetic made UTC-consistent. **This was destroying data every night.** |
+| **AI insights removed entirely** | Deleted `services/ai/`, `ipc/ai-handlers.ts` and the dead `components/analytics/AIInsightsPanel.tsx`; removed the Analytics AI tab and its inline panel, the Settings AI tab and Gemini key handling, the preload `ai` surface, the AI IPC channels, the `AIInsight` type and store state; dropped `@google/generative-ai`. No pharmacy or customer data can now leave the machine via AI. |
+| Stock-batch picker could not be scrolled by touch | Selection moved `onPointerDown` → `onClick`. Pointerdown fires the instant a finger lands, so dragging to scroll selected whichever row was under the initial touch; the existing 150ms blur delay outlives the click. |
+| Stock-batch picker showed nothing on an empty search | An empty box now browses the whole catalogue, as does re-focusing after a selection; capped at 100 rows with a "keep typing to narrow" hint. |
+| Batch picker rows / list sizing | Rows `min-h-11`, list `max-h-64` with `overscroll-contain`. |
+| **L11** — `(null)` SKU | Guarded via a shared `productLabel()` helper. |
+| `Button` `sm` variant was 40px | Raised to `h-11`. The file comment claimed every variant met the 44px minimum; `sm` did not, and it is used for most primary actions on the Inventory and Audit pages. |
+
+Verified after the changes: `npm run typecheck` clean (node + web), renderer bundles via `vite build`.
 
 ---
 
@@ -521,30 +664,29 @@ Recorded so the report shows coverage, not just defects.
 
 ---
 
-## Coverage and gaps
+## Coverage
 
-Reviewed in full: the POS cart and money math; payment, sale persistence, receipts, printing, drawer and pole display; auth, session, shift lifecycle, RBAC, user management and first-run setup; inventory, products, categories, suppliers, batches, import/export and the database schema and migration; the analytics query layer; the shared UI primitives and the POS/shell screens for touch; build, CI, dependencies and the test suite.
+Both passes together cover the entire codebase: the POS cart and money math; payment, sale persistence, receipts, printing, drawer and pole display; auth, session, shift lifecycle, RBAC, user management and first-run setup; inventory, products, categories, suppliers, batches, import/export, schema and migration; the full analytics and reporting layer including P&L and inventory valuation; backup, restore, scheduling, Google Drive, encryption, logging and auto-update; the audit log and customer registry; the shared UI primitives and every screen for touch; and build, CI, dependencies and the test suite.
 
-**Not yet reviewed** — two reviewers were lost to a session limit before finishing, so these areas are outstanding and should not be read as clean:
+**There is no remaining unreviewed area.** The gaps listed after pass 1 — backup/Drive/scheduler, AI insights, audit and customer services, report generation, logging/auto-update, and the admin-screen touch pass — have all been closed by pass 2, except AI insights, which was removed outright rather than reviewed.
 
-1. **Backup and restore** — `database-backup.ts` has now been reviewed (see C15). Still outstanding: `google-drive.ts` (token handling and refresh), `scheduler.ts` (drift, overlap, missed runs while the POS is powered off at the scheduled 02:00, retention pruning deleting the only good archive), and where the backup encryption password is stored.
-2. **AI insights** (`services/ai/insights.ts`) — whether the Gemini key is stored in plaintext, whether customer PII or sales data leaves the machine, prompt injection via product names, and cost/timeout bounds.
-3. **Audit log service** (`services/audit.ts`) and **customers service** — append-only guarantees and tamper resistance.
-4. **Report generation** (`services/analytics/reports.ts`, `ReportsPanel.tsx`) — the P&L and inventory-valuation SQL, and the jsPDF/Excel export paths. Note these inherit C1's fan-out if they share those queries, and the critical `jspdf` advisory applies here.
-5. **Logging and auto-update** (`services/logging/*`, `services/updates/*`).
-6. **Touch review of the admin and data screens** — the six admin pages and the inventory/users/analytics tables. Specifically unverified: whether table row actions are hover-only (unreachable on touch), whether `ProductFormDialog`/`StockBatchFormDialog` fit on screen, and the ~21 native `confirm()`/`alert()` call sites.
+One caveat on confidence: every finding is derived from source, and the ones marked *Reported from the running app* or *verified on live data* were additionally reproduced against the operator's database. Nothing here has been validated on the physical POS hardware — printer, drawer, pole display and scanner behaviour are reasoned from the code.
 
 ---
 
 ## Suggested order of work
 
-1. **C15** — backup/restore is a one-line filename fix away from working, and until it does there is **no disaster recovery at all**. Do the consistent-copy and integrity-check work in the same pass; everything below is safer once a restorable backup exists.
-2. **C6 + R5** — one-word rename, an error boundary, and the card-payment toggle. Stops the till dying on card sales, and the toggle is an immediate mitigation.
-3. **C2 + R3** — fix the change-given term and add cash in/out in one change to `computeShiftExpectedCash`, or the drawer still will not balance.
-4. **C1** — the analytics join; small, local, and makes the dashboard honest.
-5. **C4, C3** — rounding first (mechanical), then choose one VAT model. C3 needs a pricing decision before code.
-6. **C14** — must land before the next release ships a migration, or field databases break.
-7. **C5 + H4 + R1 + R2** — do batch pricing and batch history together as one piece of work; that is what makes profit real, and patching cost separately would be thrown away.
-8. **C8, C9, C7** — sale integrity and the printed total.
-9. **C11, C12, C10, H24** — the main-process session (which also retires H25), then hash exposure, then the expiry block.
-10. **H25** — a single sale-to-receipt E2E test, so none of the above can silently regress.
+**Done:** C16 (nightly analytics wipe), AI removal, the batch-picker fixes.
+
+1. **C15, C17, C18, C19** — backup and restore as one piece of work. Right now there is *no* working disaster recovery: backup targets the wrong filename, the scheduler never starts, restore corrupts the DB by leaving a stale WAL, and the restore dialog throws. Everything below is safer once a restorable, verified backup exists.
+2. **C20** — one-line gate change (`app.isPackaged`, not `NODE_ENV`). Until it lands the pharmacy can never receive any of these fixes, and no crash is ever reported.
+3. **C6 + R5** — the card-sale crash and the card-payment toggle.
+4. **C2 + R3** — change-given plus mid-shift cash in/out, in the same function.
+5. **C1, C5, C24, C25, H26, H27** — the reporting layer as one piece: the fan-out join, the cost basis, void and refund reversal, and picking a single revenue/profit definition. Fixing these piecemeal will not make the reports agree with each other.
+6. **C4, C3** — rounding (mechanical), then choose one VAT model. C3 needs a pricing decision before code.
+7. **C14** — must land before the next release ships a migration.
+8. **C21, C22** — encrypt backups unconditionally and stop uploading PII in the clear.
+9. **C7, C8, C9** — sale integrity and the printed total.
+10. **C11, C12, C10, C23, H24** — the main-process session (which also retires H24 and makes the audit trail trustworthy), then hash exposure, then the expiry block.
+11. **R1 + R2 + H4** — per-batch pricing and batch history together.
+12. **H25** — a sale-to-receipt E2E test, so none of the above can silently regress.
