@@ -44,7 +44,9 @@ export function MainLayout({ user, onEndShift }: MainLayoutProps): React.JSX.Ele
       <Header user={user} onEndShift={onEndShift} onSettings={() => setCurrentPage('settings')} />
       <div className="flex-1 flex overflow-hidden">
         <Sidebar currentPage={currentPage} onNavigate={setCurrentPage} />
-        <main className="flex-1 overflow-auto">{renderPage()}</main>
+        {/* overflow-hidden: pages own their internal scrolling. An overflow-auto here
+            competes with inner scroll areas (cart list, tables) and steals touch swipes. */}
+        <main className="flex-1 min-w-0 overflow-hidden">{renderPage()}</main>
       </div>
     </div>
   )

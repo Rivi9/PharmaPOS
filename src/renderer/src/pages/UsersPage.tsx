@@ -70,8 +70,9 @@ export function UsersPage(): React.JSX.Element {
         </div>
       </div>
 
-      {stats && (
-        <div className="grid gap-4 md:grid-cols-4 mb-6">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1">
+        {stats && (
+          <div className="grid gap-4 md:grid-cols-4 mb-6">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium">Total Users</CardTitle>
@@ -104,18 +105,19 @@ export function UsersPage(): React.JSX.Element {
               <div className="text-2xl font-bold">{stats.byRole?.cashier || 0}</div>
             </CardContent>
           </Card>
-        </div>
-      )}
+          </div>
+        )}
 
-      <UsersTable
-        users={users}
-        userId={currentUserId}
-        onEdit={(user) => {
-          setEditingUser(user)
-          setShowFormModal(true)
-        }}
-        onRefresh={loadUsers}
-      />
+        <UsersTable
+          users={users}
+          userId={currentUserId}
+          onEdit={(user) => {
+            setEditingUser(user)
+            setShowFormModal(true)
+          }}
+          onRefresh={loadUsers}
+        />
+      </div>
 
       <UserFormModal
         open={showFormModal}

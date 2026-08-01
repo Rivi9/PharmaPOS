@@ -132,7 +132,7 @@ export function AuditLogPage(): React.JSX.Element {
       </Card>
 
       {/* Log Table */}
-      <Card className="flex-1 overflow-hidden flex flex-col">
+      <Card className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <CardHeader className="pb-2">
           <CardTitle className="text-base">Recent Activity</CardTitle>
         </CardHeader>
@@ -166,7 +166,10 @@ export function AuditLogPage(): React.JSX.Element {
               </thead>
               <tbody>
                 {entries.map((entry) => (
-                  <tr key={entry.id} className="border-b hover:bg-muted/30 transition-colors">
+                  <tr
+                    key={entry.id}
+                    className="border-b hover:bg-muted/30 active:bg-muted/50 transition-colors"
+                  >
                     <td className="px-4 py-2 font-mono text-xs text-muted-foreground whitespace-nowrap">
                       {formatTimestamp(entry.timestamp)}
                     </td>

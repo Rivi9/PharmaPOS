@@ -137,7 +137,8 @@ export function InventoryPage(): React.JSX.Element {
     if (confirm(`Are you sure you want to delete ${product.name}?`)) {
       const result = await window.electron.deleteProduct(userId, product.id)
       if (result.success) {
-        await loadProducts()
+        // Reload batches too — the deleted product's batches are now stale.
+        await Promise.all([loadProducts(), loadStockBatches()])
       } else {
         alert(result.error || 'Failed to delete product')
       }
@@ -344,7 +345,7 @@ export function InventoryPage(): React.JSX.Element {
 
       <LowStockAlert lowStockProducts={lowStockProducts} />
 
-      <Tabs defaultValue="products" className="flex-1 flex flex-col">
+      <Tabs defaultValue="products" className="flex-1 min-h-0 flex flex-col">
         <TabsList className="grid w-full grid-cols-4 max-w-2xl">
           <TabsTrigger value="products">Products</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
@@ -352,7 +353,7 @@ export function InventoryPage(): React.JSX.Element {
           <TabsTrigger value="stock">Stock Batches</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="products" className="flex-1 flex flex-col mt-6 space-y-4">
+        <TabsContent value="products" className="flex-1 min-h-0 flex flex-col mt-6 space-y-4">
           <div className="flex justify-between items-center gap-4">
             <div className="flex items-center gap-4 flex-1">
               <div className="relative flex-1 max-w-sm">
@@ -389,7 +390,7 @@ export function InventoryPage(): React.JSX.Element {
               </Button>
             </div>
           </div>
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
             <ProductsTable
               products={filteredProducts}
               onEdit={handleProductEdit}
@@ -398,7 +399,7 @@ export function InventoryPage(): React.JSX.Element {
           </div>
         </TabsContent>
 
-        <TabsContent value="categories" className="flex-1 flex flex-col mt-6 space-y-4">
+        <TabsContent value="categories" className="flex-1 min-h-0 flex flex-col mt-6 space-y-4">
           <div className="flex justify-between items-center gap-4">
             <div className="flex items-center gap-4 flex-1">
               <div className="relative flex-1 max-w-sm">
@@ -425,7 +426,7 @@ export function InventoryPage(): React.JSX.Element {
               Add Category
             </Button>
           </div>
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
             <CategoriesTable
               categories={filteredCategories}
               onEdit={handleCategoryEdit}
@@ -434,7 +435,7 @@ export function InventoryPage(): React.JSX.Element {
           </div>
         </TabsContent>
 
-        <TabsContent value="suppliers" className="flex-1 flex flex-col mt-6 space-y-4">
+        <TabsContent value="suppliers" className="flex-1 min-h-0 flex flex-col mt-6 space-y-4">
           <div className="flex justify-between items-center gap-4">
             <div className="flex items-center gap-4 flex-1">
               <div className="relative flex-1 max-w-sm">
@@ -461,7 +462,7 @@ export function InventoryPage(): React.JSX.Element {
               Add Supplier
             </Button>
           </div>
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
             <SuppliersTable
               suppliers={filteredSuppliers}
               onEdit={handleSupplierEdit}
@@ -470,7 +471,7 @@ export function InventoryPage(): React.JSX.Element {
           </div>
         </TabsContent>
 
-        <TabsContent value="stock" className="flex-1 flex flex-col mt-6 space-y-4">
+        <TabsContent value="stock" className="flex-1 min-h-0 flex flex-col mt-6 space-y-4">
           <div className="flex justify-between items-center gap-4">
             <div className="flex items-center gap-4 flex-1">
               <div className="relative flex-1 max-w-sm">
@@ -497,7 +498,7 @@ export function InventoryPage(): React.JSX.Element {
               Receive Stock
             </Button>
           </div>
-          <div className="flex-1 overflow-auto">
+          <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
             <StockBatchesTable
               batches={filteredBatches}
               onEdit={handleBatchEdit}
@@ -561,10 +562,16 @@ export function InventoryPage(): React.JSX.Element {
           </DialogHeader>
           {importResult && (
             <div className="space-y-3">
-              <p className="text-sm text-green-700 font-medium">
-                {importResult.imported} product{importResult.imported !== 1 ? 's' : ''} imported
-                successfully.
-              </p>
+              {importResult.imported === 0 ? (
+                <p className="text-sm text-destructive font-medium">
+                  No products were imported.
+                </p>
+              ) : (
+                <p className="text-sm text-green-700 font-medium">
+                  {importResult.imported} product{importResult.imported !== 1 ? 's' : ''} imported
+                  successfully.
+                </p>
+              )}
               {importResult.errors.length > 0 && (
                 <div>
                   <p className="text-sm font-medium text-destructive mb-1">

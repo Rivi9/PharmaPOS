@@ -173,7 +173,7 @@ export function ProductEntry({
               autoComplete="off"
             />
             {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border rounded-lg shadow-lg overflow-hidden">
+              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border rounded-lg shadow-lg max-h-72 overflow-y-auto">
                 {suggestions.map((product) => {
                   const outOfStock = !product.total_stock || product.total_stock === 0
                   return (

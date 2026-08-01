@@ -47,6 +47,7 @@ export function SettingsPage(): React.JSX.Element {
   const { user } = useAuthStore()
   const [localSettings, setLocalSettings] = useState(settings)
   const [saving, setSaving] = useState(false)
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
 
   // Pole display state
   const [availablePorts, setAvailablePorts] = useState<PortInfo[]>([])
@@ -85,18 +86,50 @@ export function SettingsPage(): React.JSX.Element {
     setLocalSettings(settings)
   }, [settings])
 
+  /**
+   * Validate the business settings that feed money calculations. A bad VAT rate
+   * or empty currency symbol corrupts every total and receipt in the session,
+   * so these are blocked at save time rather than silently corrected.
+   */
+  const validateSettings = (draft: typeof localSettings): Record<string, string> => {
+    const errors: Record<string, string> = {}
+
+    const vat = parseFloat(draft.vat_rate)
+    if (draft.vat_rate.trim() === '' || Number.isNaN(vat)) {
+      errors.vat_rate = 'Enter a VAT rate between 0 and 100'
+    } else if (vat < 0 || vat > 100) {
+      errors.vat_rate = 'VAT rate must be between 0 and 100'
+    }
+
+    const symbol = draft.currency_symbol.trim()
+    if (symbol.length === 0) {
+      errors.currency_symbol = 'Currency symbol is required'
+    } else if (symbol.length > 5) {
+      errors.currency_symbol = 'Currency symbol must be 5 characters or fewer'
+    }
+
+    return errors
+  }
+
   const handleSave = async (): Promise<void> => {
+    const errors = validateSettings(localSettings)
+    setFieldErrors(errors)
+    if (Object.keys(errors).length > 0) return
+
+    const draft = { ...localSettings, currency_symbol: localSettings.currency_symbol.trim() }
     setSaving(true)
-    for (const [key, value] of Object.entries(localSettings)) {
+    for (const [key, value] of Object.entries(draft)) {
       if (value !== settings[key as keyof typeof settings]) {
         await updateSetting(key as keyof typeof settings, value)
       }
     }
+    setLocalSettings(draft)
     setSaving(false)
   }
 
   const handleChange = (key: string, value: string): void => {
     setLocalSettings((prev) => ({ ...prev, [key]: value }))
+    setFieldErrors((prev) => (prev[key] ? { ...prev, [key]: '' } : prev))
   }
 
   const loadPorts = async (): Promise<void> => {
@@ -346,7 +379,7 @@ export function SettingsPage(): React.JSX.Element {
         <p className="text-muted-foreground">Configure system settings and preferences</p>
       </div>
 
-      <Tabs defaultValue="printer" className="flex-1">
+      <Tabs defaultValue="printer" className="flex-1 min-h-0 flex flex-col">
         <TabsList className="grid w-full grid-cols-5 max-w-3xl">
           <TabsTrigger value="printer">Printer</TabsTrigger>
           <TabsTrigger value="business">Business</TabsTrigger>
@@ -361,11 +394,11 @@ export function SettingsPage(): React.JSX.Element {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="printer" className="space-y-6">
+        <TabsContent value="printer" className="space-y-6 flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
           <PrinterSetupWizard />
         </TabsContent>
 
-        <TabsContent value="business" className="space-y-6">
+        <TabsContent value="business" className="space-y-6 flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
           <div className="max-w-2xl">
             <div className="flex items-center justify-end mb-4">
               <Button onClick={handleSave} disabled={saving}>
@@ -417,10 +450,18 @@ export function SettingsPage(): React.JSX.Element {
                   <label className="text-sm font-medium">VAT Rate (%)</label>
                   <Input
                     type="number"
+                    inputMode="decimal"
+                    min="0"
+                    max="100"
+                    step="0.01"
                     value={localSettings.vat_rate}
                     onChange={(e) => handleChange('vat_rate', e.target.value)}
                     placeholder="0"
+                    aria-invalid={Boolean(fieldErrors.vat_rate)}
                   />
+                  {fieldErrors.vat_rate && (
+                    <p className="text-sm text-destructive mt-1">{fieldErrors.vat_rate}</p>
+                  )}
                 </div>
                 <div>
                   <label className="text-sm font-medium">Currency Symbol</label>
@@ -428,7 +469,12 @@ export function SettingsPage(): React.JSX.Element {
                     value={localSettings.currency_symbol}
                     onChange={(e) => handleChange('currency_symbol', e.target.value)}
                     placeholder="Rs."
+                    maxLength={5}
+                    aria-invalid={Boolean(fieldErrors.currency_symbol)}
                   />
+                  {fieldErrors.currency_symbol && (
+                    <p className="text-sm text-destructive mt-1">{fieldErrors.currency_symbol}</p>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -453,7 +499,7 @@ export function SettingsPage(): React.JSX.Element {
         </TabsContent>
 
         {/* ── Pole Display Tab ───────────────────────────────────────────── */}
-        <TabsContent value="display" className="space-y-6">
+        <TabsContent value="display" className="space-y-6 flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
           <div className="max-w-xl">
             <Card>
               <CardHeader>
@@ -575,7 +621,7 @@ export function SettingsPage(): React.JSX.Element {
         </TabsContent>
 
         {/* ── Backup Tab ───────────────────────────────────────────── */}
-        <TabsContent value="backup" className="space-y-6">
+        <TabsContent value="backup" className="space-y-6 flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
           <div className="max-w-2xl">
             {/* Manual Backup */}
             <Card>
@@ -740,7 +786,7 @@ export function SettingsPage(): React.JSX.Element {
         </TabsContent>
 
         {/* ── AI Tab ───────────────────────────────────────────── */}
-        <TabsContent value="ai" className="space-y-6">
+        <TabsContent value="ai" className="space-y-6 flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
           <div className="max-w-xl">
             <Card>
               <CardHeader>

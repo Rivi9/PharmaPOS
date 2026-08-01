@@ -20,6 +20,7 @@ export function POSPage(): React.JSX.Element {
   } | null>(null)
   const [searchModalOpen, setSearchModalOpen] = useState(false)
   const [quickItemsRefreshKey, setQuickItemsRefreshKey] = useState(0)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
 
   // Sync cart state to customer display window
   useCustomerDisplay()
@@ -27,7 +28,6 @@ export function POSPage(): React.JSX.Element {
   const items = usePOSStore((state) => state.items)
   const holdCurrentSale = usePOSStore((state) => state.holdCurrentSale)
   const recallHeldSale = usePOSStore((state) => state.recallHeldSale)
-  const clearCart = usePOSStore((state) => state.clearCart)
   const heldSale = usePOSStore((state) => state.heldSale)
   const todaySalesTotal = useShiftStore((s) => s.todaySalesTotal)
   const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
@@ -55,7 +55,8 @@ export function POSPage(): React.JSX.Element {
     onF2: () => setSearchModalOpen(true),
     onF4: () => items.length > 0 && holdCurrentSale(),
     onF5: () => heldSale !== null && recallHeldSale(),
-    onF8: () => items.length > 0 && clearCart(),
+    // F8 goes through the same confirmation dialog as the Clear button
+    onF8: () => items.length > 0 && setClearConfirmOpen(true),
     onF9: handlePayment,
     onEscape: () => {
       if (searchModalOpen) setSearchModalOpen(false)
@@ -102,7 +103,11 @@ export function POSPage(): React.JSX.Element {
         {/* Right Side - Shopping Cart */}
         <div className="flex-1 flex flex-col p-4 min-h-0">
           <h2 className="text-sm font-semibold mb-2">Shopping Cart</h2>
-          <ShoppingCart onPayment={() => setPaymentModalOpen(true)} />
+          <ShoppingCart
+            onPayment={() => setPaymentModalOpen(true)}
+            clearConfirmOpen={clearConfirmOpen}
+            onClearConfirmOpenChange={setClearConfirmOpen}
+          />
         </div>
       </div>
 

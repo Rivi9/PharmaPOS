@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { LogIn } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { CashNumpad } from '@renderer/components/ui/cash-numpad'
@@ -15,6 +15,13 @@ import { formatCurrency } from '@renderer/lib/calculations'
 export function StartShiftModal(): React.JSX.Element {
   const [openingCash, setOpeningCash] = useState('')
   const [loading, setLoading] = useState(false)
+  const [now, setNow] = useState(() => new Date())
+
+  // The POS sits idle on this screen between shifts — tick so the clock stays honest.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
 
   const user = useAuthStore((s) => s.user)
   const setCurrentShift = useShiftStore((s) => s.setCurrentShift)
@@ -36,7 +43,6 @@ export function StartShiftModal(): React.JSX.Element {
     }
   }
 
-  const now = new Date()
   const dateStr = now.toLocaleDateString('en-US', {
     weekday: 'long',
     year: 'numeric',

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from '@renderer/components/ui/button'
 import { Delete, CornerDownLeft } from 'lucide-react'
 
@@ -10,47 +10,60 @@ interface PinPadProps {
 export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Element {
   const [pin, setPin] = useState('')
 
-  const handleNumber = (num: string): void => {
-    if (pin.length < maxLength) {
-      setPin((prev) => prev + num)
-    }
-  }
+  // Refs mirror the latest values so the keydown listener can be registered once.
+  // Re-registering it on every digit tears the listener down mid-keystroke and
+  // silently drops keys typed during the gap.
+  const pinRef = useRef(pin)
+  const maxLengthRef = useRef(maxLength)
+  const onSubmitRef = useRef(onSubmit)
+  useEffect(() => {
+    maxLengthRef.current = maxLength
+  }, [maxLength])
+  useEffect(() => {
+    onSubmitRef.current = onSubmit
+  }, [onSubmit])
 
-  const handleDelete = (): void => {
-    setPin((prev) => prev.slice(0, -1))
-  }
+  /** Update the ref synchronously (before re-render) and the state together. */
+  const applyPin = useCallback((next: string): void => {
+    pinRef.current = next
+    setPin(next)
+  }, [])
 
-  const handleClear = (): void => {
-    setPin('')
-  }
+  const handleNumber = useCallback(
+    (num: string): void => {
+      if (pinRef.current.length < maxLengthRef.current) applyPin(pinRef.current + num)
+    },
+    [applyPin]
+  )
 
-  const handleSubmit = (): void => {
-    if (pin.length > 0) {
-      onSubmit(pin)
-      setPin('')
-    }
-  }
+  const handleDelete = useCallback((): void => {
+    applyPin(pinRef.current.slice(0, -1))
+  }, [applyPin])
 
-  // Add keyboard support
+  const handleClear = useCallback((): void => {
+    applyPin('')
+  }, [applyPin])
+
+  const handleSubmit = useCallback((): void => {
+    const current = pinRef.current
+    if (current.length === 0) return
+    applyPin('')
+    onSubmitRef.current(current)
+  }, [applyPin])
+
+  // Keyboard support — registered once on mount
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent): void => {
-      // Handle number keys (0-9)
       if (e.key >= '0' && e.key <= '9') {
         e.preventDefault()
         handleNumber(e.key)
-      }
-      // Handle backspace/delete
-      else if (e.key === 'Backspace' || e.key === 'Delete') {
+      } else if (e.key === 'Backspace' || e.key === 'Delete') {
         e.preventDefault()
         handleDelete()
-      }
-      // Handle enter to submit
-      else if (e.key === 'Enter') {
+      } else if (e.key === 'Enter') {
         e.preventDefault()
         handleSubmit()
-      }
-      // Handle escape to clear
-      else if (e.key === 'Escape') {
+      } else if (e.key === 'Escape') {
         e.preventDefault()
         handleClear()
       }
@@ -58,10 +71,10 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [pin, maxLength, onSubmit])
+  }, [handleNumber, handleDelete, handleClear, handleSubmit])
 
   return (
-    <div className="flex flex-col items-center gap-4">
+    <div className="flex flex-col items-center gap-4 select-none">
       {/* PIN Display */}
       <div className="flex gap-2 mb-2">
         {Array.from({ length: maxLength }).map((_, i) => (
@@ -80,30 +93,30 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
             key={num}
             variant="outline"
             size="lg"
-            className="w-14 h-14 text-xl font-semibold"
+            className="w-16 h-16 text-xl font-semibold"
             onClick={() => handleNumber(num)}
           >
             {num}
           </Button>
         ))}
-        <Button variant="outline" size="lg" className="w-14 h-14" onClick={handleClear}>
+        <Button variant="outline" size="lg" className="w-16 h-16" onClick={handleClear}>
           C
         </Button>
         <Button
           variant="outline"
           size="lg"
-          className="w-14 h-14 text-xl font-semibold"
+          className="w-16 h-16 text-xl font-semibold"
           onClick={() => handleNumber('0')}
         >
           0
         </Button>
-        <Button variant="outline" size="lg" className="w-14 h-14" onClick={handleDelete}>
+        <Button variant="outline" size="lg" className="w-16 h-16" onClick={handleDelete}>
           <Delete className="w-5 h-5" />
         </Button>
       </div>
 
       {/* Submit */}
-      <Button className="w-full mt-2" size="lg" onClick={handleSubmit} disabled={pin.length === 0}>
+      <Button className="w-full mt-2 h-12" size="lg" onClick={handleSubmit} disabled={pin.length === 0}>
         <CornerDownLeft className="w-4 h-4 mr-2" />
         Login
       </Button>

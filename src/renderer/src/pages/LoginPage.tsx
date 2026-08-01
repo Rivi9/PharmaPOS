@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -36,6 +36,7 @@ export function LoginPage(): React.JSX.Element {
   const [firstRunCreds, setFirstRunCreds] = useState<{ pin: string; password: string } | null>(
     null
   )
+  const bootstrapAttempted = useRef(false)
 
   const login = useAuthStore((state) => state.login)
   const setCurrentShift = useShiftStore((state) => state.setCurrentShift)
@@ -50,13 +51,20 @@ export function LoginPage(): React.JSX.Element {
       const userList = await window.electron.getUsers()
       setUsers(userList)
 
-      // If no users, we need to create admin
-      if (userList.length === 0) {
+      // First run: bootstrap the admin account. The ref guard means a failed
+      // creation surfaces an error instead of re-entering loadUsers forever.
+      if (userList.length === 0 && !bootstrapAttempted.current) {
+        bootstrapAttempted.current = true
         await createDefaultAdmin()
-        loadUsers()
+        const afterCreate = await window.electron.getUsers()
+        setUsers(afterCreate)
+        if (afterCreate.length === 0) {
+          setError('Could not create the default admin account. Please restart the application.')
+        }
       }
     } catch (err) {
       console.error('Failed to load users:', err)
+      setError('Failed to load users. Please restart the application.')
     } finally {
       setLoading(false)
     }
@@ -160,6 +168,7 @@ export function LoginPage(): React.JSX.Element {
           {!selectedUser ? (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground text-center mb-4">Select user to login</p>
+              {error && <p className="text-sm text-destructive text-center">{error}</p>}
               {users.map((user) => (
                 <Button
                   key={user.id}
@@ -191,6 +200,7 @@ export function LoginPage(): React.JSX.Element {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handlePasswordSubmit()}
+                    className="h-12 text-base"
                   />
                   <Button className="w-full" onClick={handlePasswordSubmit}>
                     Login
@@ -201,10 +211,14 @@ export function LoginPage(): React.JSX.Element {
               )}
 
               <div className="flex justify-between pt-2">
-                <Button variant="ghost" size="sm" onClick={() => setSelectedUser(null)}>
+                <Button variant="ghost" className="h-12" onClick={() => setSelectedUser(null)}>
                   Back
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => setUsePassword(!usePassword)}>
+                <Button
+                  variant="ghost"
+                  className="h-12"
+                  onClick={() => setUsePassword(!usePassword)}
+                >
                   {usePassword ? 'Use PIN' : 'Use Password'}
                 </Button>
               </div>

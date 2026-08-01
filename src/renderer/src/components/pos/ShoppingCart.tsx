@@ -7,9 +7,16 @@ import { CartActions } from './CartActions'
 
 interface ShoppingCartProps {
   onPayment: () => void
+  /** Lets the F8 shortcut open the same clear-confirmation dialog as the Clear button. */
+  clearConfirmOpen?: boolean
+  onClearConfirmOpenChange?: (open: boolean) => void
 }
 
-export function ShoppingCart({ onPayment }: ShoppingCartProps): React.JSX.Element {
+export function ShoppingCart({
+  onPayment,
+  clearConfirmOpen,
+  onClearConfirmOpenChange
+}: ShoppingCartProps): React.JSX.Element {
   const items = usePOSStore((state) => state.items)
   const heldSale = usePOSStore((state) => state.heldSale)
   const updateQuantity = usePOSStore((state) => state.updateQuantity)
@@ -44,7 +51,7 @@ export function ShoppingCart({ onPayment }: ShoppingCartProps): React.JSX.Elemen
           <div>
             {items.map((item, index) => (
               <CartItem
-                key={`${item.product.id}-${index}`}
+                key={item.product.id}
                 item={item}
                 index={index}
                 onUpdateQuantity={updateQuantity}
@@ -74,6 +81,8 @@ export function ShoppingCart({ onPayment }: ShoppingCartProps): React.JSX.Elemen
           onRecall={recallHeldSale}
           onClear={clearCart}
           onPayment={onPayment}
+          clearConfirmOpen={clearConfirmOpen}
+          onClearConfirmOpenChange={onClearConfirmOpenChange}
         />
       </div>
     </div>

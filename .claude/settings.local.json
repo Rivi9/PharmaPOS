@@ -9,7 +9,9 @@
       "Bash(npm install:*)",
       "Bash(npm:*)",
       "mcp__plugin_playwright_playwright__browser_navigate",
-      "mcp__plugin_playwright_playwright__browser_install"
+      "mcp__plugin_playwright_playwright__browser_install",
+      "Bash(npx eslint *)",
+      "Bash(node -e ' *)"
     ]
   }
 }

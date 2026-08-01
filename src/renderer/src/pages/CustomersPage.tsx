@@ -60,8 +60,14 @@ export function CustomersPage(): React.JSX.Element {
   }, [loadCustomers])
 
   const loadHistory = async (customerId: string) => {
-    const data = await window.electron.customers.purchaseHistory(customerId)
-    setHistory(data)
+    try {
+      const data = await window.electron.customers.purchaseHistory(customerId)
+      setHistory(data ?? [])
+    } catch {
+      // Fall back to an empty history so the panel shows "No purchases yet"
+      // rather than sitting on "Loading..." forever.
+      setHistory([])
+    }
   }
 
   const handleSelect = (customer: Customer) => {
@@ -167,7 +173,7 @@ export function CustomersPage(): React.JSX.Element {
               <button
                 key={c.id}
                 onClick={() => handleSelect(c)}
-                className={`w-full text-left px-4 py-3 border-b hover:bg-muted/50 transition-colors ${selected?.id === c.id ? 'bg-primary/10 border-l-2 border-l-primary' : ''}`}
+                className={`w-full text-left px-4 py-3 border-b touch-manipulation hover:bg-muted/50 active:bg-muted/70 transition-colors ${selected?.id === c.id ? 'bg-primary/10 border-l-2 border-l-primary' : ''}`}
               >
                 <div className="font-medium">{c.name}</div>
                 <div className="text-sm text-muted-foreground flex items-center gap-3 mt-0.5">

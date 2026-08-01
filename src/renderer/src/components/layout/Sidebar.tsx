@@ -34,7 +34,7 @@ const NAV_ITEMS = [
   { id: 'users', label: 'Users', icon: UserCog, permission: 'users:view' as Permission },
   {
     id: 'audit',
-    label: 'Audit Log',
+    label: 'Audit',
     icon: ClipboardList,
     permission: 'reports:view' as Permission
   },
@@ -54,23 +54,23 @@ function NavButton({ item, active, onClick }: NavButtonProps): React.JSX.Element
   return (
     <button
       onClick={onClick}
+      style={{ touchAction: 'manipulation' }}
       className={cn(
-        'w-12 h-12 rounded-lg flex flex-col items-center justify-center gap-1 transition-colors',
+        'w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 px-1 select-none transition-colors',
         active
           ? 'bg-primary text-primary-foreground'
-          : 'hover:bg-accent text-muted-foreground hover:text-foreground'
+          : 'text-muted-foreground hover:bg-accent hover:text-foreground active:bg-accent active:text-foreground'
       )}
-      title={item.label}
     >
-      <item.icon className="w-5 h-5" />
-      <span className="text-[10px] font-medium">{item.label.slice(0, 3)}</span>
+      <item.icon className="w-5 h-5 shrink-0" />
+      <span className="text-[10px] font-medium leading-none">{item.label}</span>
     </button>
   )
 }
 
 export function Sidebar({ currentPage, onNavigate }: SidebarProps): React.JSX.Element {
   return (
-    <aside className="w-16 bg-muted border-r flex flex-col items-center py-4 gap-2">
+    <aside className="w-20 shrink-0 bg-muted border-r flex flex-col items-center py-4 gap-2">
       {NAV_ITEMS.map((item) => (
         <NavButton
           key={item.id}

@@ -1,6 +1,6 @@
 # PharmaPOS QA Report
 
-**Date:** 2026-03-11 (updated with touchscreen pass)
+**Date:** 2026-03-11 (originally raised) · last updated 2026-08-01 after session 5
 **Reviewed by:** Code review (source-level analysis)
 **Environment:** Windows 10 POS touchscreen + customer pole display
 
@@ -8,16 +8,32 @@
 
 ## Summary
 
-| Severity | Count |
-|----------|-------|
-| 🔴 Critical | 4 |
-| 🟠 High | 10 |
-| 🟡 Medium | 13 |
-| ⚪ Low | 12 |
-| 📱 Touch-specific | 12 (5 High, 7 Medium) |
-| **Total** | **49** |
+| Severity | Raised | Fixed | Open |
+|----------|-------|-------|------|
+| 🔴 Critical | 4 | 4 | 0 |
+| 🟠 High | 10 | 10 | 0 |
+| 🟡 Medium | 13 | 11 | 2 |
+| ⚪ Low | 12 | 9 | 3 |
+| 📱 Touch-specific | 12 | 12 | 0 |
+| **Total** | **51** | **46** | **5** |
+
+### Still open
+
+All five remaining items are feature/polish work — no known correctness bugs remain.
+
+| # | File | Issue |
+|---|------|-------|
+| M9 | `AuditLogPage.tsx` | Only an action filter — no date-range or user filter for compliance review |
+| M13 | `ShoppingCart.tsx` | `applySaleDiscount` exists in the store but has no UI entry point |
+| L3 | `SearchModal.tsx` | No "in-stock only" toggle; zero-stock results clutter the list |
+| L4 | `AnalyticsPage.tsx` | Dashboard data goes stale after sales — manual Refresh only |
+| L7 | `ReceiptPreview.tsx` | Receipt width constant `W = 42` duplicated from the formatter |
 
 ---
+
+> **Note:** the sections below are the **original findings as first raised**, kept as a historical
+> record. Most are now resolved — see the per-session "Fixed" tables at the end of this document,
+> and the "Still open" table above for what actually remains.
 
 ## 🔴 Critical
 
@@ -489,6 +505,59 @@ No `max-h-*` is set. With 6 suggestions and each row ~48px, the dropdown is ~288
 | T10 | App-wide | Medium | `hover:` states unused on touch — no visual tap feedback anywhere |
 | T11 | `MainLayout.tsx` | High | `overflow-auto` on `main` conflicts with inner scroll areas |
 | T12 | `ProductEntry.tsx` | Medium | Dropdown has no `max-h` — bottom suggestions unreachable on small screen |
+
+---
+
+## Fixed (2026-08-01, session 5) — all 12 touch issues + remaining Medium/Low bugs
+
+### Base UI components (fixes the majority of touch findings at the source)
+
+| Issue | Fix |
+|-------|-----|
+| T7, T10 — no press feedback or double-tap suppression anywhere | `ui/button.tsx`: added `touch-manipulation select-none` to the base class and paired an `active:` state with every `hover:` variant. Fixes press feedback app-wide in one place instead of per call site. |
+| T2, T3, T9 — undersized touch targets | `ui/button.tsx`: size variants raised to the 44px floor — `default` h-9→h-11, `sm` h-8→h-10, `lg` h-10→h-12, `icon` h-9→h-11 w-11. `cn()` uses `tailwind-merge`, so call sites with an explicit height still win. |
+| T4 — inputs render at ~36px | `ui/input.tsx`: base height h-9→h-11 plus `touch-manipulation`. |
+| T9 — destructive confirm buttons at 40px | `ui/alert-dialog.tsx`: `AlertDialogAction`/`Cancel` h-10→h-12, `text-sm`→`text-base`, added `active:` + `touch-manipulation select-none`. |
+
+### Touch-specific
+
+| Issue | Fix |
+|-------|-----|
+| T1, M1, L9 — sidebar 48px, 3-char labels, no tap feedback, `title` invisible on touch | `Sidebar.tsx`: buttons 48→64px, aside `w-16`→`w-20`, full labels replace `label.slice(0, 3)` (and the `title` tooltip they depended on), `active:` press state added, "Audit Log"→"Audit" so it fits one line. |
+| T2 — End Shift below touch minimum | `Header.tsx`: explicit `h-11` on the End Shift button (a critical action) plus an `active:` state. |
+| T3, T4 — login controls at 36px | `LoginPage.tsx`: Back / Use-PIN buttons `size="sm"`→`className="h-12"`; password input given `h-12 text-base` to match every other input. |
+| T5 — PinPad dropped digits on fast input | `PinPad.tsx`: rewritten to register the keydown listener **once**, mirroring the ref pattern already used in `cash-numpad.tsx`. `pinRef` is updated synchronously inside the handler (not via a sync effect) so a fast `1234`+Enter can't read a stale PIN. Keys also enlarged to 64px. |
+| T6 — Notes input 40px | `EndShiftModal.tsx`: `h-10`→`h-12`. |
+| T7 — numpad long-press text selection | `cash-numpad.tsx` + `PinPad.tsx`: `select-none` on the grid containers. |
+| T8 — wrong soft keyboard on numeric fields | `PaymentModal.tsx`: `inputMode="decimal"` on cash + card amounts, `type="tel" inputMode="tel"` on customer phone. |
+| T10 — `hover:`-only rows across the app | Added matching `active:` states to interactive rows in `ProductsTable`, `CategoriesTable`, `SuppliersTable`, `StockBatchesTable`, `AuditLogPage`, `CustomersPage`, plus `CartItem` remove and `CartActions` destructive buttons. |
+| T11 — `main` scroll competed with inner scroll areas | `MainLayout.tsx`: `main` → `overflow-hidden` so chrome never scrolls. **Each page then had to opt in**, since Settings/Analytics/Users previously relied on `main` to scroll: added `flex-1 min-h-0 overflow-y-auto overscroll-contain` scroll regions to `SettingsPage` (5 tabs), `AnalyticsPage` (4 tabs) and `UsersPage`, and the missing `min-h-0` to `InventoryPage`/`AuditLogPage` — without it `flex-1 overflow-auto` silently never engages. |
+| T12 — dropdown ran off-screen | `ProductEntry.tsx`: `max-h-72 overflow-y-auto` on the suggestion list. |
+
+### Medium
+
+| Issue | Fix |
+|-------|-----|
+| M2 — quantity silently clamped to stock | `CartItem.tsx`: shows a transient "Only X in stock" notice (auto-clears after 2.5s) when the typed quantity exceeds available stock. |
+| M3 — cart key used the array index | `ShoppingCart.tsx`: `key={item.product.id}` — safe because `addItem` stacks by product id, so ids are unique per cart. |
+| M4, M5 — no VAT / currency validation | `SettingsPage.tsx`: added `validateSettings()` blocking save on a VAT rate outside 0–100 or non-numeric, and on an empty or >5-char currency symbol; errors render inline per field and clear on edit. The symbol is trimmed before persisting; the VAT input gained `min`/`max`/`step`. Validation at save (not silent clamping) matches the M2 lesson. |
+| M6 — default-admin creation could recurse forever | `LoginPage.tsx`: a `bootstrapAttempted` ref guards the first-run path, the reload is awaited instead of re-entering `loadUsers`, and a failure now surfaces an error (also rendered on the user-select screen, where it previously could not appear). |
+| M7 — start-shift clock never ticked | `StartShiftModal.tsx`: `now` moved into state with a 30s interval. |
+| M8 — end-shift fields persisted between opens | `EndShiftModal.tsx`: effect resets `closingCash` / `notes` when the dialog opens, so a cancelled count can't be submitted against a later shift. |
+| M11 — purchase history stuck on "Loading..." | `CustomersPage.tsx`: `loadHistory` wrapped in try/catch, falling back to `[]` so the panel shows "No purchases yet". |
+| M12 — stale batches after product delete | `InventoryPage.tsx`: `handleProductDelete` now reloads products **and** stock batches. |
+
+### Low
+
+| Issue | Fix |
+|-------|-----|
+| L1 — F8 cleared the cart with no confirmation | Routed F8 through the same dialog as the Clear button. `CartActions` now accepts optional `clearConfirmOpen`/`onClearConfirmOpenChange` (controlled-with-uncontrolled-fallback, the pattern `ProductEntry` already uses for `searchOpen`), threaded via `ShoppingCart` from `POSPage`. A first attempt used a counter prop + effect; ESLint's `react-hooks/set-state-in-effect` correctly flagged that as an antipattern and it was redesigned. |
+| L5 — End Shift label hidden below `sm:` | `Header.tsx`: label always visible — the POS runs at a fixed size, so hiding it only risked an icon-only destructive button. |
+| L6 — "0 products imported successfully" | `InventoryPage.tsx`: shows "No products were imported." in the destructive colour when the count is zero. |
+| L8 — no combined total at end of shift | `EndShiftModal.tsx`: added a "Total Sales" tile (from `shiftStore.todaySalesTotal`, which covers all payment methods) alongside Cash Sales; summary grid re-laid out 3→2 columns × 4 tiles. |
+| L9, L10 | Covered by the Sidebar full-label change and the Total Sales tile above. |
+
+**Verification:** `npm run typecheck` clean (node + web); `eslint` shows **zero net new errors** repo-wide against a stashed baseline (234 pre-existing errors, mostly `explicit-function-return-type`/`no-explicit-any`, left untouched); renderer bundles successfully via `vite build`. Not yet exercised on the physical touchscreen.
 
 ---
 

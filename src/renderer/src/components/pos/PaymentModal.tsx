@@ -268,6 +268,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
               <Input
                 id="cash-received"
                 type="number"
+                inputMode="decimal"
                 step="0.01"
                 value={cashReceived}
                 onChange={(e) => updateCash(e.target.value)}
@@ -327,6 +328,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
               <Label className="text-base">Card Amount (auto)</Label>
               <Input
                 type="number"
+                inputMode="decimal"
                 step="0.01"
                 value={cardAmount}
                 onChange={(e) => setCardAmount(e.target.value)}
@@ -340,6 +342,8 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
           <div className="space-y-3 border-t pt-3">
             <Label className="text-muted-foreground">Customer (Optional)</Label>
             <Input
+              type="tel"
+              inputMode="tel"
               placeholder="Phone number"
               value={customerPhone}
               onChange={(e) => setCustomerPhone(e.target.value)}

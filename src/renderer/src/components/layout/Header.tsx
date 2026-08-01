@@ -54,13 +54,12 @@ export function Header({ user, onEndShift, onSettings }: HeaderProps): React.JSX
         {currentShift && (
           <Button
             variant="outline"
-            size="sm"
-            className="text-destructive border-destructive/30 hover:bg-destructive/5 gap-1.5"
+            className="h-11 text-destructive border-destructive/30 hover:bg-destructive/5 active:bg-destructive/10 gap-1.5"
             onClick={onEndShift}
             title="End Shift & Logout"
           >
             <LogOut className="h-4 w-4" />
-            <span className="hidden sm:inline">End Shift</span>
+            <span>End Shift</span>
           </Button>
         )}
       </div>

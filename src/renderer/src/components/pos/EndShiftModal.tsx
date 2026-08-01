@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { LogOut, Clock, ShoppingBag, Banknote } from 'lucide-react'
+import { LogOut, Clock, ShoppingBag, Banknote, Receipt } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
 import { Label } from '@renderer/components/ui/label'
@@ -49,10 +49,19 @@ export function EndShiftModal({
 
   const currentShift = useShiftStore((s) => s.currentShift)
   const setCurrentShift = useShiftStore((s) => s.setCurrentShift)
+  const todaySalesTotal = useShiftStore((s) => s.todaySalesTotal)
   const logout = useAuthStore((s) => s.logout)
   const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
 
   const openingCash = (currentShift as any)?.opening_cash ?? 0
+
+  // Reset the entry fields each time the dialog opens so a previous (cancelled)
+  // count can never be submitted against a later shift.
+  useEffect(() => {
+    if (!open) return
+    setClosingCash('')
+    setNotes('')
+  }, [open])
 
   useEffect(() => {
     if (!open || !currentShift) return
@@ -106,11 +115,18 @@ export function EndShiftModal({
 
         <div className="space-y-5">
           {/* Shift summary */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div className="border rounded-lg p-3 text-center space-y-1">
               <Clock className="h-4 w-4 mx-auto text-muted-foreground" />
               <p className="text-xs text-muted-foreground">Duration</p>
               <p className="text-base font-bold">{formatDuration(currentShift.started_at)}</p>
+            </div>
+            <div className="border rounded-lg p-3 text-center space-y-1">
+              <Receipt className="h-4 w-4 mx-auto text-muted-foreground" />
+              <p className="text-xs text-muted-foreground">Total Sales</p>
+              <p className="text-base font-bold">
+                {formatCurrency(todaySalesTotal, currencySymbol)}
+              </p>
             </div>
             <div className="border rounded-lg p-3 text-center space-y-1">
               <ShoppingBag className="h-4 w-4 mx-auto text-muted-foreground" />
@@ -189,7 +205,7 @@ export function EndShiftModal({
               placeholder="Any notes for this shift…"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="h-10"
+              className="h-12"
             />
           </div>
 

@@ -19,6 +19,9 @@ interface CartActionsProps {
   onRecall: () => void
   onClear: () => void
   onPayment: () => void
+  /** Optionally control the clear-confirmation dialog so the F8 shortcut can open it too. */
+  clearConfirmOpen?: boolean
+  onClearConfirmOpenChange?: (open: boolean) => void
 }
 
 export function CartActions({
@@ -27,10 +30,18 @@ export function CartActions({
   onHold,
   onRecall,
   onClear,
-  onPayment
+  onPayment,
+  clearConfirmOpen: externalClearConfirmOpen,
+  onClearConfirmOpenChange
 }: CartActionsProps): React.JSX.Element {
-  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
+  const [internalClearConfirmOpen, setInternalClearConfirmOpen] = useState(false)
   const [recallConfirmOpen, setRecallConfirmOpen] = useState(false)
+
+  // Controlled when the parent supplies state (POS page, so F8 opens the same
+  // dialog), otherwise self-managed.
+  const clearConfirmOpen =
+    externalClearConfirmOpen !== undefined ? externalClearConfirmOpen : internalClearConfirmOpen
+  const setClearConfirmOpen = onClearConfirmOpenChange || setInternalClearConfirmOpen
 
   const handleClearClick = () => {
     setClearConfirmOpen(true)
@@ -125,7 +136,7 @@ export function CartActions({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleClearConfirm}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive/80"
             >
               Clear Cart
             </AlertDialogAction>

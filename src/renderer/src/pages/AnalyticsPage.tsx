@@ -83,7 +83,7 @@ export function AnalyticsPage(): React.JSX.Element {
         </Button>
       </div>
 
-      <Tabs defaultValue="dashboard" className="flex-1">
+      <Tabs defaultValue="dashboard" className="flex-1 min-h-0 flex flex-col">
         <TabsList className="grid w-full grid-cols-4 max-w-2xl">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
@@ -91,7 +91,10 @@ export function AnalyticsPage(): React.JSX.Element {
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="dashboard" className="space-y-6">
+        <TabsContent
+          value="dashboard"
+          className="space-y-6 flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1"
+        >
           <KPICards metrics={todayMetrics} isLoading={isLoading} />
 
           <div className="grid gap-6 md:grid-cols-2">
@@ -109,15 +112,15 @@ export function AnalyticsPage(): React.JSX.Element {
           </div>
         </TabsContent>
 
-        <TabsContent value="reports" className="flex-1">
+        <TabsContent value="reports" className="flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
           <ReportsPanel />
         </TabsContent>
 
-        <TabsContent value="ai" className="flex-1">
+        <TabsContent value="ai" className="flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
           <AIInsightsPanel userId={userId} />
         </TabsContent>
 
-        <TabsContent value="alerts" className="flex-1">
+        <TabsContent value="alerts" className="flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
           <AlertsPanel
             lowStockAlerts={lowStockAlerts}
             expiryAlerts={expiryAlerts}

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Minus, Plus, X, AlertTriangle } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -26,9 +27,18 @@ export function CartItem({
   onRemove
 }: CartItemProps): React.JSX.Element {
   const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
+  const [limitNotice, setLimitNotice] = useState('')
   const maxStock =
     item.product.total_stock != null ? Math.max(0, Math.floor(item.product.total_stock)) : undefined
   const isAtStockLimit = maxStock !== undefined && item.quantity >= maxStock
+
+  // The store clamps the quantity to available stock; without this the value just
+  // snaps back and the cashier has no idea why.
+  useEffect(() => {
+    if (!limitNotice) return
+    const timer = setTimeout(() => setLimitNotice(''), 2500)
+    return () => clearTimeout(timer)
+  }, [limitNotice])
 
   const handleQuantityChange = (delta: number) => {
     const newQty = item.quantity + delta
@@ -39,6 +49,7 @@ export function CartItem({
   const handleManualQuantityChange = (value: string) => {
     const qty = parseInt(value, 10)
     if (isNaN(qty) || qty < 1) return
+    setLimitNotice(maxStock !== undefined && qty > maxStock ? `Only ${maxStock} in stock` : '')
     onUpdateQuantity(index, qty)
   }
 
@@ -69,6 +80,9 @@ export function CartItem({
             }
             return null
           })()}
+        {limitNotice && (
+          <p className="text-sm text-amber-600 mt-0.5 font-medium">{limitNotice}</p>
+        )}
       </div>
 
       {/* Quantity Controls */}
@@ -110,7 +124,7 @@ export function CartItem({
       <Button
         size="icon"
         variant="ghost"
-        className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10 shrink-0"
+        className="h-11 w-11 text-destructive hover:text-destructive hover:bg-destructive/10 active:bg-destructive/20 shrink-0"
         onClick={() => onRemove(index)}
       >
         <X className="h-4 w-4" />
