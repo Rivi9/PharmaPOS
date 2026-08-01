@@ -20,13 +20,11 @@ import {
   PlugZap,
   Database,
   Clock,
-  Key,
   Trash2,
   Download,
   Upload,
   Play,
-  Square,
-  CheckCircle2
+  Square
 } from 'lucide-react'
 
 interface PortInfo {
@@ -72,11 +70,6 @@ export function SettingsPage(): React.JSX.Element {
     running: false
   })
 
-  // AI state
-  const [geminiKey, setGeminiKey] = useState('')
-  const [aiSaving, setAiSaving] = useState(false)
-  const [aiMsg, setAiMsg] = useState('')
-  const [geminiConfigured, setGeminiConfigured] = useState(false)
 
   useEffect(() => {
     loadSettings()
@@ -309,60 +302,6 @@ export function SettingsPage(): React.JSX.Element {
     }
   }
 
-  // AI functions
-  const loadGeminiConfig = async (): Promise<void> => {
-    try {
-      const apiKey = await window.electron.getSetting('gemini_api_key')
-      if (apiKey && (apiKey as string).length > 0) {
-        setGeminiConfigured(true)
-        setGeminiKey('••••••••••••••••') // Masked
-      } else {
-        setGeminiConfigured(false)
-        setGeminiKey('')
-      }
-    } catch (err) {
-      console.warn('Failed to load Gemini config:', err)
-    }
-  }
-
-  const handleAiTabOpen = (): void => {
-    loadGeminiConfig()
-  }
-
-  const handleSaveGeminiKey = async (): Promise<void> => {
-    if (!geminiKey || geminiKey === '••••••••••••••••') {
-      setAiMsg('Please enter a valid API key')
-      return
-    }
-    setAiSaving(true)
-    setAiMsg('')
-    try {
-      await window.electron.setSetting('gemini_api_key', geminiKey)
-      setAiMsg('Gemini API key saved successfully')
-      setGeminiConfigured(true)
-      setGeminiKey('••••••••••••••••') // Mask after save
-    } catch (err: any) {
-      setAiMsg(`Error: ${err.message}`)
-    } finally {
-      setAiSaving(false)
-    }
-  }
-
-  const handleClearGeminiKey = async (): Promise<void> => {
-    if (!confirm('Clear the Gemini API key? AI features will be disabled.')) return
-    setAiSaving(true)
-    setAiMsg('')
-    try {
-      await window.electron.setSetting('gemini_api_key', '')
-      setAiMsg('Gemini API key cleared')
-      setGeminiConfigured(false)
-      setGeminiKey('')
-    } catch (err: any) {
-      setAiMsg(`Error: ${err.message}`)
-    } finally {
-      setAiSaving(false)
-    }
-  }
 
   if (isLoading) {
     return (
@@ -380,7 +319,7 @@ export function SettingsPage(): React.JSX.Element {
       </div>
 
       <Tabs defaultValue="printer" className="flex-1 min-h-0 flex flex-col">
-        <TabsList className="grid w-full grid-cols-5 max-w-3xl">
+        <TabsList className="grid w-full grid-cols-4 max-w-3xl">
           <TabsTrigger value="printer">Printer</TabsTrigger>
           <TabsTrigger value="business">Business</TabsTrigger>
           <TabsTrigger value="display" onClick={handleDisplayTabOpen}>
@@ -388,9 +327,6 @@ export function SettingsPage(): React.JSX.Element {
           </TabsTrigger>
           <TabsTrigger value="backup" onClick={handleBackupTabOpen}>
             Backup
-          </TabsTrigger>
-          <TabsTrigger value="ai" onClick={handleAiTabOpen}>
-            AI
           </TabsTrigger>
         </TabsList>
 
@@ -786,112 +722,6 @@ export function SettingsPage(): React.JSX.Element {
         </TabsContent>
 
         {/* ── AI Tab ───────────────────────────────────────────── */}
-        <TabsContent value="ai" className="space-y-6 flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
-          <div className="max-w-xl">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Key className="h-5 w-5" />
-                  Gemini AI Configuration
-                </CardTitle>
-                <CardDescription>
-                  Configure Google Gemini API for AI-powered insights and analytics
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5">
-                {/* Status indicator */}
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
-                  {geminiConfigured ? (
-                    <>
-                      <CheckCircle2 className="h-5 w-5 text-green-600" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">AI Features Enabled</p>
-                        <p className="text-xs text-muted-foreground">
-                          Gemini API key is configured and ready to use
-                        </p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-5 h-5 rounded-full border-2 border-muted-foreground" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium">AI Features Disabled</p>
-                        <p className="text-xs text-muted-foreground">
-                          Enter your Gemini API key to enable AI insights
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* API Key input */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Gemini API Key</label>
-                  <Input
-                    type="password"
-                    value={geminiKey}
-                    onChange={(e) => setGeminiKey(e.target.value)}
-                    placeholder="Enter your Google Gemini API key"
-                    disabled={aiSaving}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Get your API key from{' '}
-                    <a
-                      href="https://makersuite.google.com/app/apikey"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="underline hover:text-primary"
-                    >
-                      Google AI Studio
-                    </a>
-                  </p>
-                </div>
-
-                {/* Actions */}
-                <div className="flex gap-2">
-                  <Button
-                    onClick={handleSaveGeminiKey}
-                    disabled={aiSaving || !geminiKey || geminiKey === '••••••••••••••••'}
-                    className="flex items-center gap-2"
-                  >
-                    <Save className="h-4 w-4" />
-                    {aiSaving ? 'Saving...' : 'Save API Key'}
-                  </Button>
-                  {geminiConfigured && (
-                    <Button
-                      variant="outline"
-                      onClick={handleClearGeminiKey}
-                      disabled={aiSaving}
-                      className="flex items-center gap-2"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      Clear Key
-                    </Button>
-                  )}
-                </div>
-
-                {aiMsg && (
-                  <div
-                    className={`p-3 rounded-lg ${aiMsg.startsWith('Error') ? 'bg-destructive/10 text-destructive' : 'bg-green-50 text-green-700'}`}
-                  >
-                    <p className="text-sm font-medium">{aiMsg}</p>
-                  </div>
-                )}
-
-                {/* Features info */}
-                <div className="border-t pt-4 space-y-2">
-                  <p className="text-sm font-medium">AI Features:</p>
-                  <ul className="text-xs text-muted-foreground space-y-1 ml-4">
-                    <li>• Smart reorder suggestions based on sales patterns</li>
-                    <li>• Dead stock detection to identify slow-moving items</li>
-                    <li>• Natural language queries for business insights</li>
-                    <li>• Sales forecasting and demand prediction</li>
-                  </ul>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
       </Tabs>
     </div>
   )

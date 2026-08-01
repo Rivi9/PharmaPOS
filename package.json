@@ -23,7 +23,6 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
-    "@google/generative-ai": "^0.24.1",
     "@hookform/resolvers": "^5.2.2",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-dialog": "^1.1.15",
@@ -41,7 +40,6 @@
     "csv-parse": "^6.1.0",
     "csv-stringify": "^6.6.0",
     "drizzle-orm": "^0.45.1",
-    "usb": "^2.17.0",
     "extract-zip": "^2.0.1",
     "googleapis": "^171.2.0",
     "jspdf": "^4.2.0",
@@ -54,6 +52,7 @@
     "serialport": "^13.0.0",
     "tailwind-merge": "^3.4.0",
     "update-electron-app": "^3.1.2",
+    "usb": "^2.17.0",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
     "zod": "^4.3.6",

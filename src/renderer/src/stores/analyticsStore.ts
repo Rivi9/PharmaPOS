@@ -4,8 +4,7 @@ import type {
   TopProduct,
   CategoryBreakdown,
   LowStockAlert,
-  ExpiryAlert,
-  AIInsight
+  ExpiryAlert
 } from '@renderer/types/analytics'
 
 interface AnalyticsStore {
@@ -34,8 +33,6 @@ interface AnalyticsStore {
   setExpiryAlerts: (alerts: ExpiryAlert[]) => void
 
   // AI Insights
-  aiInsights: AIInsight[]
-  setAIInsights: (insights: AIInsight[]) => void
 }
 
 export const useAnalyticsStore = create<AnalyticsStore>((set) => ({
@@ -64,6 +61,4 @@ export const useAnalyticsStore = create<AnalyticsStore>((set) => ({
   setExpiryAlerts: (alerts) => set({ expiryAlerts: alerts }),
 
   // AI Insights
-  aiInsights: [],
-  setAIInsights: (insights) => set({ aiInsights: insights })
 }))

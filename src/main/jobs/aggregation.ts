@@ -1,5 +1,7 @@
 import * as schedule from 'node-schedule'
-import { aggregateDailySales } from '../services/analytics'
+// Must be the implementation under services/analytics/ — the old services/analytics.ts
+// deleted the day's rows and then threw on non-existent columns, wiping analytics nightly.
+import { aggregateDailySales } from '../services/analytics/aggregation'
 
 /**
  * Initialize daily aggregation job
@@ -8,9 +10,10 @@ import { aggregateDailySales } from '../services/analytics'
 export function initializeAggregationJob(): void {
   // Run daily at 00:05
   schedule.scheduleJob('5 0 * * *', () => {
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    const dateStr = yesterday.toISOString().split('T')[0]
+    // product_sales_daily.date is written in UTC (createSale uses toISOString), so
+    // derive "yesterday" in UTC too. Mixing local getDate() with toISOString() here
+    // skewed the target by a day.
+    const dateStr = new Date(Date.now() - 86_400_000).toISOString().split('T')[0]
 
     console.log(`[Aggregation Job] Running daily aggregation for ${dateStr}`)
     try {

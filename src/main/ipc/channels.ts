@@ -80,11 +80,6 @@ export const IPC_CHANNELS = {
   // Analytics - Aggregation
   ANALYTICS_RUN_AGGREGATION: 'analytics:run-aggregation',
 
-  // AI - Gemini Integration
-  AI_REORDER_SUGGESTIONS: 'ai:reorder-suggestions',
-  AI_SALES_FORECAST: 'ai:sales-forecast',
-  AI_DEAD_STOCK_DETECTION: 'ai:dead-stock-detection',
-  AI_NATURAL_QUERY: 'ai:natural-query',
 
   // Backup - Local
   BACKUP_CREATE: 'backup:create',

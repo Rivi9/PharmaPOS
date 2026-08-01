@@ -52,12 +52,3 @@ export interface ExpiryAlert {
   days_until_expiry: number
 }
 
-export interface AIInsight {
-  id: string
-  type: 'reorder' | 'forecast' | 'dead_stock' | 'trend'
-  title: string
-  description: string
-  confidence: number
-  data: any
-  created_at: string
-}

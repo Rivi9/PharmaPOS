@@ -42,6 +42,14 @@ interface StockBatchFormDialogProps {
   suppliers: Supplier[]
 }
 
+/** Label shown in the combobox. Products may have no SKU, so guard it. */
+function productLabel(product: Product): string {
+  return product.sku ? `${product.name} (${product.sku})` : product.name
+}
+
+/** Cap on rows rendered at once — enough to browse, safe with a large catalogue. */
+const MAX_SUGGESTIONS = 100
+
 export function StockBatchFormDialog({
   open,
   onClose,
@@ -81,7 +89,7 @@ export function StockBatchFormDialog({
       })
       // Pre-fill the search box with the existing product name
       const existing = products.find((p) => p.id === batch.product_id)
-      setProductSearch(existing ? `${existing.name} (${existing.sku})` : '')
+      setProductSearch(existing ? productLabel(existing) : '')
     } else {
       reset({ received_date: new Date().toISOString().split('T')[0] })
       setProductSearch('')
@@ -96,17 +104,24 @@ export function StockBatchFormDialog({
 
   const supplierId = watch('supplier_id')
 
-  // Client-side filter — no IPC needed since products are already loaded
-  const filteredProducts = productSearch.trim().length > 0
-    ? products.filter((p) => {
-        const q = productSearch.toLowerCase()
-        return p.name.toLowerCase().includes(q) || (p.sku ?? '').toLowerCase().includes(q)
-      }).slice(0, 8)
-    : []
+  // Client-side filter — no IPC needed since products are already loaded.
+  // An empty box browses the whole catalogue, and so does re-focusing after a
+  // selection (where the box holds the chosen product's label, not a query).
+  const selectedProduct = products.find((p) => p.id === watch('product_id'))
+  const query = productSearch.trim().toLowerCase()
+  const browsingAll = query.length === 0 || (selectedProduct && productSearch === productLabel(selectedProduct))
+
+  const matchingProducts = browsingAll
+    ? products
+    : products.filter(
+        (p) => p.name.toLowerCase().includes(query) || (p.sku ?? '').toLowerCase().includes(query)
+      )
+  const filteredProducts = matchingProducts.slice(0, MAX_SUGGESTIONS)
+  const hiddenCount = matchingProducts.length - filteredProducts.length
 
   const handleProductSelect = (product: Product) => {
     setValue('product_id', product.id, { shouldValidate: true })
-    setProductSearch(`${product.name} (${product.sku})`)
+    setProductSearch(productLabel(product))
     setShowSuggestions(false)
   }
 
@@ -138,24 +153,40 @@ export function StockBatchFormDialog({
                   setValue('product_id', '', { shouldValidate: false })
                   setShowSuggestions(true)
                 }}
-                onFocus={() => filteredProducts.length > 0 && setShowSuggestions(true)}
+                onFocus={(e) => {
+                  // Select the text so typing replaces the previous choice
+                  e.target.select()
+                  setShowSuggestions(true)
+                }}
                 onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                placeholder="Type to search by name or SKU…"
+                placeholder="Tap to browse, or type to search by name or SKU…"
                 autoComplete="off"
               />
               {showSuggestions && filteredProducts.length > 0 && (
-                <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border rounded-lg shadow-lg max-h-52 overflow-y-auto">
+                // Selection is on click, NOT pointerdown: pointerdown fires the
+                // instant a finger lands, so dragging to scroll would pick whichever
+                // row was under the initial touch. The 150ms blur delay above
+                // outlives the click, so the list is still open when it fires.
+                <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border rounded-lg shadow-lg max-h-64 overflow-y-auto overscroll-contain">
                   {filteredProducts.map((product) => (
                     <button
                       key={product.id}
                       type="button"
-                      onPointerDown={() => handleProductSelect(product)}
-                      className="w-full px-3 py-2 text-left hover:bg-muted active:bg-muted/80 border-b last:border-b-0"
+                      onClick={() => handleProductSelect(product)}
+                      className="w-full min-h-11 px-3 py-2.5 text-left hover:bg-muted active:bg-muted/80 border-b last:border-b-0"
                     >
                       <p className="text-sm font-medium">{product.name}</p>
-                      <p className="text-xs text-muted-foreground">{product.sku}</p>
+                      {product.sku && (
+                        <p className="text-xs text-muted-foreground">{product.sku}</p>
+                      )}
                     </button>
                   ))}
+                  {hiddenCount > 0 && (
+                    <p className="px-3 py-2 text-xs text-muted-foreground bg-muted/40">
+                      Showing first {MAX_SUGGESTIONS} of {matchingProducts.length} — keep typing to
+                      narrow.
+                    </p>
+                  )}
                 </div>
               )}
             </div>

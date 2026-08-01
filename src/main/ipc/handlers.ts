@@ -6,7 +6,6 @@ import { logAudit } from '../services/audit'
 import { registerPOSHandlers } from './pos-handlers'
 import { registerInventoryHandlers } from './inventory-handlers'
 import { registerAnalyticsHandlers } from './analytics-handlers'
-import { registerAIHandlers } from './ai-handlers'
 import { registerBackupHandlers } from './backup-handlers'
 import { registerUserHandlers } from './user-handlers'
 import { registerPrinterHandlers } from './printer-handlers'
@@ -27,7 +26,6 @@ export function registerIpcHandlers(): void {
   registerAnalyticsHandlers()
 
   // Register AI handlers
-  registerAIHandlers()
 
   // Register Backup handlers
   registerBackupHandlers()

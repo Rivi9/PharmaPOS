@@ -149,17 +149,7 @@ const electronAPI = {
     }
   },
 
-  // AI
-  ai: {
-    getReorderSuggestions: (userId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.AI_REORDER_SUGGESTIONS, { userId }),
-    getSalesForecast: (userId: string, productId: string, days: number) =>
-      ipcRenderer.invoke(IPC_CHANNELS.AI_SALES_FORECAST, { userId, productId, days }),
-    getDeadStockDetection: (userId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.AI_DEAD_STOCK_DETECTION, { userId }),
-    naturalQuery: (userId: string, query: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.AI_NATURAL_QUERY, { userId, query })
-  },
+  // AI insights removed — no pharmacy or customer data leaves the machine.
 
   // Backup
   backup: {

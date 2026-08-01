@@ -75,7 +75,7 @@ export function AnalyticsPage(): React.JSX.Element {
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Analytics & Reports</h1>
-          <p className="text-muted-foreground">Sales insights, reports, and AI recommendations</p>
+          <p className="text-muted-foreground">Sales insights and reports</p>
         </div>
         <Button onClick={loadDashboardData} disabled={isLoading}>
           <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
@@ -84,10 +84,9 @@ export function AnalyticsPage(): React.JSX.Element {
       </div>
 
       <Tabs defaultValue="dashboard" className="flex-1 min-h-0 flex flex-col">
-        <TabsList className="grid w-full grid-cols-4 max-w-2xl">
+        <TabsList className="grid w-full grid-cols-3 max-w-2xl">
           <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="reports">Reports</TabsTrigger>
-          <TabsTrigger value="ai">AI Insights</TabsTrigger>
           <TabsTrigger value="alerts">Alerts</TabsTrigger>
         </TabsList>
 
@@ -116,10 +115,6 @@ export function AnalyticsPage(): React.JSX.Element {
           <ReportsPanel />
         </TabsContent>
 
-        <TabsContent value="ai" className="flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
-          <AIInsightsPanel userId={userId} />
-        </TabsContent>
-
         <TabsContent value="alerts" className="flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
           <AlertsPanel
             lowStockAlerts={lowStockAlerts}
@@ -128,109 +123,6 @@ export function AnalyticsPage(): React.JSX.Element {
           />
         </TabsContent>
       </Tabs>
-    </div>
-  )
-}
-
-function AIInsightsPanel({ userId }: { userId: string }): React.JSX.Element {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [results, setResults] = useState<{
-    reorderSuggestions: any[]
-    deadStock: any[]
-  } | null>(null)
-
-  const generate = async () => {
-    setLoading(true)
-    setError(null)
-    try {
-      const [reorderSuggestions, deadStock] = await Promise.all([
-        window.electron.ai.getReorderSuggestions(userId),
-        window.electron.ai.getDeadStockDetection(userId)
-      ])
-      setResults({
-        reorderSuggestions: reorderSuggestions ?? [],
-        deadStock: deadStock ?? []
-      })
-    } catch (err: any) {
-      setError(err.message || 'Failed to generate insights')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">AI Insights</h3>
-          <p className="text-sm text-muted-foreground">
-            Analyse inventory with AI-powered recommendations
-          </p>
-        </div>
-        <Button onClick={generate} disabled={loading}>
-          {loading ? 'Generating...' : 'Generate Insights'}
-        </Button>
-      </div>
-
-      {error && <p className="text-destructive text-sm">{error}</p>}
-
-      {!results && !loading && (
-        <div className="text-center py-12 text-muted-foreground">
-          Click Generate Insights to analyse inventory with AI
-        </div>
-      )}
-
-      {results && (
-        <div className="space-y-6">
-          <InsightSection title="Reorder Suggestions" items={results.reorderSuggestions} />
-          <InsightSection title="Dead Stock Detection" items={results.deadStock} />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function InsightSection({ title, items }: { title: string; items: any[] }): React.JSX.Element {
-  if (items.length === 0)
-    return (
-      <div>
-        <h4 className="font-medium mb-2">{title}</h4>
-        <p className="text-sm text-muted-foreground">No items flagged.</p>
-      </div>
-    )
-  return (
-    <div>
-      <h4 className="font-medium mb-2">{title}</h4>
-      <div className="space-y-2">
-        {items.map((item, i) => (
-          <div key={i} className="border rounded-md p-3 text-sm space-y-1">
-            <p className="font-semibold">{item.product_name ?? '—'}</p>
-            <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-muted-foreground text-xs">
-              {item.current_stock !== undefined && (
-                <span>Stock: {item.current_stock}</span>
-              )}
-              {item.suggested_order_qty !== undefined && (
-                <span>Order qty: {item.suggested_order_qty}</span>
-              )}
-              {item.days_since_last_sale !== undefined && (
-                <span>Last sold: {item.days_since_last_sale}d ago</span>
-              )}
-              {item.priority && (
-                <span className="capitalize">Priority: {item.priority}</span>
-              )}
-              {item.confidence !== undefined && (
-                <span>Confidence: {Math.round(item.confidence * 100)}%</span>
-              )}
-            </div>
-            {(item.reason || item.suggested_action) && (
-              <p className="text-xs text-muted-foreground italic">
-                {item.reason ?? item.suggested_action}
-              </p>
-            )}
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
