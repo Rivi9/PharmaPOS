@@ -589,6 +589,40 @@ Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can d
 
 ## ✅ Fixed in this session
 
+### Round 2 — remediation (commits `75436fa`, `0851dba`, `d610807`)
+
+| Item | Change |
+|---|---|
+| **C15, C17, C18, C19, H29, H31, H32, H33** — no working disaster recovery | `getDatabasePath()` is now the single definition of the database filename. Backups use `VACUUM INTO` (transactionally consistent, WAL-inclusive) instead of copying a live file, and every archive is verified — SQLite header, `integrity_check`, schema probe — before being offered. Restore validates the archive, snapshots the current DB, closes the connection, removes `-wal`/`-shm`, swaps, then relaunches via a new `app:relaunch` channel. The scheduler starts at launch and stops on quit, `backup_enabled` is opt-out with a writer, and a catch-up runs when a window was missed with the machine off. Retention keeps N *valid* archives and never deletes the newest good one. Backup IPC is permission-gated with path containment. `window.prompt()` replaced with an in-app dialog. |
+| **C20** — updates and Sentry dead in the shipped app | Gated on `app.isPackaged`, not `NODE_ENV`. |
+| **C23, H35, H37** — audit entries silently vanishing | `logAudit` retries with a null actor plus `claimed_user_id` when the FK rejects, and logs a genuine loss. Timestamps stored as ISO-8601 UTC (were rendering 5.5h early). `user_name` resolved so entries stop showing as "system". |
+| **C6** — every card sale blanked the app | `card_amount` → `card_received`, guarded, plus an `ErrorBoundary` around `MainLayout` so a render fault degrades to a readable message. |
+| **R5** — card payment toggle | `card_payment_enabled` setting with a Cash-only / Cash & Card control. Hides the Card button, falls back to cash mid-entry, and `createSale` rejects non-cash when off. |
+| **H1, M12** — print failures invisible | The IPC result is inspected (it resolves `{success:false}` rather than rejecting, so the old catch never fired) and shown with a retry. A second print is marked `*** REPRINT ***`. |
+| **C2** — drawer overstated by the day's change | `SUM(cash_received - COALESCE(change_given,0))`. Added `computeShiftCashSales` so the tile can show cash taken rather than cash tendered. |
+| **C4** — money never rounded | New `src/shared/money.ts` (`round2`, `isAtLeast`) applied across `calculations.ts` and the sales service. Tender comparison gained a half-cent tolerance, so exact cash is no longer rejected. Discounts clamped to 0…subtotal and 0…100%. |
+| **C5** — profit was revenue | COGS now comes from the batches actually dispensed, weighted by quantity, falling back to `products.cost_price`. KPI shows "Cost price not set" rather than a fictitious 100%, and no longer renders "NaN% margin" on a zero-sales day. |
+| **C1** — analytics multiplied by transaction count | The cartesian join is gone from `getDailyMetrics` and `getPeriodMetrics`; transaction count is a scalar subquery. |
+| **C10** — expired stock sellable | `deductStockFEFO` excludes expired batches, so expired stock cannot be dispensed even if the UI is bypassed. |
+| **C24, H3** — voids never reversed | `voidSale` runs in a transaction that returns stock to the originating batch, reverses the daily rollup and writes a `SALE_VOIDED` audit entry. `runIncrementalAggregation` re-aggregates a rolling 7-day window instead of being a permanent no-op. `getTodaySalesTotal` filters `status='completed'` and is scoped to the shift, not the UTC day. |
+| **M8** — settings load failure silent | `loadSettings` has a `catch` and a `loadError`; it previously left `isLoading` true forever and computed tax from the 0% fallback all day. |
+
+### Receipt output — from three scanned bills of the deployed store
+
+Analysed real printed receipts from Nirogya Medical Center (`docs/bill-outputs.pdf`).
+
+| Defect seen on the bill | Fix |
+|---|---|
+| `Azithromycin- 50` — name truncated to the 16-char column | Long names print in full on their own line with figures aligned underneath. A pharmacy receipt must never hide the strength dispensed. |
+| Every amount sat one column short of the separator rules | Amount rows were 29+12 = 41 against 42-wide rules. Columns now sum to exactly the printer width. |
+| `Date: 7/18/2026, 10:03:06 AM` — US format | Explicit `DD/MM/YYYY HH:MM`, identical in both processes. The printer used `toLocaleString()` with no locale; the preview used `en-LK`. |
+| Grand total truncated above Rs. 10,000 (C7) | The double-width row no longer clips the amount. Verified: Rs. 125,000.50 prints intact. |
+| Card receipts showed no amount; mixed derived it from `total − cash` | Both read `card_received`. |
+
+**Preview and print are now the same document.** Both build from a new `src/shared/receipt.ts`. They had drifted on date format, separators (the preview used Unicode box-drawing that the CP437 encoder renders as `?`), the `Receipt:`/`Receipt #:` label, blank lines, the customer block position and the card amount. The preview also reads `printer_width` from settings, so a 58mm/32-column configuration previews at 32 columns.
+
+### Round 1
+
 | Item | Change |
 |---|---|
 | **C16** — nightly job wiped analytics | `jobs/aggregation.ts` repointed from the broken `services/analytics.ts` duplicate to the working `services/analytics/aggregation.ts`; the duplicate deleted (no other importers); date arithmetic made UTC-consistent. **This was destroying data every night.** |
@@ -676,7 +710,19 @@ One caveat on confidence: every finding is derived from source, and the ones mar
 
 ## Suggested order of work
 
-**Done:** C16 (nightly analytics wipe), AI removal, the batch-picker fixes.
+**Done:** C1, C2, C4, C5, C6, C7, C10, C15, C16, C17, C18, C19, C20, C23, C24, H1, H3, H29, H31, H32, H33, H35, H37, M8, M12, R5, the receipt layout, AI removal and the batch-picker fixes.
+
+**Next, in order:**
+
+1. **C3** — the VAT model. Needs a pricing decision from the operator before code: are shelf prices tax-inclusive? Everything else in the reporting layer depends on the answer.
+2. **C25 + R3** — refund amounts (currently net of VAT and invisible to reports and the drawer) together with mid-shift cash in/out. Both change the same reconciliation function.
+3. **C14** — migration versioning. Must land before any schema change ships, and it currently blocks the `voided_by`/`voided_at` columns and the `cash_movements` table R3 needs.
+4. **C8, C9** — the duplicate-sale reentrancy latch and scanner input reaching the payment dialog.
+5. **C11, C12, C21, C22, H24** — the main-process session, PIN hash exposure, and encrypting backups before they leave the machine.
+6. **R1 + R2 + H4** — per-batch pricing and batch history together.
+7. **H25** — a sale-to-receipt E2E test.
+
+### Original order (retained for reference)
 
 1. **C15, C17, C18, C19** — backup and restore as one piece of work. Right now there is *no* working disaster recovery: backup targets the wrong filename, the scheduler never starts, restore corrupts the DB by leaving a stale WAL, and the restore dialog throws. Everything below is safer once a restorable, verified backup exists.
 2. **C20** — one-line gate change (`app.isPackaged`, not `NODE_ENV`). Until it lands the pharmacy can never receive any of these fixes, and no crash is ever reported.
