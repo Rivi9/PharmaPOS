@@ -14,15 +14,15 @@
 | Severity | Raised | Fixed | Open |
 |----------|-------:|------:|-----:|
 | 🔴 Critical | 25 | **25** | 0 |
-| 🟠 High | 40 | **22** | 18 |
-| 🟡 Medium | 32 | **6** | 26 |
+| 🟠 High | 40 | **23** | 17 |
+| 🟡 Medium | 32 | **8** | 24 |
 | ⚪ Low | 16 | **3** | 13 |
-| **Total** | **113** | **56** | **57** |
-| 📋 Operator requirements | 5 | **2** | 3 |
+| **Total** | **113** | **59** | **54** |
+| 📋 Operator requirements | 5 | **5** | 0 |
 
-**Every Critical is now closed.** The remaining work is High and below — see [Suggested order of work](#suggested-order-of-work).
+**Every Critical and every operator requirement is now closed.** The remaining work is High and below — see [Suggested order of work](#suggested-order-of-work).
 
-Fixed across seven rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
+Fixed across eight rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
 
 | Round | Commit | Closed |
 |---|---|---|
@@ -33,6 +33,7 @@ Fixed across seven rounds — see [Fixed in this session](#-fixed-in-this-sessio
 | 5 | `6ea0576` | C11, C12, H19, H21 (partial) + settings and bootstrap channels gated |
 | 6 | `541feb8` | C21, C22, H30 (partial) + versioned encryption container |
 | 7 | `87c7d3c`, `816fdd6` | H7, H9, H10, H11, H15, H20, H21, H36 (users) + password rules |
+| 8 | `f488d65`, this round | **R1, R2**, R4, H4, M16 |
 
 **Two passes.** Pass 1 (C1–C15, H1–H25) covered the POS, payments, printing, auth/RBAC, inventory and the schema. Pass 2 (C16–C25, H26–H40) covered the areas pass 1 listed as gaps — the full money/analytics verification, report generation, backup/restore, scheduling, logging, auto-update, the audit log, customers, and the admin-screen touch review. **Coverage is now complete**; there is no remaining unreviewed area.
 
