@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { CreditCard, Banknote } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Input } from '@renderer/components/ui/input'
@@ -41,6 +41,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   const [processing, setProcessing] = useState(false)
   const [foundCustomer, setFoundCustomer] = useState<{ id: string; name: string } | null>(null)
   const [purchaseHistory, setPurchaseHistory] = useState<PurchaseHistoryEntry[]>([])
+  const inFlight = useRef(false)
 
   const items = usePOSStore((state) => state.items)
   const saleDiscount = usePOSStore((state) => state.saleDiscount)
@@ -142,12 +143,18 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   }
 
   const handleComplete = async () => {
+    // In-flight latch. `processing` only disables the button, and the numpad's
+    // global Enter handler bypasses the button entirely — so key-repeat or a
+    // double tap re-entered here during the stock-recheck await and committed
+    // the sale twice: two receipts, stock deducted twice, drawer double-counted.
+    if (inFlight.current) return
     if (!validatePayment()) return
     if (!currentShift) {
       setError('No active shift found')
       return
     }
 
+    inFlight.current = true
     setProcessing(true)
     setError('')
 
@@ -238,7 +245,12 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg max-h-[95vh] overflow-y-auto">
+      {/* A mis-tap on the overlay used to discard a keyed-in payment silently —
+          payment is dismissed only via the explicit Cancel button. */}
+      <DialogContent
+        className="max-w-lg max-h-[90vh] overflow-y-auto"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="text-xl">Complete Sale — {formatCurrency(total, currencySymbol)}</DialogTitle>
         </DialogHeader>

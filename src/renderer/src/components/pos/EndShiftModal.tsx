@@ -44,6 +44,7 @@ export function EndShiftModal({
   const [closingCash, setClosingCash] = useState('')
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
+  const [countError, setCountError] = useState('')
   const [computedExpectedCash, setComputedExpectedCash] = useState<number | null>(null)
   const [cashMovements, setCashMovements] = useState<{ cashIn: number; cashOut: number }>({
     cashIn: 0,
@@ -65,6 +66,7 @@ export function EndShiftModal({
     if (!open) return
     setClosingCash('')
     setNotes('')
+    setCountError('')
   }, [open])
 
   useEffect(() => {
@@ -97,7 +99,15 @@ export function EndShiftModal({
   const cashDifference = closingCashNum - expectedCash
 
   const handleEndShift = async () => {
-    if (!currentShift) return
+    if (!currentShift || loading) return
+    // The numpad binds a bare Enter to this. Without a guard one stray keypress
+    // — a scanner suffix, a leaning elbow — closed the shift with a Rs. 0 count
+    // and logged the whole drawer as a shortage.
+    if (closingCash.trim() === '') {
+      setCountError('Enter the closing cash count before ending the shift')
+      return
+    }
+    setCountError('')
     setLoading(true)
     try {
       await window.electron.endShift({
@@ -227,10 +237,14 @@ export function EndShiftModal({
             </div>
             <CashNumpad
               value={closingCash}
-              onChange={setClosingCash}
+              onChange={(v) => {
+                setClosingCash(v)
+                if (countError) setCountError('')
+              }}
               onSubmit={handleEndShift}
               buttonClassName="h-11"
             />
+            {countError && <p className="text-sm text-destructive font-medium">{countError}</p>}
           </div>
 
           {/* Notes */}

@@ -53,7 +53,22 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
 
   // Keyboard support — registered once on mount
   useEffect(() => {
+    // Same scanner guard as CashNumpad: a barcode scanned at the login screen
+    // would otherwise be typed in as PIN attempts and submitted by its trailing
+    // Enter, burning failed logins. Also skip while a text field has focus.
+    let lastKeyTime = 0
+    const SCANNER_THRESHOLD_MS = 30
+
     const handleKeyDown = (e: KeyboardEvent): void => {
+      const tag = (e.target as HTMLElement).tagName.toLowerCase()
+      if (tag === 'input' || tag === 'textarea') return
+      if (e.repeat) return
+
+      const now = performance.now()
+      const sinceLast = now - lastKeyTime
+      lastKeyTime = now
+      if (sinceLast < SCANNER_THRESHOLD_MS) return
+
       if (e.key >= '0' && e.key <= '9') {
         e.preventDefault()
         handleNumber(e.key)

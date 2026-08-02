@@ -59,10 +59,26 @@ export function CashNumpad({
 
   // Register keyboard listener once; use refs to stay up-to-date
   useEffect(() => {
+    // A barcode scanner is a keyboard. Radix autofocuses the dialog's first
+    // button — not an input — so scanned digits used to land in the cash field
+    // and the scanner's trailing Enter committed the sale instantly with the
+    // barcode as the amount tendered. Scanners emit at 1-5ms between keys;
+    // a human cannot type faster than ~30ms, so burst input is discarded.
+    let lastKeyTime = 0
+    const SCANNER_THRESHOLD_MS = 30
+
     const handleKeyDown = (e: KeyboardEvent): void => {
       // Don't intercept when a text input / textarea is focused
       const tag = (e.target as HTMLElement).tagName.toLowerCase()
       if (tag === 'input' || tag === 'textarea') return
+
+      // Ignore OS key-repeat, which could otherwise fire submit repeatedly.
+      if (e.repeat) return
+
+      const now = performance.now()
+      const sinceLast = now - lastKeyTime
+      lastKeyTime = now
+      if (sinceLast < SCANNER_THRESHOLD_MS) return
 
       if (e.key === 'Enter') {
         e.preventDefault()
