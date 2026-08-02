@@ -244,17 +244,8 @@ export function createCategory(data: CategoryData): { id: string } {
   return { id }
 }
 
-export function updateCategory(id: string, name: string, description?: string): void {
-  const drizzleDb = getDb()
-
-  drizzleDb
-    .update(categories)
-    .set({
-      name,
-      description: description ?? null
-    })
-    .where(eq(categories.id, id))
-    .run()
+export function updateCategory(id: string, data: Partial<CategoryData>): void {
+  updateCategoryLegacy(id, data)
 }
 
 export function deleteCategory(id: string): void {
@@ -315,6 +306,7 @@ export function updateCategoryLegacy(id: string, data: Partial<CategoryData>): v
     values.push(data.parent_id || null)
   }
 
+  if (fields.length === 0) return
   values.push(id)
 
   db.prepare(
@@ -598,6 +590,21 @@ export function adjustStockBatch(params: {
 // CSV EXPORT
 // =====================
 
+/**
+ * Escape one CSV cell.
+ *
+ * Wrapping in quotes is not enough on its own: an embedded quote ends the field
+ * early and shifts every column after it (a product literally named `6" Crepe
+ * Bandage` corrupted its whole row), and Excel evaluates a leading =, +, - or @
+ * as a formula when the file is opened.
+ */
+function csvCell(value: unknown): string {
+  const raw = String(value ?? '')
+  const risky = ['=', '+', '-', '@', '\t', '\r']
+  const safe = risky.includes(raw.charAt(0)) ? `'${raw}` : raw
+  return `"${safe.replace(/"/g, '""')}"`
+}
+
 export function exportProductsToCSV(): string {
   const prods = listProducts()
 
@@ -637,7 +644,7 @@ export function exportProductsToCSV(): string {
 
   // Combine headers and rows
   const csvContent = [headers, ...rows]
-    .map((row) => row.map((cell) => `"${cell}"`).join(','))
+    .map((row) => row.map(csvCell).join(','))
     .join('\n')
 
   return csvContent

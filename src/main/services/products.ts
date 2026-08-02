@@ -33,10 +33,17 @@ export function searchProducts(
       `
     SELECT
       p.*,
-      COALESCE(SUM(sb.quantity), 0) as total_stock,
-      MIN(sb.expiry_date) as nearest_expiry
+      COALESCE((
+        SELECT SUM(b.quantity) FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0
+          AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
+      ), 0) as total_stock,
+      (
+        SELECT MIN(b.expiry_date) FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0
+          AND b.expiry_date IS NOT NULL AND b.expiry_date <> ''
+      ) as nearest_expiry
     FROM products p
-    LEFT JOIN stock_batches sb ON p.id = sb.product_id
     WHERE p.is_active = 1
       AND (
         p.name LIKE ? OR
@@ -78,10 +85,17 @@ export function getProductByBarcode(
       `
     SELECT
       p.*,
-      COALESCE(SUM(sb.quantity), 0) as total_stock,
-      MIN(sb.expiry_date) as nearest_expiry
+      COALESCE((
+        SELECT SUM(b.quantity) FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0
+          AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
+      ), 0) as total_stock,
+      (
+        SELECT MIN(b.expiry_date) FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0
+          AND b.expiry_date IS NOT NULL AND b.expiry_date <> ''
+      ) as nearest_expiry
     FROM products p
-    LEFT JOIN stock_batches sb ON p.id = sb.product_id
     WHERE p.is_active = 1 AND p.barcode = ?
     GROUP BY p.id
   `
@@ -178,16 +192,22 @@ export function getQuickItems(): (Product & {
       `
     SELECT
       p.*,
-      COALESCE(SUM(sb.quantity), 0) as total_stock,
-      MIN(sb.expiry_date) as nearest_expiry,
-      COALESCE(SUM(psd.quantity_sold), 0) as sales_7d
+      COALESCE((
+        SELECT SUM(b.quantity) FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0
+          AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
+      ), 0) as total_stock,
+      (
+        SELECT MIN(b.expiry_date) FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0
+          AND b.expiry_date IS NOT NULL AND b.expiry_date <> ''
+      ) as nearest_expiry,
+      COALESCE((
+        SELECT SUM(d.quantity_sold) FROM product_sales_daily d
+        WHERE d.product_id = p.id AND d.date >= date('now','-7 days')
+      ), 0) as sales_7d
     FROM products p
-    LEFT JOIN stock_batches sb ON p.id = sb.product_id
-    LEFT JOIN product_sales_daily psd
-      ON p.id = psd.product_id
-      AND psd.date >= date('now', '-7 days')
     WHERE p.is_active = 1
-    GROUP BY p.id
     ORDER BY sales_7d DESC, p.name ASC
     LIMIT 8
   `
@@ -211,10 +231,17 @@ export function getProductsWithStock(): (Product & {
       `
     SELECT
       p.*,
-      COALESCE(SUM(sb.quantity), 0) as total_stock,
-      MIN(sb.expiry_date) as nearest_expiry
+      COALESCE((
+        SELECT SUM(b.quantity) FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0
+          AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
+      ), 0) as total_stock,
+      (
+        SELECT MIN(b.expiry_date) FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0
+          AND b.expiry_date IS NOT NULL AND b.expiry_date <> ''
+      ) as nearest_expiry
     FROM products p
-    LEFT JOIN stock_batches sb ON p.id = sb.product_id AND sb.quantity > 0
     WHERE p.is_active = 1
     GROUP BY p.id
     ORDER BY p.name ASC

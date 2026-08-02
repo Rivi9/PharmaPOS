@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -110,8 +110,19 @@ export function ProductFormDialog({
     }
   }, [product, reset])
 
+  const [submitError, setSubmitError] = useState('')
+
   const handleFormSubmit = async (data: ProductFormData) => {
-    await onSubmit(data)
+    setSubmitError('')
+    try {
+      await onSubmit(data)
+    } catch (err) {
+      // Keep the user's input on screen. The form used to reset
+      // unconditionally, so a duplicate barcode blanked everything
+      // with no message shown anywhere.
+      setSubmitError((err as Error)?.message || 'Could not save')
+      return
+    }
     reset()
   }
 
@@ -250,6 +261,12 @@ export function ProductFormDialog({
               />
             </div>
           </div>
+
+          {submitError && (
+
+            <p className="text-sm text-destructive font-medium">{submitError}</p>
+
+          )}
 
           <div className="flex justify-end gap-2 pt-4">
             <Button type="button" variant="outline" onClick={onClose}>

@@ -112,6 +112,7 @@ export function InventoryPage(): React.JSX.Element {
   const handleProductSubmit = async (data: any) => {
     if (selectedProduct) {
       const result = await window.electron.updateProduct(userId, selectedProduct.id, data)
+      if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
         await loadProducts()
         await loadLowStockProducts()
@@ -120,6 +121,7 @@ export function InventoryPage(): React.JSX.Element {
       }
     } else {
       const result = await window.electron.createProduct(userId, data)
+      if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
         await loadProducts()
         await loadLowStockProducts()
@@ -149,6 +151,7 @@ export function InventoryPage(): React.JSX.Element {
   const handleCategorySubmit = async (data: any) => {
     if (selectedCategory) {
       const result = await window.electron.updateCategory(userId, selectedCategory.id, data)
+      if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
         await loadCategories()
         setCategoryDialogOpen(false)
@@ -156,6 +159,7 @@ export function InventoryPage(): React.JSX.Element {
       }
     } else {
       const result = await window.electron.createCategory(userId, data)
+      if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
         await loadCategories()
         setCategoryDialogOpen(false)
@@ -183,6 +187,7 @@ export function InventoryPage(): React.JSX.Element {
   const handleSupplierSubmit = async (data: any) => {
     if (selectedSupplier) {
       const result = await window.electron.updateSupplier(userId, selectedSupplier.id, data)
+      if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
         await loadSuppliers()
         setSupplierDialogOpen(false)
@@ -190,6 +195,7 @@ export function InventoryPage(): React.JSX.Element {
       }
     } else {
       const result = await window.electron.createSupplier(userId, data)
+      if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
         await loadSuppliers()
         setSupplierDialogOpen(false)
@@ -217,6 +223,7 @@ export function InventoryPage(): React.JSX.Element {
   const handleBatchSubmit = async (data: any) => {
     if (selectedBatch) {
       const result = await window.electron.updateStockBatch(userId, selectedBatch.id, data)
+      if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
         await loadStockBatches()
         await loadProducts() // Refresh products to update stock counts
@@ -226,6 +233,7 @@ export function InventoryPage(): React.JSX.Element {
       }
     } else {
       const result = await window.electron.createStockBatch(userId, data)
+      if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
         await loadStockBatches()
         await loadProducts() // Refresh products to update stock counts
