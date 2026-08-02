@@ -50,9 +50,11 @@ export function KPICards({ metrics, isLoading }: KPICardsProps): React.JSX.Eleme
             Rs. {(metrics?.total_profit || 0).toFixed(2)}
           </div>
           <p className="text-xs text-muted-foreground">
-            {metrics
-              ? `${((metrics.total_profit / metrics.total_sales) * 100).toFixed(1)}% margin`
-              : 'No data'}
+            {!metrics || metrics.total_sales <= 0
+              ? 'No data'
+              : metrics.total_cost <= 0
+                ? 'Cost price not set'
+                : `${((metrics.total_profit / metrics.total_sales) * 100).toFixed(1)}% margin`}
           </p>
         </CardContent>
       </Card>

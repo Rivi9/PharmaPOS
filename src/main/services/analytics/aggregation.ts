@@ -74,14 +74,12 @@ export function runIncrementalAggregation(): { daysProcessed: number } {
     return aggregateDateRange(startDate, today)
   }
 
-  // Aggregate from day after last aggregation to today
-  const nextDate = new Date(lastDate)
-  nextDate.setDate(nextDate.getDate() + 1)
-  const startDate = nextDate.toISOString().split('T')[0]
-
-  if (startDate > today) {
-    return { daysProcessed: 0 } // Already up to date
-  }
+  // Re-aggregate a rolling window ending today, starting AT the last aggregated
+  // date rather than the day after it. Starting at +1 meant that once any sale
+  // happened today, startDate > today and the function returned immediately —
+  // so a voided or corrected sale could never be reflected in the rollup.
+  const windowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const startDate = lastDate < windowStart ? lastDate : windowStart
 
   return aggregateDateRange(startDate, today)
 }

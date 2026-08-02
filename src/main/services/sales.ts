@@ -3,6 +3,8 @@ import { getDb } from '../db/index'
 import { getDatabase } from './database'
 import { sales, saleItems, products, customers, saleRefunds } from '../db/schema'
 import type { Sale, SaleItem, SaleRefund } from '../db/schema'
+import { round2 } from '../../shared/money'
+import { logAudit } from './audit'
 
 // Re-export types that may be consumed by other modules
 export type { Sale, SaleItem, SaleRefund }
@@ -36,6 +38,8 @@ interface SaleData {
 interface BatchDeduction {
   batch_id: string
   quantity: number
+  /** Cost of THIS batch — the correct COGS basis, not products.cost_price. */
+  cost_price: number
 }
 
 /**
@@ -76,16 +80,24 @@ function deductStockFEFO(productId: string, quantityNeeded: number): BatchDeduct
   const batches = db
     .prepare(
       `
-    SELECT id, quantity, expiry_date
+    SELECT id, quantity, expiry_date, cost_price
     FROM stock_batches
     WHERE product_id = ? AND quantity > 0
+      -- Expired stock must never be dispensed. FEFO orders by expiry ascending,
+      -- so without this filter an expired batch was preferentially sold first.
+      AND (expiry_date IS NULL OR expiry_date = '' OR expiry_date >= date('now','localtime'))
     ORDER BY
-      CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END,
+      CASE WHEN expiry_date IS NULL OR expiry_date = '' THEN 1 ELSE 0 END,
       expiry_date ASC,
       received_date ASC
   `
     )
-    .all(productId) as { id: string; quantity: number; expiry_date: string | null }[]
+    .all(productId) as {
+    id: string
+    quantity: number
+    expiry_date: string | null
+    cost_price: number
+  }[]
 
   let remaining = quantityNeeded
   const deductions: BatchDeduction[] = []
@@ -94,13 +106,17 @@ function deductStockFEFO(productId: string, quantityNeeded: number): BatchDeduct
     if (remaining <= 0) break
 
     const deductQty = Math.min(batch.quantity, remaining)
-    deductions.push({ batch_id: batch.id, quantity: deductQty })
+    deductions.push({
+      batch_id: batch.id,
+      quantity: deductQty,
+      cost_price: batch.cost_price ?? 0
+    })
     remaining -= deductQty
   }
 
   if (remaining > 0) {
     throw new Error(
-      `Insufficient stock for product ${productId}. Need ${quantityNeeded}, available ${quantityNeeded - remaining}`
+      `Insufficient sellable stock for product ${productId}. Need ${quantityNeeded}, available ${quantityNeeded - remaining} (expired batches are excluded)`
     )
   }
 
@@ -200,7 +216,16 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
         .where(eq(products.id, item.product_id))
         .get()
 
-      const costPrice = product?.costPrice ?? 0
+      // Cost comes from the batches actually dispensed, weighted by quantity.
+      // Reading products.cost_price instead reported 100% margin on every sale,
+      // because cost is captured per batch when stock is received and the product
+      // column is left at its 0 default.
+      const batchCostTotal = batches.reduce((sum, b) => sum + b.cost_price * b.quantity, 0)
+      const batchQty = batches.reduce((sum, b) => sum + b.quantity, 0)
+      const costPrice =
+        batchQty > 0 && batchCostTotal > 0
+          ? round2(batchCostTotal / batchQty)
+          : (product?.costPrice ?? 0)
       const taxRate = product?.taxRate ?? 0
 
       // FIX 2: Calculate per-item tax amount
@@ -232,8 +257,8 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
         .run()
 
       // FIX 3: product_sales_daily upsert using composite PK (date, product_id)
-      const cost = costPrice * item.quantity
-      const profit = item.line_total - cost
+      const cost = round2(costPrice * item.quantity)
+      const profit = round2(item.line_total - cost)
 
       db.prepare(
         `
@@ -258,21 +283,82 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
 /**
  * Void a completed sale. Requires a non-empty reason.
  */
-export function voidSale(saleId: string, _userId: string, reason: string): void {
+export function voidSale(saleId: string, userId: string, reason: string): void {
   if (!reason.trim()) throw new Error('Void reason is required')
 
-  const db = getDb()
-  const sale = db.select({ status: sales.status }).from(sales).where(eq(sales.id, saleId)).get()
-  if (!sale) throw new Error('Sale not found')
-  if (sale.status !== 'completed') throw new Error(`Cannot void a ${sale.status} sale`)
+  const raw = getDatabase()
 
-  db.update(sales)
-    .set({
-      status: 'voided',
-      voidReason: reason.trim()
+  raw.transaction(() => {
+    const sale = raw
+      .prepare('SELECT status, total, receipt_number FROM sales WHERE id = ?')
+      .get(saleId) as { status: string; total: number; receipt_number: string } | undefined
+    if (!sale) throw new Error('Sale not found')
+    if (sale.status !== 'completed') throw new Error(`Cannot void a ${sale.status} sale`)
+
+    const items = raw
+      .prepare(
+        `SELECT product_id, batch_id, quantity, cost_price, line_total
+         FROM sale_items WHERE sale_id = ?`
+      )
+      .all(saleId) as {
+      product_id: string
+      batch_id: string | null
+      quantity: number
+      cost_price: number
+      line_total: number
+    }[]
+
+    const saleDate = (
+      raw.prepare('SELECT created_at FROM sales WHERE id = ?').get(saleId) as {
+        created_at: string
+      }
+    ).created_at.split('T')[0]
+
+    for (const item of items) {
+      // Put the stock back where it came from, so expiry tracking stays truthful.
+      if (item.batch_id) {
+        raw
+          .prepare('UPDATE stock_batches SET quantity = quantity + ? WHERE id = ?')
+          .run(item.quantity, item.batch_id)
+      }
+
+      // Reverse the daily rollup. Without this the P&L and dashboard kept counting
+      // the voided sale forever, because product_sales_daily has no status column.
+      const cost = round2(item.cost_price * item.quantity)
+      raw
+        .prepare(
+          `UPDATE product_sales_daily
+             SET quantity_sold = quantity_sold - ?,
+                 revenue = revenue - ?,
+                 cost = cost - ?,
+                 profit = profit - ?
+           WHERE date = ? AND product_id = ?`
+        )
+        .run(item.quantity, item.line_total, cost, round2(item.line_total - cost), saleDate, item.product_id)
+    }
+
+    raw
+      .prepare(
+        `UPDATE sales SET status = 'voided', void_reason = ? WHERE id = ? AND status = 'completed'`
+      )
+      .run(reason.trim(), saleId)
+
+    // There are no voided_by / voided_at columns yet (adding them needs the
+    // migration runner). Until then the audit entry is the record of who voided
+    // what and when — previously voiding left no trace at all.
+    logAudit({
+      userId,
+      action: 'SALE_VOIDED',
+      entityType: 'sale',
+      entityId: saleId,
+      details: {
+        receipt_number: sale.receipt_number,
+        total: sale.total,
+        reason: reason.trim(),
+        voided_at: new Date().toISOString()
+      }
     })
-    .where(eq(sales.id, saleId))
-    .run()
+  })()
 }
 
 /**
@@ -280,12 +366,27 @@ export function voidSale(saleId: string, _userId: string, reason: string): void 
  * opening_cash + sum of cash_received from completed sales.
  */
 export function computeShiftExpectedCash(shiftId: string, openingCash: number): number {
+  // cash_received is what the customer HANDED OVER; change_given went back out.
+  // Only the difference stays in the drawer. Summing cash_received alone
+  // overstated the drawer by the whole day's change and reported every cashier short.
   const result = getDatabase()
     .prepare(
-      `SELECT COALESCE(SUM(cash_received), 0) as total FROM sales WHERE shift_id = ? AND status = 'completed'`
+      `SELECT COALESCE(SUM(cash_received - COALESCE(change_given, 0)), 0) as total
+       FROM sales WHERE shift_id = ? AND status = 'completed'`
     )
     .get(shiftId) as { total: number }
-  return openingCash + result.total
+  return round2(openingCash + result.total)
+}
+
+/** Cash actually taken during a shift, i.e. excluding the opening float. */
+export function computeShiftCashSales(shiftId: string): number {
+  const result = getDatabase()
+    .prepare(
+      `SELECT COALESCE(SUM(cash_received - COALESCE(change_given, 0)), 0) as total
+       FROM sales WHERE shift_id = ? AND status = 'completed' AND payment_method IN ('cash','mixed')`
+    )
+    .get(shiftId) as { total: number }
+  return round2(result.total)
 }
 
 /**
@@ -331,7 +432,10 @@ export function getTodaySalesTotal(shiftId: string): number {
     SELECT COALESCE(SUM(total), 0) as total
     FROM sales
     WHERE shift_id = ?
-      AND date(created_at) = date('now')
+      -- Scoped to the shift, not the calendar day: an overnight shift used to
+      -- report zero after the UTC date rolled over mid-shift. Voided sales are
+      -- excluded, which they previously were not.
+      AND status = 'completed'
   `
     )
     .get(shiftId) as { total: number }

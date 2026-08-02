@@ -9,6 +9,7 @@ import { usePOSStore } from '@renderer/stores/posStore'
 import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { calculateChange, formatCurrency } from '@renderer/lib/calculations'
+import { isAtLeast } from '../../../../shared/money'
 
 interface PaymentModalProps {
   open: boolean
@@ -122,7 +123,9 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
 
   const validatePayment = (): boolean => {
     if (paymentMethod === 'cash') {
-      if (cashReceivedNum < total) {
+      // Half-cent tolerance so an exact tender is never rejected by float drift —
+      // this used to fail with "Insufficient cash. Need Rs. 0.00 more."
+      if (!isAtLeast(cashReceivedNum, total)) {
         setError(`Insufficient cash. Need ${formatCurrency(total - cashReceivedNum, currencySymbol)} more.`)
         return false
       }

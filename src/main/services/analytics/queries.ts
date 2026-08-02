@@ -13,6 +13,9 @@ import type {
 export function getDailyMetrics(date: string): DailySalesMetric | null {
   const db = getDatabase()
 
+  // NEVER join product_sales_daily to sales: one row per product against one row
+  // per sale is a cartesian product, and every SUM came back multiplied by the
+  // day's transaction count. The transaction count is a scalar subquery instead.
   const metrics = db
     .prepare(
       `
@@ -21,18 +24,22 @@ export function getDailyMetrics(date: string): DailySalesMetric | null {
       COALESCE(SUM(psd.revenue), 0) as total_sales,
       COALESCE(SUM(psd.profit), 0) as total_profit,
       COALESCE(SUM(psd.cost), 0) as total_cost,
-      COUNT(DISTINCT s.id) as transaction_count,
+      (
+        SELECT COUNT(*) FROM sales
+        WHERE date(created_at) = ? AND status = 'completed'
+      ) as transaction_count,
       COALESCE(SUM(psd.quantity_sold), 0) as items_sold,
       CASE
-        WHEN COUNT(DISTINCT s.id) > 0 THEN COALESCE(SUM(psd.revenue), 0) / COUNT(DISTINCT s.id)
+        WHEN (SELECT COUNT(*) FROM sales WHERE date(created_at) = ? AND status = 'completed') > 0
+        THEN COALESCE(SUM(psd.revenue), 0) /
+             (SELECT COUNT(*) FROM sales WHERE date(created_at) = ? AND status = 'completed')
         ELSE 0
       END as avg_transaction
     FROM product_sales_daily psd
-    LEFT JOIN sales s ON date(s.created_at) = psd.date AND s.status = 'completed'
     WHERE psd.date = ?
   `
     )
-    .get(date, date) as DailySalesMetric | undefined
+    .get(date, date, date, date, date) as DailySalesMetric | undefined
 
   return metrics || null
 }
@@ -43,6 +50,8 @@ export function getDailyMetrics(date: string): DailySalesMetric | null {
 export function getPeriodMetrics(startDate: string, endDate: string): DailySalesMetric[] {
   const db = getDatabase()
 
+  // Same fan-out fix as getDailyMetrics — the per-day transaction count is a
+  // correlated subquery so it cannot multiply the psd aggregates.
   const metrics = db
     .prepare(
       `
@@ -51,14 +60,20 @@ export function getPeriodMetrics(startDate: string, endDate: string): DailySales
       COALESCE(SUM(psd.revenue), 0) as total_sales,
       COALESCE(SUM(psd.profit), 0) as total_profit,
       COALESCE(SUM(psd.cost), 0) as total_cost,
-      COUNT(DISTINCT s.id) as transaction_count,
+      (
+        SELECT COUNT(*) FROM sales s
+        WHERE date(s.created_at) = psd.date AND s.status = 'completed'
+      ) as transaction_count,
       COALESCE(SUM(psd.quantity_sold), 0) as items_sold,
       CASE
-        WHEN COUNT(DISTINCT s.id) > 0 THEN COALESCE(SUM(psd.revenue), 0) / COUNT(DISTINCT s.id)
+        WHEN (SELECT COUNT(*) FROM sales s
+              WHERE date(s.created_at) = psd.date AND s.status = 'completed') > 0
+        THEN COALESCE(SUM(psd.revenue), 0) /
+             (SELECT COUNT(*) FROM sales s
+              WHERE date(s.created_at) = psd.date AND s.status = 'completed')
         ELSE 0
       END as avg_transaction
     FROM product_sales_daily psd
-    LEFT JOIN sales s ON date(s.created_at) = psd.date AND s.status = 'completed'
     WHERE psd.date BETWEEN ? AND ?
     GROUP BY psd.date
     ORDER BY psd.date ASC
