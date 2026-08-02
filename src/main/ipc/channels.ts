@@ -39,6 +39,7 @@ export const IPC_CHANNELS = {
   PRODUCT_CREATE: 'product:create',
   PRODUCT_UPDATE: 'product:update',
   PRODUCT_DELETE: 'product:delete',
+  PRODUCT_REACTIVATE: 'product:reactivate',
   PRODUCT_LOW_STOCK: 'product:lowStock',
 
   // Inventory - Categories

@@ -43,6 +43,22 @@ export function registerInventoryHandlers(): void {
     return wrap(() => withPermission(_event, 'inventory:delete', () => inventory.deleteProduct(id)))
   })
 
+  ipcMain.handle(IPC_CHANNELS.PRODUCT_REACTIVATE, async (_event, { id }) => {
+    return wrap(() =>
+      withPermission(_event, 'inventory:update', () => {
+        inventory.reactivateProduct(id)
+        logAudit({
+          userId: actingUserId(_event),
+          action: 'PRODUCT_UPDATED',
+          entityType: 'product',
+          entityId: id,
+          details: { reactivated: true }
+        })
+        return { success: true }
+      })
+    )
+  })
+
   ipcMain.handle(IPC_CHANNELS.PRODUCT_LOW_STOCK, async (_event) => {
     return wrap(() =>
       withPermission(_event, 'inventory:view', () => inventory.getLowStockProducts())

@@ -3,10 +3,11 @@ import {
   createColumnHelper,
   flexRender,
   getCoreRowModel,
+  getPaginationRowModel,
   useReactTable
 } from '@tanstack/react-table'
 import { Button } from '@renderer/components/ui/button'
-import { Edit, Trash2 } from 'lucide-react'
+import { Edit, Trash2, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Product } from '@renderer/stores/inventoryStore'
 
 const columnHelper = createColumnHelper<Product>()
@@ -15,9 +16,15 @@ interface ProductsTableProps {
   products: Product[]
   onEdit: (product: Product) => void
   onDelete: (product: Product) => void
+  onReactivate?: (product: Product) => void
 }
 
-export function ProductsTable({ products, onEdit, onDelete }: ProductsTableProps) {
+export function ProductsTable({
+  products,
+  onEdit,
+  onDelete,
+  onReactivate
+}: ProductsTableProps) {
   const columns = useMemo(
     () => [
       columnHelper.accessor('sku', {
@@ -87,35 +94,50 @@ export function ProductsTable({ products, onEdit, onDelete }: ProductsTableProps
       columnHelper.display({
         id: 'actions',
         header: 'Actions',
-        cell: (info) => (
-          <div className="flex gap-2">
+        cell: (info) =>
+          info.row.original.is_active === 0 ? (
             <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onEdit(info.row.original)}
-              className="h-8 w-8 p-0"
+              variant="outline"
+              className="h-11 gap-2"
+              onClick={() => onReactivate?.(info.row.original)}
             >
-              <Edit className="h-4 w-4" />
+              <RotateCcw className="h-4 w-4" />
+              Restore
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onDelete(info.row.original)}
-              className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        )
+          ) : (
+            <div className="flex gap-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onEdit(info.row.original)}
+                aria-label="Edit product"
+              >
+                <Edit className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onDelete(info.row.original)}
+                aria-label="Delete product"
+                className="text-red-600 hover:text-red-700"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          )
       })
     ],
-    [onEdit, onDelete]
+    [onEdit, onDelete, onReactivate]
   )
 
+  // Paginated: the table rendered every row, so a 10,000-product catalogue meant
+  // roughly 80,000 DOM nodes in one scroll container on POS-class hardware.
   const table = useReactTable({
     data: products,
     columns,
-    getCoreRowModel: getCoreRowModel()
+    getCoreRowModel: getCoreRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+    initialState: { pagination: { pageSize: 50 } }
   })
 
   return (
@@ -154,6 +176,43 @@ export function ProductsTable({ products, onEdit, onDelete }: ProductsTableProps
           )}
         </tbody>
       </table>
+
+      {table.getPageCount() > 1 && (
+        <div className="flex items-center justify-between gap-3 border-t px-4 py-3">
+          <p className="text-sm text-muted-foreground">
+            {table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}
+            {'–'}
+            {Math.min(
+              (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
+              products.length
+            )}{' '}
+            of {products.length}
+          </p>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              className="h-11 gap-1"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Previous
+            </Button>
+            <span className="text-sm tabular-nums">
+              {table.getState().pagination.pageIndex + 1} / {table.getPageCount()}
+            </span>
+            <Button
+              variant="outline"
+              className="h-11 gap-1"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

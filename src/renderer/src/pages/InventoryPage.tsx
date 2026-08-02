@@ -130,6 +130,15 @@ export function InventoryPage(): React.JSX.Element {
     }
   }
 
+  const handleProductReactivate = async (product: Product): Promise<void> => {
+    const result = await window.electron.reactivateProduct(userId, product.id)
+    if (result.success) {
+      await Promise.all([loadProducts(), loadStockBatches()])
+    } else {
+      alert(result.error || 'Could not restore the product')
+    }
+  }
+
   const handleProductEdit = (product: Product) => {
     setSelectedProduct(product)
     setProductDialogOpen(true)
@@ -403,6 +412,7 @@ export function InventoryPage(): React.JSX.Element {
               products={filteredProducts}
               onEdit={handleProductEdit}
               onDelete={handleProductDelete}
+              onReactivate={handleProductReactivate}
             />
           </div>
         </TabsContent>

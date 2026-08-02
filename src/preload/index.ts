@@ -69,6 +69,8 @@ const electronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_UPDATE, { userId, id, data }),
   deleteProduct: (userId: string, id: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_DELETE, { userId, id }),
+  reactivateProduct: (userId: string, id: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_REACTIVATE, { userId, id }),
   getLowStockProducts: (userId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_LOW_STOCK, { userId }),
 

@@ -34,15 +34,17 @@ export function listProducts(): any[] {
       `
     SELECT
       p.*,
-      COALESCE(SUM(sb.quantity), 0) as total_stock,
+      COALESCE((
+        SELECT SUM(b.quantity) FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0
+          AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
+      ), 0) as total_stock,
       c.name as category_name,
       s.name as supplier_name
     FROM products p
-    LEFT JOIN stock_batches sb ON p.id = sb.product_id
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN suppliers s ON p.supplier_id = s.id
-    GROUP BY p.id
-    ORDER BY p.name ASC
+    ORDER BY p.is_active DESC, p.name ASC
   `
     )
     .all()
@@ -168,6 +170,13 @@ export function updateProduct(id: string, data: Partial<ProductData>): void {
     WHERE id = ?
   `
   ).run(...values)
+}
+
+/** Bring a soft-deleted product back. Delete is a flag flip, so nothing is lost. */
+export function reactivateProduct(id: string): void {
+  getDatabase()
+    .prepare('UPDATE products SET is_active = 1, updated_at = ? WHERE id = ?')
+    .run(new Date().toISOString(), id)
 }
 
 export function deleteProduct(id: string): void {
@@ -489,7 +498,9 @@ export function listStockBatches(): any[] {
     FROM stock_batches sb
     JOIN products p ON sb.product_id = p.id
     LEFT JOIN suppliers s ON sb.supplier_id = s.id
-    WHERE sb.quantity > 0
+    -- Batches of a soft-deleted product used to stay listed, and could still
+    -- receive new stock via the Receive Stock combobox.
+    WHERE sb.quantity > 0 AND p.is_active = 1
     ORDER BY sb.expiry_date ASC NULLS LAST, sb.received_date DESC
   `
     )
