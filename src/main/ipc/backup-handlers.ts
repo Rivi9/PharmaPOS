@@ -21,6 +21,7 @@ import {
   getBackupStatus,
   setBackupsEnabled
 } from '../services/backup/scheduler'
+import { getBackupRecoveryKey } from '../services/backup/recovery-key'
 import { logAudit } from '../services/audit'
 import path from 'path'
 import fs from 'fs'
@@ -140,6 +141,22 @@ export function registerBackupHandlers(): void {
       })
     }
   )
+
+  // The operator must be able to write this down — a key that exists only on the
+  // machine is worthless once that machine dies, which is the case backups exist for.
+  ipcMain.handle(IPC_CHANNELS.BACKUP_RECOVERY_KEY, (_event) => {
+    return withPermission(_event, 'backup:restore', () => {
+      const key = getBackupRecoveryKey()
+      logAudit({
+        userId: actingUserId(_event),
+        action: 'BACKUP_CREATED',
+        entityType: 'backup',
+        entityId: 'recovery-key',
+        details: { action: 'recovery key revealed' }
+      })
+      return { key }
+    })
+  })
 
   // Scheduler operations
   ipcMain.handle(

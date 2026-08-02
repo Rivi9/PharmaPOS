@@ -84,7 +84,6 @@ export function SettingsPage(): React.JSX.Element {
   const [displayMsg, setDisplayMsg] = useState('')
 
   // Backup state
-  const [backupPassword, setBackupPassword] = useState('')
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupMsg, setBackupMsg] = useState('')
   const [localBackups, setLocalBackups] = useState<LocalBackup[]>([])
@@ -98,6 +97,7 @@ export function SettingsPage(): React.JSX.Element {
   const [restoreTarget, setRestoreTarget] = useState<string | null>(null)
   const [restorePassword, setRestorePassword] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
+  const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
 
 
   useEffect(() => {
@@ -262,6 +262,17 @@ export function SettingsPage(): React.JSX.Element {
     loadSchedulerStatus()
   }
 
+  const handleShowRecoveryKey = async (): Promise<void> => {
+    if (!user?.id) return
+    setBackupMsg('')
+    try {
+      const result = await window.electron.backup.recoveryKey(user.id)
+      setRecoveryKey((result as { key: string }).key)
+    } catch (err: any) {
+      setBackupMsg(`Error: ${err.message}`)
+    }
+  }
+
   const handleCreateBackup = async (): Promise<void> => {
     if (!user?.id) {
       setBackupMsg('Error: User not authenticated')
@@ -270,9 +281,9 @@ export function SettingsPage(): React.JSX.Element {
     setBackupBusy(true)
     setBackupMsg('')
     try {
-      const result = await window.electron.backup.create(user.id, backupPassword || undefined)
-      setBackupMsg(`Backup created successfully: ${(result as any).filename}`)
-      setBackupPassword('')
+      const result = await window.electron.backup.create(user.id)
+      const name = String(result).split(/[\/]/).pop()
+      setBackupMsg(`Encrypted backup created: ${name}`)
       await loadLocalBackups()
     } catch (err: any) {
       setBackupMsg(`Error: ${err.message}`)
@@ -643,22 +654,42 @@ export function SettingsPage(): React.JSX.Element {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Backup Password (Optional)</label>
-                  <Input
-                    type="password"
-                    value={backupPassword}
-                    onChange={(e) => setBackupPassword(e.target.value)}
-                    placeholder="Leave empty for no encryption"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Recommended: Use a strong password to encrypt sensitive data
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                  <p className="text-sm">
+                    Every backup is encrypted automatically. Backups contain customer records
+                    and staff credentials, so they are never written or uploaded in the clear.
                   </p>
+                  <p className="text-xs text-muted-foreground">
+                    This machine unlocks its own backups without a password. To restore onto a
+                    <strong> different</strong> machine you need the recovery key below — write it
+                    down and keep it somewhere other than this computer.
+                  </p>
+                  {recoveryKey ? (
+                    <div className="space-y-2">
+                      <p className="font-mono text-base font-bold tracking-wider break-all bg-background rounded-md p-3 border">
+                        {recoveryKey}
+                      </p>
+                      <Button
+                        variant="outline"
+                        className="h-11"
+                        onClick={() => {
+                          navigator.clipboard.writeText(recoveryKey)
+                          setBackupMsg('Recovery key copied to the clipboard')
+                        }}
+                      >
+                        Copy key
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button variant="outline" className="h-11" onClick={handleShowRecoveryKey}>
+                      Show recovery key
+                    </Button>
+                  )}
                 </div>
                 <Button
                   onClick={handleCreateBackup}
                   disabled={backupBusy}
-                  className="flex items-center gap-2"
+                  className="h-11 flex items-center gap-2"
                 >
                   <Upload className="h-4 w-4" />
                   {backupBusy ? 'Creating...' : 'Create Backup Now'}
@@ -822,11 +853,11 @@ export function SettingsPage(): React.JSX.Element {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="restore-password">Backup password</Label>
+            <Label htmlFor="restore-password">Recovery key (only if this backup came from another machine)</Label>
             <Input
               id="restore-password"
               type="password"
-              placeholder="Leave empty if the backup is not encrypted"
+              placeholder="Leave blank — this machine unlocks its own backups"
               value={restorePassword}
               onChange={(e) => setRestorePassword(e.target.value)}
               className="h-12"

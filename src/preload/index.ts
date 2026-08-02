@@ -172,6 +172,8 @@ const electronAPI = {
     driveDelete: (userId: string, fileId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_DELETE, { userId, fileId }),
 
+    recoveryKey: (userId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RECOVERY_KEY, userId),
     schedulerStart: (userId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_START, userId),
     schedulerStop: (userId: string) =>

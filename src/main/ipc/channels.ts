@@ -97,6 +97,7 @@ export const IPC_CHANNELS = {
   // Backup - Scheduler
   BACKUP_SCHEDULER_START: 'backup:scheduler-start',
   BACKUP_SCHEDULER_STOP: 'backup:scheduler-stop',
+  BACKUP_RECOVERY_KEY: 'backup:recovery-key',
   BACKUP_SCHEDULER_STATUS: 'backup:scheduler-status',
 
   // Users - Management

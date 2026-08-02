@@ -5,6 +5,7 @@ import archiver from 'archiver'
 import extract from 'extract-zip'
 import { app } from 'electron'
 import { encryptData, decryptData } from './encryption'
+import { getBackupRecoveryKey } from './recovery-key'
 import { getDatabase, getDatabasePath, closeDatabase } from '../database'
 import { logError, logInfo } from '../logging/logger'
 
@@ -96,9 +97,16 @@ export async function createBackup(password?: string): Promise<string> {
     fs.mkdirSync(backupDir, { recursive: true })
   }
 
+  // Encryption is not optional. The archive contains the full customers table
+  // (name, phone, address, date of birth), every line item linking a named
+  // customer to the medicines dispensed to them, and the users table with
+  // password and PIN hashes. An unencrypted copy of that used to sit in
+  // %APPDATA% and get uploaded to Google Drive as-is.
+  const key = password || getBackupRecoveryKey()
+
   const snapshotPath = path.join(backupDir, `${backupName}.snapshot`)
   const tempZipPath = path.join(backupDir, `${backupName}.zip`)
-  const finalPath = password ? path.join(backupDir, `${backupName}.encrypted`) : tempZipPath
+  const finalPath = path.join(backupDir, `${backupName}.encrypted`)
 
   try {
     snapshotDatabase(snapshotPath)
@@ -127,22 +135,18 @@ export async function createBackup(password?: string): Promise<string> {
       archive.finalize()
     })
 
-    if (password) {
-      const encrypted = encryptData(fs.readFileSync(tempZipPath), password)
-      fs.writeFileSync(finalPath, encrypted)
-    }
+    fs.writeFileSync(finalPath, encryptData(fs.readFileSync(tempZipPath), key))
 
     logInfo('Backup created', { path: finalPath, bytes: metadata.database_size })
     return finalPath
   } catch (error) {
-    // Never leave a half-written archive behind — listBackups would offer it for restore.
+    // Never leave a half-written archive behind — listBackups would offer it for
+    // restore — and never leave the plaintext intermediate on disk.
     for (const p of [tempZipPath, finalPath]) {
-      if (p !== finalPath || password) {
-        try {
-          if (fs.existsSync(p)) fs.rmSync(p)
-        } catch {
-          /* best effort */
-        }
+      try {
+        if (fs.existsSync(p)) fs.rmSync(p)
+      } catch {
+        /* best effort */
       }
     }
     logError('Backup failed', error as Error)
@@ -150,8 +154,8 @@ export async function createBackup(password?: string): Promise<string> {
   } finally {
     try {
       if (fs.existsSync(snapshotPath)) fs.rmSync(snapshotPath)
-      // The plaintext zip is an intermediate when encrypting — it must not survive.
-      if (password && fs.existsSync(tempZipPath)) fs.rmSync(tempZipPath)
+      // The plaintext zip is only ever an intermediate — it must not survive.
+      if (fs.existsSync(tempZipPath)) fs.rmSync(tempZipPath)
     } catch {
       /* best effort */
     }
@@ -176,16 +180,39 @@ export async function restoreBackup(
 
   // Encryption is decided by the file, not by whether a password happened to be typed.
   const isEncrypted = safePath.endsWith('.encrypted')
-  if (isEncrypted && !password) {
-    throw new Error('This backup is encrypted — a password is required')
-  }
 
   fs.rmSync(tempDir, { recursive: true, force: true })
   fs.mkdirSync(tempDir, { recursive: true })
 
   try {
     if (isEncrypted) {
-      const decrypted = decryptData(fs.readFileSync(safePath), password as string)
+      // Try this machine's stored key first, so a routine restore needs no typing.
+      // Fall back to an operator-supplied recovery key, which is what makes
+      // restoring onto replacement hardware possible at all.
+      const candidates: string[] = []
+      try {
+        candidates.push(getBackupRecoveryKey())
+      } catch {
+        /* OS keychain unavailable — the typed key is the only option */
+      }
+      if (password) candidates.push(password.trim().toUpperCase())
+
+      let decrypted: Buffer | null = null
+      for (const candidate of candidates) {
+        try {
+          decrypted = decryptData(fs.readFileSync(safePath), candidate)
+          break
+        } catch {
+          /* try the next candidate */
+        }
+      }
+      if (!decrypted) {
+        throw new Error(
+          candidates.length > 1
+            ? 'That recovery key does not match this backup'
+            : 'This backup was made on another machine — enter its recovery key'
+        )
+      }
       fs.writeFileSync(tempZipPath, decrypted)
     } else {
       fs.copyFileSync(safePath, tempZipPath)
