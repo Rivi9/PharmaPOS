@@ -45,6 +45,10 @@ export function EndShiftModal({
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [computedExpectedCash, setComputedExpectedCash] = useState<number | null>(null)
+  const [cashMovements, setCashMovements] = useState<{ cashIn: number; cashOut: number }>({
+    cashIn: 0,
+    cashOut: 0
+  })
   const [loadingExpectedCash, setLoadingExpectedCash] = useState(false)
 
   const currentShift = useShiftStore((s) => s.currentShift)
@@ -62,6 +66,14 @@ export function EndShiftModal({
     setClosingCash('')
     setNotes('')
   }, [open])
+
+  useEffect(() => {
+    if (!open || !currentShift) return
+    window.electron.shifts
+      .cashMovements(currentShift.id)
+      .then((m: { cashIn: number; cashOut: number }) => setCashMovements(m))
+      .catch(() => setCashMovements({ cashIn: 0, cashOut: 0 }))
+  }, [open, currentShift])
 
   useEffect(() => {
     if (!open || !currentShift) return
@@ -135,7 +147,14 @@ export function EndShiftModal({
                 {loadingExpectedCash
                   ? 'Calc…'
                   : formatCurrency(
-                      computedExpectedCash !== null ? computedExpectedCash - openingCash : 0,
+                      // Cash actually retained: back out the float and any
+                      // mid-shift movements from the expected drawer figure.
+                      computedExpectedCash !== null
+                        ? computedExpectedCash -
+                          openingCash -
+                          cashMovements.cashIn +
+                          cashMovements.cashOut
+                        : 0,
                       currencySymbol
                     )}
               </p>
@@ -149,6 +168,22 @@ export function EndShiftModal({
 
           {/* Expected vs actual */}
           <div className="bg-muted/30 rounded-lg p-3 space-y-2 text-sm">
+            {cashMovements.cashIn > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Cash added during shift</span>
+                <span className="font-medium text-blue-600">
+                  +{formatCurrency(cashMovements.cashIn, currencySymbol)}
+                </span>
+              </div>
+            )}
+            {cashMovements.cashOut > 0 && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Cash removed during shift</span>
+                <span className="font-medium text-amber-600">
+                  −{formatCurrency(cashMovements.cashOut, currencySymbol)}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-muted-foreground">Expected in drawer</span>
               <span className="font-semibold">

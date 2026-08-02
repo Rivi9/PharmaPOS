@@ -156,6 +156,8 @@ export const IPC_CHANNELS = {
   CUSTOMER_DELETE: 'customer:delete',
   CUSTOMER_PURCHASE_HISTORY: 'customer:purchase-history',
   SHIFT_COMPUTE_EXPECTED_CASH: 'shift:compute-expected-cash',
+  SHIFT_CASH_MOVEMENT: 'shift:cash-movement',
+  SHIFT_CASH_MOVEMENTS: 'shift:cash-movements',
 
   // App lifecycle
   APP_CLOSE_REQUESTED: 'app:close-requested',

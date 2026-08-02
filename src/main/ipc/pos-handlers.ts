@@ -13,6 +13,8 @@ import {
   getTodaySalesTotal,
   voidSale,
   computeShiftExpectedCash,
+  recordCashMovement,
+  getShiftCashMovements,
   createRefund
 } from '../services/sales'
 import { getCustomerPurchaseHistory } from '../services/customers'
@@ -110,4 +112,38 @@ export function registerPOSHandlers(): void {
       return computeShiftExpectedCash(shiftId, openingCash)
     }
   )
+
+  // Mid-shift cash in / out
+  ipcMain.handle(
+    IPC_CHANNELS.SHIFT_CASH_MOVEMENT,
+    async (
+      _event,
+      params: {
+        userId: string
+        shiftId: string
+        type: 'in' | 'out'
+        amount: number
+        reason: string
+      }
+    ) => {
+      try {
+        return {
+          success: true,
+          ...recordCashMovement({
+            shiftId: params.shiftId,
+            userId: params.userId,
+            type: params.type,
+            amount: params.amount,
+            reason: params.reason
+          })
+        }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
+      }
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.SHIFT_CASH_MOVEMENTS, async (_event, shiftId: string) => {
+    return getShiftCashMovements(shiftId)
+  })
 }

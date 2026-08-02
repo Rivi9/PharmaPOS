@@ -19,6 +19,7 @@ export type AuditAction =
   | 'USER_LOGOUT'
   | 'SHIFT_STARTED'
   | 'SHIFT_ENDED'
+  | 'CASH_MOVEMENT'
   | 'SETTINGS_UPDATED'
   | 'BACKUP_CREATED'
   | 'BACKUP_RESTORED'

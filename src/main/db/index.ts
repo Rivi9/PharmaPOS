@@ -12,15 +12,98 @@ export function getDb(): DB {
   return _db
 }
 
-export function initDb(sqlite: import('better-sqlite3').Database): DB {
-  // Only run migration SQL if the schema hasn't been applied yet.
-  // Probe sqlite_master for a sentinel table to detect first-run.
-  const schemaExists = sqlite
-    .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_log'`)
-    .get()
-  if (!schemaExists) {
-    sqlite.exec(migrationSql)
+/**
+ * Schema migrations, applied in order and tracked with `PRAGMA user_version`.
+ *
+ * Version 1 is the baseline schema. Anything after it must be additive and
+ * idempotent where possible, because it runs against live pharmacy databases.
+ *
+ * Previously there was no version tracking at all: the bootstrap probed for a
+ * single table and, finding it, skipped everything — so a second migration file
+ * would never have reached any deployed machine.
+ */
+const MIGRATIONS: Array<{ version: number; sql: string }> = [
+  {
+    version: 2,
+    sql: `
+      -- Who voided a sale and when. Until now this was only recoverable from the
+      -- audit log, and voiding is the most likely route for till theft.
+      ALTER TABLE sales ADD COLUMN voided_by text;
+      ALTER TABLE sales ADD COLUMN voided_at text;
+
+      -- Mid-shift cash in/out (float top-up, petty cash, bank drop). Without it
+      -- any such movement showed up as an unexplained drawer discrepancy.
+      CREATE TABLE IF NOT EXISTS cash_movements (
+        id text PRIMARY KEY NOT NULL,
+        shift_id text NOT NULL,
+        user_id text NOT NULL,
+        type text NOT NULL,
+        amount real NOT NULL,
+        reason text NOT NULL,
+        created_at text NOT NULL,
+        FOREIGN KEY (shift_id) REFERENCES shifts(id),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_cash_movements_shift ON cash_movements(shift_id);
+
+      -- Hot paths that were doing full scans.
+      CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+      CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
+      CREATE INDEX IF NOT EXISTS idx_products_supplier ON products(supplier_id);
+      CREATE INDEX IF NOT EXISTS idx_psd_product ON product_sales_daily(product_id);
+      CREATE INDEX IF NOT EXISTS idx_sale_items_sale ON sale_items(sale_id);
+      CREATE INDEX IF NOT EXISTS idx_sales_customer ON sales(customer_id, created_at);
+      CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp, id);
+      CREATE INDEX IF NOT EXISTS idx_audit_action_ts ON audit_log(action, timestamp);
+      CREATE INDEX IF NOT EXISTS idx_audit_user_ts ON audit_log(user_id, timestamp);
+
+      -- Repair: an empty string sorts before every real date, so MIN(expiry_date)
+      -- returned '' and suppressed the expiry warning for the whole product.
+      UPDATE stock_batches SET expiry_date = NULL WHERE expiry_date = '';
+    `
   }
+]
+
+const LATEST_VERSION = MIGRATIONS.reduce((max, m) => Math.max(max, m.version), 1)
+
+export function initDb(sqlite: import('better-sqlite3').Database): DB {
+  let version = sqlite.pragma('user_version', { simple: true }) as number
+
+  if (version === 0) {
+    const schemaExists = sqlite
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='audit_log'`)
+      .get()
+
+    if (schemaExists) {
+      // Database predates version tracking but already has the baseline schema.
+      sqlite.pragma('user_version = 1')
+    } else {
+      // Transactional: a power cut mid-bootstrap previously left the first table
+      // created and nothing else, and the old sentinel then reported "schema
+      // exists" forever, leaving the database permanently unusable.
+      sqlite.transaction(() => {
+        sqlite.exec(migrationSql)
+        sqlite.pragma('user_version = 1')
+      })()
+    }
+    version = 1
+  }
+
+  for (const migration of MIGRATIONS) {
+    if (migration.version <= version) continue
+    sqlite.transaction(() => {
+      sqlite.exec(migration.sql)
+      sqlite.pragma(`user_version = ${migration.version}`)
+    })()
+    version = migration.version
+  }
+
+  if (version !== LATEST_VERSION) {
+    throw new Error(
+      `Database is at version ${version} but the application expects ${LATEST_VERSION}`
+    )
+  }
+
   _db = drizzle(sqlite, { schema })
   return _db
 }

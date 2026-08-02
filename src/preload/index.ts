@@ -250,7 +250,16 @@ const electronAPI = {
   // Shifts - Extended
   shifts: {
     computeExpectedCash: (shiftId: string, openingCash: number) =>
-      ipcRenderer.invoke(IPC_CHANNELS.SHIFT_COMPUTE_EXPECTED_CASH, { shiftId, openingCash })
+      ipcRenderer.invoke(IPC_CHANNELS.SHIFT_COMPUTE_EXPECTED_CASH, { shiftId, openingCash }),
+    recordCashMovement: (params: {
+      userId: string
+      shiftId: string
+      type: 'in' | 'out'
+      amount: number
+      reason: string
+    }) => ipcRenderer.invoke(IPC_CHANNELS.SHIFT_CASH_MOVEMENT, params),
+    cashMovements: (shiftId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.SHIFT_CASH_MOVEMENTS, shiftId)
   },
 
   // Pole Display (serial COM port)

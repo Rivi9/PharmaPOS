@@ -339,24 +339,17 @@ export function voidSale(saleId: string, userId: string, reason: string): void {
 
     raw
       .prepare(
-        `UPDATE sales SET status = 'voided', void_reason = ? WHERE id = ? AND status = 'completed'`
+        `UPDATE sales SET status = 'voided', void_reason = ?, voided_by = ?, voided_at = ?
+         WHERE id = ? AND status = 'completed'`
       )
-      .run(reason.trim(), saleId)
+      .run(reason.trim(), userId, new Date().toISOString(), saleId)
 
-    // There are no voided_by / voided_at columns yet (adding them needs the
-    // migration runner). Until then the audit entry is the record of who voided
-    // what and when — previously voiding left no trace at all.
     logAudit({
       userId,
       action: 'SALE_VOIDED',
       entityType: 'sale',
       entityId: saleId,
-      details: {
-        receipt_number: sale.receipt_number,
-        total: sale.total,
-        reason: reason.trim(),
-        voided_at: new Date().toISOString()
-      }
+      details: { receipt_number: sale.receipt_number, total: sale.total, reason: reason.trim() }
     })
   })()
 }
@@ -366,16 +359,87 @@ export function voidSale(saleId: string, userId: string, reason: string): void {
  * opening_cash + sum of cash_received from completed sales.
  */
 export function computeShiftExpectedCash(shiftId: string, openingCash: number): number {
+  const db = getDatabase()
+
   // cash_received is what the customer HANDED OVER; change_given went back out.
   // Only the difference stays in the drawer. Summing cash_received alone
   // overstated the drawer by the whole day's change and reported every cashier short.
-  const result = getDatabase()
+  const sales = db
     .prepare(
       `SELECT COALESCE(SUM(cash_received - COALESCE(change_given, 0)), 0) as total
        FROM sales WHERE shift_id = ? AND status = 'completed'`
     )
     .get(shiftId) as { total: number }
-  return round2(openingCash + result.total)
+
+  // Mid-shift cash in/out — a float top-up or petty-cash payout is a real drawer
+  // movement and must be part of the expectation.
+  const movements = db
+    .prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN type = 'in'  THEN amount ELSE 0 END), 0) as cash_in,
+         COALESCE(SUM(CASE WHEN type = 'out' THEN amount ELSE 0 END), 0) as cash_out
+       FROM cash_movements WHERE shift_id = ?`
+    )
+    .get(shiftId) as { cash_in: number; cash_out: number }
+
+  return round2(openingCash + sales.total + movements.cash_in - movements.cash_out)
+}
+
+/** Record a mid-shift cash movement. Amount is always positive; `type` gives direction. */
+export function recordCashMovement(params: {
+  shiftId: string
+  userId: string
+  type: 'in' | 'out'
+  amount: number
+  reason: string
+}): { id: string } {
+  const amount = round2(Math.abs(params.amount))
+  if (!(amount > 0)) throw new Error('Amount must be greater than zero')
+  if (!params.reason.trim()) throw new Error('A reason is required')
+
+  const db = getDatabase()
+  const shift = db
+    .prepare(`SELECT status FROM shifts WHERE id = ?`)
+    .get(params.shiftId) as { status: string } | undefined
+  if (!shift) throw new Error('Shift not found')
+  if (shift.status !== 'active') throw new Error('Cannot record cash against a closed shift')
+
+  const id = crypto.randomUUID()
+  db.prepare(
+    `INSERT INTO cash_movements (id, shift_id, user_id, type, amount, reason, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, params.shiftId, params.userId, params.type, amount, params.reason.trim(), new Date().toISOString())
+
+  logAudit({
+    userId: params.userId,
+    action: 'CASH_MOVEMENT',
+    entityType: 'shift',
+    entityId: params.shiftId,
+    details: { direction: params.type, amount, reason: params.reason.trim() }
+  })
+
+  return { id }
+}
+
+/** Cash paid in and out during a shift, for the end-of-shift summary. */
+export function getShiftCashMovements(shiftId: string): {
+  cashIn: number
+  cashOut: number
+  entries: Array<{ type: string; amount: number; reason: string; created_at: string }>
+} {
+  const db = getDatabase()
+  const entries = db
+    .prepare(
+      `SELECT type, amount, reason, created_at FROM cash_movements
+       WHERE shift_id = ? ORDER BY created_at ASC`
+    )
+    .all(shiftId) as Array<{ type: string; amount: number; reason: string; created_at: string }>
+
+  return {
+    cashIn: round2(entries.filter((e) => e.type === 'in').reduce((s, e) => s + e.amount, 0)),
+    cashOut: round2(entries.filter((e) => e.type === 'out').reduce((s, e) => s + e.amount, 0)),
+    entries
+  }
 }
 
 /** Cash actually taken during a shift, i.e. excluding the opening float. */

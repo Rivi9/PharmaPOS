@@ -137,8 +137,27 @@ export const sales = sqliteTable('sales', {
     .notNull()
     .default('completed'),
   voidReason: text('void_reason'),
+  voidedBy: text('voided_by'),
+  voidedAt: text('voided_at'),
   customerName: text('customer_name'),
   customerPhone: text('customer_phone'),
+  createdAt: text('created_at').notNull()
+})
+
+// ─── Cash Movements ───────────────────────────────────────────────────────────
+// Mid-shift cash in/out, so a float top-up or petty-cash payout is reconciled
+// rather than appearing as an unexplained drawer discrepancy.
+export const cashMovements = sqliteTable('cash_movements', {
+  id: text('id').primaryKey(),
+  shiftId: text('shift_id')
+    .notNull()
+    .references(() => shifts.id),
+  userId: text('user_id')
+    .notNull()
+    .references(() => users.id),
+  type: text('type', { enum: ['in', 'out'] }).notNull(),
+  amount: real('amount').notNull(),
+  reason: text('reason').notNull(),
   createdAt: text('created_at').notNull()
 })
 
@@ -256,3 +275,5 @@ export type SaleRefund = typeof saleRefunds.$inferSelect
 export type Category = typeof categories.$inferSelect
 export type Supplier = typeof suppliers.$inferSelect
 export type AuditLog = typeof auditLog.$inferSelect
+export type CashMovement = typeof cashMovements.$inferSelect
+export type NewCashMovement = typeof cashMovements.$inferInsert

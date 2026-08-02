@@ -4,6 +4,9 @@ import { QuickItems } from '@renderer/components/pos/QuickItems'
 import { ShoppingCart } from '@renderer/components/pos/ShoppingCart'
 import { PaymentModal } from '@renderer/components/pos/PaymentModal'
 import { ReceiptPreview } from '@renderer/components/pos/ReceiptPreview'
+import { CashMovementDialog } from '@renderer/components/pos/CashMovementDialog'
+import { Button } from '@renderer/components/ui/button'
+import { Wallet } from 'lucide-react'
 import { usePOSStore } from '@renderer/stores/posStore'
 import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
@@ -21,6 +24,7 @@ export function POSPage(): React.JSX.Element {
   const [searchModalOpen, setSearchModalOpen] = useState(false)
   const [quickItemsRefreshKey, setQuickItemsRefreshKey] = useState(0)
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
+  const [cashMovementOpen, setCashMovementOpen] = useState(false)
 
   // Sync cart state to customer display window
   useCustomerDisplay()
@@ -74,9 +78,19 @@ export function POSPage(): React.JSX.Element {
             <p className="text-sm font-medium">POS Terminal</p>
             <p className="text-xs text-muted-foreground">Ready for checkout</p>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-muted-foreground">Today's Sales</p>
-            <p className="text-lg font-bold">{formatCurrency(todaySalesTotal, currencySymbol)}</p>
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              className="h-11 gap-2"
+              onClick={() => setCashMovementOpen(true)}
+            >
+              <Wallet className="h-4 w-4" />
+              Cash In / Out
+            </Button>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Today&apos;s Sales</p>
+              <p className="text-lg font-bold">{formatCurrency(todaySalesTotal, currencySymbol)}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -116,6 +130,11 @@ export function POSPage(): React.JSX.Element {
         open={paymentModalOpen}
         onClose={() => setPaymentModalOpen(false)}
         onComplete={handlePaymentComplete}
+      />
+
+      <CashMovementDialog
+        open={cashMovementOpen}
+        onClose={() => setCashMovementOpen(false)}
       />
 
       {/* Receipt Preview */}
