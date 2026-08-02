@@ -16,6 +16,8 @@ export type AuditAction =
   | 'USER_UPDATED'
   | 'USER_DELETED'
   | 'USER_LOGIN'
+  | 'USER_LOGIN_FAILED'
+  | 'USER_LOCKED_OUT'
   | 'USER_LOGOUT'
   | 'SHIFT_STARTED'
   | 'SHIFT_ENDED'

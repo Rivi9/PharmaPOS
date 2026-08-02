@@ -73,6 +73,16 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
       CREATE INDEX IF NOT EXISTS idx_sale_refunds_shift ON sale_refunds(shift_id);
       CREATE INDEX IF NOT EXISTS idx_sale_refunds_sale ON sale_refunds(sale_id);
     `
+  },
+  {
+    version: 4,
+    sql: `
+      -- Login throttling. A 4-digit PIN is 10,000 candidates and there was no
+      -- counter, no lockout and no audit row for failures, so the whole space
+      -- could be walked from the login screen leaving no trace anywhere.
+      ALTER TABLE users ADD COLUMN failed_attempts integer NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN locked_until text;
+    `
   }
 ]
 

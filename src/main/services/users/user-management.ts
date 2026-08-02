@@ -23,6 +23,29 @@ export interface UpdateUserData {
   is_active?: number
 }
 
+const MIN_PASSWORD_LENGTH = 8
+
+/**
+ * Enforced in the service so every entry point inherits it. The change-password
+ * dialog only rejected whitespace, and the setup wizard's "at least 8 characters"
+ * copy was never actually checked — a one-character admin password was accepted.
+ */
+function assertPasswordStrength(password: string, username?: string): void {
+  if (!password || password.length < MIN_PASSWORD_LENGTH) {
+    throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
+  }
+  if (username && password.toLowerCase() === username.toLowerCase()) {
+    throw new Error('Password must not be the same as the username')
+  }
+}
+
+/** PINs are numeric and short by design; enforce the shape so 1-digit PINs cannot exist. */
+function assertPinFormat(pin: string): void {
+  if (!/^\d{4,6}$/.test(pin)) {
+    throw new Error('PIN must be 4 to 6 digits')
+  }
+}
+
 /**
  * List all users (without password hashes)
  */
@@ -60,6 +83,9 @@ export async function createUser(data: CreateUserData): Promise<{ id: string }> 
   if (!['admin', 'manager', 'cashier'].includes(data.role)) {
     throw new Error('Invalid role')
   }
+
+  assertPasswordStrength(data.password, data.username)
+  if (data.pin_code) assertPinFormat(data.pin_code)
 
   // Hash password
   const passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS)
@@ -108,18 +134,22 @@ export async function updateUser(id: string, data: UpdateUserData): Promise<void
     if (!['admin', 'manager', 'cashier'].includes(data.role)) {
       throw new Error('Invalid role')
     }
+    if (data.role !== 'admin') assertNotLastAdmin(id, 'role')
     updates.role = data.role
   }
 
   if (data.pin_code !== undefined) {
+    if (data.pin_code) assertPinFormat(data.pin_code)
     updates.pinCode = data.pin_code ? await bcrypt.hash(data.pin_code, SALT_ROUNDS) : null
   }
 
   if (data.password !== undefined) {
+    assertPasswordStrength(data.password)
     updates.passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS)
   }
 
   if (data.is_active !== undefined) {
+    if (!data.is_active) assertNotLastAdmin(id, 'deactivate')
     updates.isActive = data.is_active
   }
 
@@ -140,6 +170,8 @@ export async function changeUserPassword(id: string, newPassword: string): Promi
   if (!user) {
     throw new Error('User not found')
   }
+
+  assertPasswordStrength(newPassword, user.username)
 
   const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS)
 
@@ -188,6 +220,32 @@ export async function verifyPinCode(pin: string): Promise<User | null> {
 }
 
 /**
+ * Refuse any change that would leave the system with no active administrator.
+ *
+ * `deactivateUser` had this guard but `updateUser` did not, so demoting the only
+ * admin to Cashier — or setting is_active = 0 through the update path — locked
+ * everyone out permanently, with no way back in from inside the app.
+ */
+function assertNotLastAdmin(id: string, change: 'role' | 'deactivate'): void {
+  const user = getUserById(id)
+  if (!user || user.role !== 'admin' || !user.isActive) return
+
+  const result = getDb()
+    .select({ value: count() })
+    .from(users)
+    .where(and(eq(users.role, 'admin'), eq(users.isActive, 1)))
+    .get()
+
+  if ((result?.value ?? 0) <= 1) {
+    throw new Error(
+      change === 'role'
+        ? 'Cannot change the role of the last admin — promote another user to admin first'
+        : 'Cannot deactivate the last admin user'
+    )
+  }
+}
+
+/**
  * Deactivate user (soft delete)
  */
 export async function deactivateUser(id: string): Promise<void> {
@@ -196,18 +254,7 @@ export async function deactivateUser(id: string): Promise<void> {
     throw new Error('User not found')
   }
 
-  if (user.role === 'admin') {
-    const result = getDb()
-      .select({ value: count() })
-      .from(users)
-      .where(and(eq(users.role, 'admin'), eq(users.isActive, 1)))
-      .get()
-
-    const adminCount = result?.value ?? 0
-    if (adminCount <= 1) {
-      throw new Error('Cannot deactivate the last admin user')
-    }
-  }
+  assertNotLastAdmin(id, 'deactivate')
 
   const now = new Date().toISOString()
   getDb().update(users).set({ isActive: 0, updatedAt: now }).where(eq(users.id, id)).run()

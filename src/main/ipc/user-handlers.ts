@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from './channels'
-import { withPermission } from './middleware'
+import { withPermission, actingUserId } from './middleware'
+import { logAudit } from '../services/audit'
 import {
   listUsers,
   getUserById,
@@ -56,15 +57,53 @@ export function registerUserHandlers(): void {
   )
 
   ipcMain.handle(IPC_CHANNELS.USER_CREATE, async (_event, { ...data }) => {
-    return withPermission(_event, 'users:create', () => createUser(data))
+    return withPermission(_event, 'users:create', async () => {
+      const created = await createUser(data)
+      logAudit({
+        userId: actingUserId(_event),
+        action: 'USER_CREATED',
+        entityType: 'user',
+        entityId: (created as { id?: string })?.id,
+        details: { username: data.username, role: data.role }
+      })
+      return created
+    })
   })
 
   ipcMain.handle(IPC_CHANNELS.USER_UPDATE, async (_event, { id, data }) => {
-    return withPermission(_event, 'users:update', () => updateUser(id, data))
+    return withPermission(_event, 'users:update', async () => {
+      const before = getUserById(id)
+      const result = await updateUser(id, data)
+      // Record what changed, never the secrets themselves.
+      logAudit({
+        userId: actingUserId(_event),
+        action: 'USER_UPDATED',
+        entityType: 'user',
+        entityId: id,
+        details: {
+          fields: Object.keys(data).filter((k) => k !== 'password' && k !== 'pin_code'),
+          pin_changed: data.pin_code !== undefined,
+          password_changed: data.password !== undefined,
+          role_from: before?.role,
+          role_to: data.role
+        }
+      })
+      return result
+    })
   })
 
   ipcMain.handle(IPC_CHANNELS.USER_CHANGE_PASSWORD, async (_event, { id, password }) => {
-    return withPermission(_event, 'users:update', () => changeUserPassword(id, password))
+    return withPermission(_event, 'users:update', async () => {
+      const result = await changeUserPassword(id, password)
+      logAudit({
+        userId: actingUserId(_event),
+        action: 'USER_UPDATED',
+        entityType: 'user',
+        entityId: id,
+        details: { password_changed: true }
+      })
+      return result
+    })
   })
 
   ipcMain.handle(IPC_CHANNELS.USER_DELETE, async (_event, { id, reactivate }) => {
@@ -74,6 +113,13 @@ export function registerUserHandlers(): void {
       } else {
         await deactivateUser(id)
       }
+      logAudit({
+        userId: actingUserId(_event),
+        action: reactivate ? 'USER_UPDATED' : 'USER_DELETED',
+        entityType: 'user',
+        entityId: id,
+        details: { reactivated: Boolean(reactivate) }
+      })
       return { success: true }
     })
   })

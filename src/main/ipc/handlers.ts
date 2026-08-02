@@ -65,6 +65,18 @@ export function registerIpcHandlers(): void {
     return users
   })
 
+  /**
+   * Escalating lockout. A 4-digit PIN is only 10,000 candidates, so without a
+   * throttle the entire space could be walked from the login screen — and
+   * because failures were never audited, it would leave no trace at all.
+   */
+  const lockoutFor = (attempts: number): number => {
+    if (attempts >= 8) return 15 * 60_000
+    if (attempts >= 5) return 2 * 60_000
+    if (attempts >= 3) return 30_000
+    return 0
+  }
+
   // Login with PIN or password
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, async (event, { userId, pin, password }) => {
     const db = getDatabase()
@@ -72,6 +84,45 @@ export function registerIpcHandlers(): void {
 
     if (!user) {
       return { success: false, error: 'User not found' }
+    }
+
+    if (user.locked_until) {
+      const until = new Date(user.locked_until).getTime()
+      if (Number.isFinite(until) && until > Date.now()) {
+        const seconds = Math.ceil((until - Date.now()) / 1000)
+        return {
+          success: false,
+          error:
+            seconds > 60
+              ? `Too many failed attempts. Try again in ${Math.ceil(seconds / 60)} minutes.`
+              : `Too many failed attempts. Try again in ${seconds} seconds.`
+        }
+      }
+    }
+
+    const onSuccess = (): void => {
+      db.prepare('UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = ?').run(
+        user.id
+      )
+    }
+
+    const onFailure = (method: 'pin' | 'password'): void => {
+      const attempts = (user.failed_attempts ?? 0) + 1
+      const lockMs = lockoutFor(attempts)
+      const lockedUntil = lockMs > 0 ? new Date(Date.now() + lockMs).toISOString() : null
+      db.prepare('UPDATE users SET failed_attempts = ?, locked_until = ? WHERE id = ?').run(
+        attempts,
+        lockedUntil,
+        user.id
+      )
+      logAudit({
+        userId: user.id,
+        userName: user.full_name,
+        action: lockedUntil ? 'USER_LOCKED_OUT' : 'USER_LOGIN_FAILED',
+        entityType: 'user',
+        entityId: user.id,
+        details: { method, attempts, locked_until: lockedUntil }
+      })
     }
 
     // PIN is always bcrypt-compared. The old fallback branch did a plain `===`
@@ -95,6 +146,7 @@ export function registerIpcHandlers(): void {
           entityId: user.id,
           details: activeShift ? { opening_cash: activeShift.opening_cash } : undefined
         })
+        onSuccess()
         setSession(event, {
           id: user.id,
           username: user.username,
@@ -124,6 +176,7 @@ export function registerIpcHandlers(): void {
           entityId: user.id,
           details: activeShift ? { opening_cash: activeShift.opening_cash } : undefined
         })
+        onSuccess()
         setSession(event, {
           id: user.id,
           username: user.username,
@@ -134,7 +187,15 @@ export function registerIpcHandlers(): void {
       }
     }
 
-    return { success: false, error: 'Invalid credentials' }
+    onFailure(pin ? 'pin' : 'password')
+    const remaining = Math.max(0, 3 - ((user.failed_attempts ?? 0) + 1))
+    return {
+      success: false,
+      error:
+        remaining > 0
+          ? 'Invalid credentials'
+          : 'Invalid credentials. The account will be locked after further attempts.'
+    }
   })
 
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, (event) => {
