@@ -6,25 +6,50 @@ import {
   CardTitle
 } from '@renderer/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
-import { AlertTriangle, Clock } from 'lucide-react'
+import { AlertTriangle, Clock, RefreshCw } from 'lucide-react'
+import { Button } from '@renderer/components/ui/button'
 import type { LowStockAlert, ExpiryAlert } from '@renderer/types/analytics'
 
 interface AlertsPanelProps {
   lowStockAlerts: LowStockAlert[]
   expiryAlerts: ExpiryAlert[]
   isLoading?: boolean
+  /** Refresh just the alerts. Without this the only way to update them was the
+   *  dashboard-wide Refresh, so they went stale the moment stock moved. */
+  onRefresh?: () => void
+  lastUpdated?: Date | null
 }
 
 export function AlertsPanel({
   lowStockAlerts,
   expiryAlerts,
-  isLoading
+  isLoading,
+  onRefresh,
+  lastUpdated
 }: AlertsPanelProps): React.JSX.Element {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Alerts</CardTitle>
-        <CardDescription>Low stock and expiry notifications</CardDescription>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>Alerts</CardTitle>
+            <CardDescription>
+              Low stock and expiry notifications
+              {lastUpdated && ` · updated ${lastUpdated.toLocaleTimeString()}`}
+            </CardDescription>
+          </div>
+          {onRefresh && (
+            <Button
+              variant="outline"
+              className="h-11 gap-2 shrink-0"
+              onClick={onRefresh}
+              disabled={isLoading}
+            >
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="low-stock">

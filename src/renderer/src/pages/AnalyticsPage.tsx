@@ -13,6 +13,8 @@ import { ReportsPanel } from '@renderer/components/analytics/ReportsPanel'
 
 export function AnalyticsPage(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(true)
+  const [alertsLoading, setAlertsLoading] = useState(false)
+  const [alertsUpdatedAt, setAlertsUpdatedAt] = useState<Date | null>(null)
   const { user } = useAuthStore()
   const userId = user?.id ?? ''
 
@@ -59,6 +61,7 @@ export function AnalyticsPage(): React.JSX.Element {
       setCategoryBreakdown(categoryData)
       setLowStockAlerts(lowStock)
       setExpiryAlerts(expiring)
+      setAlertsUpdatedAt(new Date())
     } catch (error) {
       console.error('Failed to load analytics:', error)
     } finally {
@@ -66,9 +69,35 @@ export function AnalyticsPage(): React.JSX.Element {
     }
   }
 
+  /** Alerts only — cheap enough to poll, and the numbers that actually change
+   *  during trading. The dashboard-wide Refresh re-runs aggregation as well. */
+  const loadAlerts = async (): Promise<void> => {
+    if (!userId) return
+    setAlertsLoading(true)
+    try {
+      const [lowStock, expiring] = await Promise.all([
+        window.electron.analytics.getLowStockAlerts(userId),
+        window.electron.analytics.getExpiryAlerts(userId, 30)
+      ])
+      setLowStockAlerts(lowStock)
+      setExpiryAlerts(expiring)
+      setAlertsUpdatedAt(new Date())
+    } catch (error) {
+      console.error('Failed to refresh alerts:', error)
+    } finally {
+      setAlertsLoading(false)
+    }
+  }
+
   useEffect(() => {
     loadDashboardData()
   }, [])
+
+  // Keep alerts current without needing a manual dashboard refresh.
+  useEffect(() => {
+    const timer = setInterval(loadAlerts, 5 * 60_000)
+    return () => clearInterval(timer)
+  }, [userId])
 
   return (
     <div className="h-full flex flex-col p-6 bg-background">
@@ -106,7 +135,9 @@ export function AnalyticsPage(): React.JSX.Element {
             <AlertsPanel
               lowStockAlerts={lowStockAlerts}
               expiryAlerts={expiryAlerts}
-              isLoading={isLoading}
+              isLoading={isLoading || alertsLoading}
+              onRefresh={loadAlerts}
+              lastUpdated={alertsUpdatedAt}
             />
           </div>
         </TabsContent>
@@ -119,7 +150,9 @@ export function AnalyticsPage(): React.JSX.Element {
           <AlertsPanel
             lowStockAlerts={lowStockAlerts}
             expiryAlerts={expiryAlerts}
-            isLoading={isLoading}
+            isLoading={isLoading || alertsLoading}
+            onRefresh={loadAlerts}
+            lastUpdated={alertsUpdatedAt}
           />
         </TabsContent>
       </Tabs>

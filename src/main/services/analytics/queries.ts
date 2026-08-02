@@ -168,18 +168,29 @@ export function getLowStockAlerts(): LowStockAlert[] {
   const alerts = db
     .prepare(
       `
-    SELECT
-      p.id as product_id,
-      p.name as product_name,
-      COALESCE(SUM(sb.quantity), 0) as current_stock,
-      p.reorder_level,
-      p.reorder_qty
-    FROM products p
-    LEFT JOIN stock_batches sb ON p.id = sb.product_id
-    WHERE p.is_active = 1
-    GROUP BY p.id
-    HAVING current_stock <= p.reorder_level
-    ORDER BY (current_stock - p.reorder_level) ASC
+    SELECT * FROM (
+      SELECT
+        p.id as product_id,
+        p.name as product_name,
+        COALESCE((
+          SELECT SUM(b.quantity) FROM stock_batches b
+          WHERE b.product_id = p.id AND b.quantity > 0
+            AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
+        ), 0) as current_stock,
+        p.reorder_level,
+        p.reorder_qty
+      FROM products p
+      WHERE p.is_active = 1
+        -- Only products that have ever been stocked. Counting never-stocked rows
+        -- meant a partial catalogue import produced thousands of "low stock"
+        -- alerts and buried the real reorder signals.
+        AND EXISTS (SELECT 1 FROM stock_batches b WHERE b.product_id = p.id)
+    )
+    -- Wrapped so the computed stock can be filtered: with the aggregate replaced
+    -- by a subquery this is no longer an aggregate query, so HAVING is invalid.
+    WHERE current_stock <= reorder_level
+    ORDER BY (current_stock - reorder_level) ASC
+    LIMIT 200
   `
     )
     .all() as LowStockAlert[]
@@ -210,6 +221,7 @@ export function getExpiryAlerts(daysAhead: number = 30): ExpiryAlert[] {
     FROM stock_batches sb
     JOIN products p ON sb.product_id = p.id
     WHERE sb.expiry_date IS NOT NULL
+      AND sb.expiry_date <> ''
       AND sb.expiry_date <= ?
       AND sb.quantity > 0
     ORDER BY sb.expiry_date ASC
