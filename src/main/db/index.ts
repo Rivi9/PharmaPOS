@@ -61,6 +61,18 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
       -- returned '' and suppressed the expiry warning for the whole product.
       UPDATE stock_batches SET expiry_date = NULL WHERE expiry_date = '';
     `
+  },
+  {
+    version: 3,
+    sql: `
+      -- A refund is paid out of the drawer of the shift that processes it, which
+      -- is not necessarily the shift that made the sale. Without this the cash
+      -- paid out was invisible to the end-of-shift reconciliation.
+      ALTER TABLE sale_refunds ADD COLUMN shift_id text REFERENCES shifts(id);
+      ALTER TABLE sale_refunds ADD COLUMN tax_refunded real NOT NULL DEFAULT 0;
+      CREATE INDEX IF NOT EXISTS idx_sale_refunds_shift ON sale_refunds(shift_id);
+      CREATE INDEX IF NOT EXISTS idx_sale_refunds_sale ON sale_refunds(sale_id);
+    `
   }
 ]
 

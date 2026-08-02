@@ -13,14 +13,14 @@
 
 | Severity | Raised | Fixed | Open |
 |----------|-------:|------:|-----:|
-| 🔴 Critical | 25 | **19** | 6 |
+| 🔴 Critical | 25 | **21** | 4 |
 | 🟠 High | 40 | **12** | 28 |
 | 🟡 Medium | 32 | **4** | 28 |
 | ⚪ Low | 16 | **3** | 13 |
-| **Total** | **113** | **38** | **75** |
+| **Total** | **113** | **40** | **73** |
 | 📋 Operator requirements | 5 | **2** | 3 |
 
-**Still-open Criticals:** C11 and C12 (main-process session, PIN hash exposure), C13 and C25 (the refund path), C21 and C22 (backup encryption and PII leaving the machine in the clear). Everything else at Critical is closed.
+**Still-open Criticals:** C11 and C12 (main-process session, PIN hash exposure) and C21 and C22 (backup encryption, PII leaving the machine in the clear). Everything else at Critical is closed.
 
 Fixed across four rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
 
@@ -29,7 +29,7 @@ Fixed across four rounds — see [Fixed in this session](#-fixed-in-this-session
 | 1 | `56475b9` | C16, L11 + AI insights removed, batch picker |
 | 2 | `75436fa`, `0851dba`, `d610807` | C1, C2, C4, C5, C6, C7, C10, C15, C17–C20, C23, C24, H1, H3, H29, H31–H33, H35, H37, M8, M12, L1, L2, R5 |
 | 3 | `ba57e9d`, `01006ed` | C8, C9, C14, H8, R3 + 2 Medium |
-| 4 | `e9dfeb0`, this round | C3, H2, H26, H27 |
+| 4 | `e9dfeb0`, `792ab82`, this round | C3, C13, C25, H2, H26, H27 + install-time migrations |
 
 **Two passes.** Pass 1 (C1–C15, H1–H25) covered the POS, payments, printing, auth/RBAC, inventory and the schema. Pass 2 (C16–C25, H26–H40) covered the areas pass 1 listed as gaps — the full money/analytics verification, report generation, backup/restore, scheduling, logging, auto-update, the audit log, customers, and the admin-screen touch review. **Coverage is now complete**; there is no remaining unreviewed area.
 
@@ -635,6 +635,8 @@ Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can d
 |---|---|
 | **H2** — cash drawer, and a regression I introduced | Decoupling the drawer from the receipt in round 2 removed `cashdraw` from the print stream without adding the replacement, so the drawer stopped opening entirely. `printer.openDrawer()` now fires straight after the sale commits for cash and mixed payments, so the till opens whether or not the cashier prints and a paper fault cannot lock it. |
 | **Migrations now run at install time** | Squirrel runs the executable with `--squirrel-install` / `--squirrel-updated`; nothing handled those, so the app briefly opened a full window during every install and update. The hook is now handled: it migrates the database, manages shortcuts and exits without booting the UI. The startup check remains as the safety net — see [How migrations run](#how-migrations-run). |
+| **C13** — refund-with-restock always threw | The write to `products.stock_quantity` — a column that does not exist — raised inside the transaction and rolled the entire refund back *after* cash had been handed over the counter. Stock now goes back into the **originating** `sale_items.batch_id`, so expiry tracking stays truthful. |
+| **C25** — refunds net of VAT and invisible everywhere | Refunds are now priced from the original sale rather than the caller's payload (which was trusted verbatim), VAT is apportioned and stored in a new `tax_refunded` column, cumulative quantities are validated against what was actually sold, the sale flips to `refunded` once nothing remains refundable, the daily rollup is reversed, and the cash paid out is subtracted from the drawer via a new `sale_refunds.shift_id` — refunds hit the drawer of the shift that processes them, not the sale's shift. Verified on a copy of the live database: over-refund rejected, stock returned to the right batch, rollup reversed, drawer expectation Rs. 2831.70 → Rs. 2746.75 after an Rs. 84.96 refund. |
 
 
 **Operator decision:** prices are entered tax-inclusive (shelf/MRP), one global rate applies to everything, existing sales are left as-is.
@@ -774,12 +776,11 @@ One caveat on confidence: every finding is derived from source, and the ones mar
 
 **Next, in order:**
 
-1. **C25** — refunds: recorded net of VAT, never marked `refunded`, and invisible to every report and to the drawer.
-2. **C11, C12** — the main-process session, which also retires H24, and PIN hash exposure.
-3. **C21, C22** — encrypt backups unconditionally and stop uploading customer PII in the clear.
-4. **R1 + R2 + H4** — per-batch pricing and batch history together.
-5. **H25** — a sale-to-receipt E2E test.
-6. Dependency bumps: `drizzle-orm` ≥0.45.2 and `jspdf` >4.2.0 both ship in the app with published advisories.
+1. **C11, C12** — the main-process session, which also retires H24, and PIN hash exposure.
+2. **C21, C22** — encrypt backups unconditionally and stop uploading customer PII in the clear.
+3. **R1 + R2 + H4** — per-batch pricing and batch history together.
+4. **H25** — a sale-to-receipt E2E test.
+5. Dependency bumps: `drizzle-orm` ≥0.45.2 and `jspdf` >4.2.0 both ship in the app with published advisories.
 
 ### Original order (retained for reference)
 

@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { getDb } from '../db/index'
 import { getDatabase } from './database'
-import { sales, saleItems, products, customers, saleRefunds } from '../db/schema'
+import { sales, saleItems, products, customers } from '../db/schema'
 import type { Sale, SaleItem, SaleRefund } from '../db/schema'
 import { round2, extractIncludedTax } from '../../shared/money'
 import { logAudit } from './audit'
@@ -397,7 +397,18 @@ export function computeShiftExpectedCash(shiftId: string, openingCash: number): 
     )
     .get(shiftId) as { cash_in: number; cash_out: number }
 
-  return round2(openingCash + sales.total + movements.cash_in - movements.cash_out)
+  // Cash paid back out for refunds processed during this shift. Refunds were
+  // invisible to the reconciliation, so the drawer expected money that had
+  // already been handed back across the counter.
+  const refunds = db
+    .prepare(
+      `SELECT COALESCE(SUM(total_refunded), 0) as total FROM sale_refunds WHERE shift_id = ?`
+    )
+    .get(shiftId) as { total: number }
+
+  return round2(
+    openingCash + sales.total + movements.cash_in - movements.cash_out - refunds.total
+  )
 }
 
 /** Record a mid-shift cash movement. Amount is always positive; `type` gives direction. */
@@ -543,54 +554,165 @@ export function createRefund(
 ): { refund_id: string } {
   if (!items.length) throw new Error('Refund must include at least one item')
 
-  const db = getDb()
   const rawDb = getDatabase()
-
-  const sale = db.select({ status: sales.status }).from(sales).where(eq(sales.id, saleId)).get()
-  if (!sale) throw new Error('Sale not found')
-  if (sale.status !== 'completed') throw new Error(`Cannot refund a ${sale.status} sale`)
-
-  const totalRefunded = items.reduce((sum, i) => sum + i.line_total, 0)
   const refundId = crypto.randomUUID()
   const now = new Date().toISOString()
 
-  rawDb.transaction(() => {
-    db.insert(saleRefunds)
-      .values({
-        id: refundId,
-        saleId,
-        userId,
-        items: JSON.stringify(items),
-        totalRefunded,
-        restock: restock ? 1 : 0,
-        reason: reason.trim() || null,
-        createdAt: now
-      })
-      .run()
+  return rawDb.transaction(() => {
+    const sale = rawDb
+      .prepare('SELECT status, subtotal, total, receipt_number, created_at FROM sales WHERE id = ?')
+      .get(saleId) as
+      | { status: string; subtotal: number; total: number; receipt_number: string; created_at: string }
+      | undefined
+    if (!sale) throw new Error('Sale not found')
+    if (sale.status === 'voided') throw new Error('Cannot refund a voided sale')
 
-    if (restock) {
-      for (const item of items) {
-        // Return stock to the most recent active batch for this product,
-        // or create an adjustment batch if none exists.
-        const batch = rawDb
-          .prepare(
-            `SELECT id FROM stock_batches WHERE product_id = ? ORDER BY received_date DESC LIMIT 1`
-          )
-          .get(item.product_id) as { id: string } | undefined
+    // What was actually sold, and what has already been sent back.
+    const sold = rawDb
+      .prepare(
+        `SELECT product_id, batch_id, quantity, unit_price, line_total, tax_amount, cost_price
+         FROM sale_items WHERE sale_id = ?`
+      )
+      .all(saleId) as Array<{
+      product_id: string
+      batch_id: string | null
+      quantity: number
+      unit_price: number
+      line_total: number
+      tax_amount: number
+      cost_price: number
+    }>
 
-        if (batch) {
-          rawDb
-            .prepare(`UPDATE stock_batches SET quantity = quantity + ? WHERE id = ?`)
-            .run(item.quantity, batch.id)
+    const priorRefunds = rawDb
+      .prepare('SELECT items FROM sale_refunds WHERE sale_id = ?')
+      .all(saleId) as Array<{ items: string }>
+
+    const alreadyRefunded = new Map<string, number>()
+    for (const row of priorRefunds) {
+      try {
+        for (const i of JSON.parse(row.items) as RefundItemInput[]) {
+          alreadyRefunded.set(i.product_id, (alreadyRefunded.get(i.product_id) ?? 0) + i.quantity)
         }
-
-        // Update the product's total stock level
-        rawDb
-          .prepare(`UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?`)
-          .run(item.quantity, item.product_id)
+      } catch {
+        /* a malformed historical row must not block a legitimate refund */
       }
     }
-  })()
 
-  return { refund_id: refundId }
+    // Validate against the original sale. The caller's items were previously
+    // trusted verbatim, so a sale could be refunded repeatedly and for more
+    // than was ever bought.
+    let refundAmount = 0
+    let taxRefunded = 0
+    for (const item of items) {
+      const soldLine = sold.find((s) => s.product_id === item.product_id)
+      if (!soldLine) {
+        throw new Error(`${item.product_name} was not part of this sale`)
+      }
+      const remaining = soldLine.quantity - (alreadyRefunded.get(item.product_id) ?? 0)
+      if (item.quantity <= 0) throw new Error('Refund quantity must be greater than zero')
+      if (item.quantity > remaining) {
+        throw new Error(
+          `Cannot refund ${item.quantity} of ${item.product_name} — only ${remaining} remain refundable`
+        )
+      }
+      // Price the refund from the ORIGINAL sale, never from the caller's payload.
+      const perUnit = soldLine.line_total / soldLine.quantity
+      const perUnitTax = soldLine.tax_amount / soldLine.quantity
+      refundAmount = round2(refundAmount + perUnit * item.quantity)
+      taxRefunded = round2(taxRefunded + perUnitTax * item.quantity)
+    }
+
+    // A sale-level discount means the customer paid less than the sum of the
+    // line totals, so the refund is scaled by the same ratio.
+    if (sale.subtotal > 0 && sale.total !== sale.subtotal) {
+      const ratio = sale.total / sale.subtotal
+      refundAmount = round2(refundAmount * ratio)
+      taxRefunded = round2(taxRefunded * ratio)
+    }
+
+    // The drawer that pays out is the one currently open, not the sale's shift.
+    const activeShift = rawDb
+      .prepare(`SELECT id FROM shifts WHERE user_id = ? AND status = 'active' LIMIT 1`)
+      .get(userId) as { id: string } | undefined
+
+    rawDb
+      .prepare(
+        `INSERT INTO sale_refunds
+           (id, sale_id, user_id, items, total_refunded, tax_refunded, restock, reason, shift_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        refundId,
+        saleId,
+        userId,
+        JSON.stringify(items),
+        refundAmount,
+        taxRefunded,
+        restock ? 1 : 0,
+        reason.trim() || null,
+        activeShift?.id ?? null,
+        now
+      )
+
+    const saleDate = sale.created_at.split('T')[0]
+
+    for (const item of items) {
+      const soldLine = sold.find((s) => s.product_id === item.product_id)!
+
+      if (restock) {
+        // Back into the batch it came from, so expiry tracking stays truthful.
+        // The old code picked the most recently received batch instead, and then
+        // wrote to products.stock_quantity — a column that does not exist, which
+        // threw and rolled the entire refund back after cash had been handed over.
+        if (soldLine.batch_id) {
+          rawDb
+            .prepare('UPDATE stock_batches SET quantity = quantity + ? WHERE id = ?')
+            .run(item.quantity, soldLine.batch_id)
+        }
+      }
+
+      // Reverse the daily rollup so reports stop counting refunded revenue.
+      const perUnitNet = (soldLine.line_total - soldLine.tax_amount) / soldLine.quantity
+      const netBack = round2(perUnitNet * item.quantity)
+      const costBack = round2(soldLine.cost_price * item.quantity)
+      rawDb
+        .prepare(
+          `UPDATE product_sales_daily
+             SET quantity_sold = quantity_sold - ?,
+                 revenue = revenue - ?,
+                 cost = cost - ?,
+                 profit = profit - ?
+           WHERE date = ? AND product_id = ?`
+        )
+        .run(item.quantity, netBack, costBack, round2(netBack - costBack), saleDate, item.product_id)
+    }
+
+    // Mark the sale refunded once nothing remains refundable, so it stops being
+    // counted as a completed sale. Previously the status was never updated, so
+    // the same sale could be refunded without limit.
+    const totalSoldQty = sold.reduce((s, l) => s + l.quantity, 0)
+    const totalRefundedQty =
+      [...alreadyRefunded.values()].reduce((s, q) => s + q, 0) +
+      items.reduce((s, i) => s + i.quantity, 0)
+    if (totalRefundedQty >= totalSoldQty) {
+      rawDb.prepare(`UPDATE sales SET status = 'refunded' WHERE id = ?`).run(saleId)
+    }
+
+    logAudit({
+      userId,
+      action: 'SALE_REFUNDED',
+      entityType: 'sale',
+      entityId: saleId,
+      details: {
+        receipt_number: sale.receipt_number,
+        refunded: refundAmount,
+        tax_refunded: taxRefunded,
+        restocked: restock,
+        fully_refunded: totalRefundedQty >= totalSoldQty,
+        reason: reason.trim() || null
+      }
+    })
+
+    return { refund_id: refundId }
+  })()
 }

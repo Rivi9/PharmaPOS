@@ -211,8 +211,12 @@ export const saleRefunds = sqliteTable('sale_refunds', {
     .references(() => users.id),
   items: text('items').notNull(), // JSON array stored as TEXT
   totalRefunded: real('total_refunded').notNull(),
+  /** VAT contained in the refunded amount, so VAT reporting can be reversed too. */
+  taxRefunded: real('tax_refunded').notNull().default(0),
   restock: integer('restock').notNull().default(1),
   reason: text('reason'),
+  /** Shift whose drawer the cash came out of — not necessarily the sale's shift. */
+  shiftId: text('shift_id').references(() => shifts.id),
   createdAt: text('created_at').notNull()
 })
 
