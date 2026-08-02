@@ -14,15 +14,15 @@
 | Severity | Raised | Fixed | Open |
 |----------|-------:|------:|-----:|
 | 🔴 Critical | 25 | **25** | 0 |
-| 🟠 High | 40 | **15** | 25 |
-| 🟡 Medium | 32 | **4** | 28 |
+| 🟠 High | 40 | **22** | 18 |
+| 🟡 Medium | 32 | **6** | 26 |
 | ⚪ Low | 16 | **3** | 13 |
-| **Total** | **113** | **47** | **66** |
+| **Total** | **113** | **56** | **57** |
 | 📋 Operator requirements | 5 | **2** | 3 |
 
 **Every Critical is now closed.** The remaining work is High and below — see [Suggested order of work](#suggested-order-of-work).
 
-Fixed across six rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
+Fixed across seven rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
 
 | Round | Commit | Closed |
 |---|---|---|
@@ -32,6 +32,7 @@ Fixed across six rounds — see [Fixed in this session](#-fixed-in-this-session)
 | 4 | `e9dfeb0`, `792ab82`, `677a2e8` | C3, C13, C25, H2, H26, H27 + install-time migrations |
 | 5 | `6ea0576` | C11, C12, H19, H21 (partial) + settings and bootstrap channels gated |
 | 6 | `541feb8` | C21, C22, H30 (partial) + versioned encryption container |
+| 7 | `87c7d3c`, `816fdd6` | H7, H9, H10, H11, H15, H20, H21, H36 (users) + password rules |
 
 **Two passes.** Pass 1 (C1–C15, H1–H25) covered the POS, payments, printing, auth/RBAC, inventory and the schema. Pass 2 (C16–C25, H26–H40) covered the areas pass 1 listed as gaps — the full money/analytics verification, report generation, backup/restore, scheduling, logging, auto-update, the audit log, customers, and the admin-screen touch review. **Coverage is now complete**; there is no remaining unreviewed area.
 
@@ -651,6 +652,19 @@ Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can d
 | Cart/receipt wording | Labelled `incl. VAT (x%)` so it cannot be read as an additional charge; hidden entirely at 0%. |
 
 A test caught a genuine rounding split during this work: extracting VAT from the subtotal gave `117.46` on the real basket `R-2026-003849`, while summing per line gave `117.45`. The cart now sums per line, matching how the sale is stored, so cart, line items and header agree to the cent. Verified that `net + VAT == gross` and that 0% — the deployed store's setting — is a complete no-op.
+
+### Round 7 — auth hardening and inventory accuracy (`87c7d3c`, `816fdd6`)
+
+| Item | Change |
+|---|---|
+| **H21** — PIN brute-forcing | Migration 4 adds `failed_attempts` and `locked_until`. Login escalates 3 failures → 30s, 5 → 2min, 8+ → 15min, resets on success, and audits `USER_LOGIN_FAILED` / `USER_LOCKED_OUT`. Exhausting the 10,000-PIN space now costs ~2,500 hours instead of minutes. |
+| **H20** — last-admin guard bypassable | `deactivateUser` had the guard; `updateUser` did not, so demoting the only admin to Cashier — or `is_active = 0` via the update path — locked everyone out permanently with no in-app recovery. Extracted `assertNotLastAdmin()` and applied it to all three paths. |
+| Password and PIN rules | Enforced in the service so every entry point inherits them: 8-character minimum, must not equal the username, PIN 4–6 digits. The change-password dialog only rejected whitespace, and the wizard's "at least 8 characters" copy was never checked. |
+| **H36** (users) — no audit trail | `USER_CREATED`, `USER_UPDATED` and `USER_DELETED` were declared but never emitted, so creating an admin or resetting a password left no record — which is what made the privilege-escalation holes undetectable. Now emitted with the changed fields and role transition, never the secrets. |
+| **H7 / H9** — wrong stock everywhere on the POS | `searchProducts`, `getProductByBarcode` and `getQuickItems` counted depleted and expired batches as sellable, and took `nearest_expiry` from batches sold out years ago — which is why good stock showed a red EXPIRED banner and staff learned to ignore it. `getQuickItems` also multiplied stock by the number of days the product had sold on. Verified on live data: a product with 60 + 40 sellable, 25 expired and one empty batch, sold on three days, reported **375 units and 24 sales**; it now reports the correct **100 and 6**. |
+| **H10** — category rename impossible | The handler passed an object into a three-argument signature, so better-sqlite3 threw and the dialog silently sat there. Now object-shaped, and it persists `parent_id`. |
+| **H15** — CSV corruption and formula injection | Quoting alone does not escape an embedded quote, so `6" Crepe Bandage` shifted every column after it; a leading `=`/`+`/`-`/`@` was evaluated by Excel. Cells are escaped and prefixed, and the file carries a UTF-8 BOM. |
+| **H11** — silent saves that wiped the form | Submit handlers acted only on success while the dialogs always `reset()`, so a duplicate barcode blanked everything with no message. Handlers now throw and the dialogs keep the input and show why. |
 
 ### Round 6 — backup confidentiality (commit `541feb8`)
 
