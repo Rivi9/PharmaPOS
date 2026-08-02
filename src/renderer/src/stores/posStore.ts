@@ -4,7 +4,7 @@ import {
   calculateLineTotal,
   calculateSubtotal,
   calculateSaleDiscountAmount,
-  calculateTax,
+  calculateItemsTax,
   calculateTotal
 } from '../lib/calculations'
 import { useSettingsStore } from './settingsStore'
@@ -153,20 +153,19 @@ export const usePOSStore = create<POSStore>((set, get) => ({
     return calculateSaleDiscountAmount(subtotal, get().saleDiscount)
   },
 
-  // Computed: Tax amount — reads rate from settings (0 if not loaded yet)
+  // Computed: VAT already contained in the prices charged (tax-inclusive model).
+  // This is a breakdown for reporting — it does not change what the customer pays.
   taxAmount: () => {
-    const subtotal = get().subtotal()
-    const discount = get().discountAmount()
     const ratePercent = parseFloat(useSettingsStore.getState().settings.vat_rate) || 0
-    return calculateTax(subtotal - discount, ratePercent)
+    // Summed per line so the cart matches the per-row VAT that createSale stores.
+    return calculateItemsTax(get().items, ratePercent, get().discountAmount())
   },
 
-  // Computed: Total
+  // Computed: Total. Tax is inside the prices, so it is not added on.
   total: () => {
     const subtotal = get().subtotal()
     const discount = get().discountAmount()
-    const tax = get().taxAmount()
-    return calculateTotal(subtotal, discount, tax)
+    return calculateTotal(subtotal, discount)
   },
 
   // Hold current sale

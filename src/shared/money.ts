@@ -21,3 +21,23 @@ export function round2(value: number): number {
 export function isAtLeast(amount: number, target: number): boolean {
   return amount >= target - 0.005
 }
+
+/**
+ * VAT contained *within* a tax-inclusive amount.
+ *
+ * Prices in this system are shelf/MRP prices that already include VAT, so tax is
+ * extracted for reporting and is never added on top. Previously the renderer
+ * added the rate to the price while the main process extracted a per-product
+ * rate, so the two disagreed and a Rs. 115 pack was charged at Rs. 135.70.
+ *
+ *   gross 115.00 @ 18%  ->  VAT 17.54, net 97.46
+ */
+export function extractIncludedTax(grossAmount: number, ratePercent: number): number {
+  if (!(ratePercent > 0) || !Number.isFinite(grossAmount)) return 0
+  return round2(grossAmount - grossAmount / (1 + ratePercent / 100))
+}
+
+/** The portion of a tax-inclusive amount that is actual revenue. */
+export function netOfIncludedTax(grossAmount: number, ratePercent: number): number {
+  return round2(grossAmount - extractIncludedTax(grossAmount, ratePercent))
+}

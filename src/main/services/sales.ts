@@ -3,7 +3,7 @@ import { getDb } from '../db/index'
 import { getDatabase } from './database'
 import { sales, saleItems, products, customers, saleRefunds } from '../db/schema'
 import type { Sale, SaleItem, SaleRefund } from '../db/schema'
-import { round2 } from '../../shared/money'
+import { round2, extractIncludedTax } from '../../shared/money'
 import { logAudit } from './audit'
 
 // Re-export types that may be consumed by other modules
@@ -200,6 +200,17 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
       })
       .run()
 
+    // One global VAT rate, read server-side so the renderer cannot disagree with it.
+    const vatRate =
+      parseFloat(
+        (
+          db.prepare('SELECT value FROM settings WHERE key = ?').get('vat_rate') as
+            | { value: string }
+            | undefined
+        )?.value ?? '0'
+      ) || 0
+    let lineTaxTotal = 0
+
     // Insert sale items with per-item tax
     for (const item of saleData.items) {
       const itemId = crypto.randomUUID()
@@ -226,17 +237,13 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
         batchQty > 0 && batchCostTotal > 0
           ? round2(batchCostTotal / batchQty)
           : (product?.costPrice ?? 0)
-      const taxRate = product?.taxRate ?? 0
-
-      // FIX 2: Calculate per-item tax amount
-      let taxAmount = 0
-      if (taxRate > 0) {
-        if (product?.isTaxInclusive) {
-          taxAmount = item.line_total - item.line_total / (1 + taxRate / 100)
-        } else {
-          taxAmount = (item.line_total * taxRate) / 100
-        }
-      }
+      // Single global rate, extracted from the tax-inclusive line total. The old
+      // code used a per-product rate here while the cart used the global rate and
+      // ADDED it, so sales.tax_amount and SUM(sale_items.tax_amount) never agreed
+      // — a VAT return built from line items reported zero on VAT-charged sales.
+      const taxRate = vatRate
+      const taxAmount = extractIncludedTax(item.line_total, taxRate)
+      lineTaxTotal = round2(lineTaxTotal + taxAmount)
 
       drizzleDb
         .insert(saleItems)
@@ -256,9 +263,13 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
         })
         .run()
 
-      // FIX 3: product_sales_daily upsert using composite PK (date, product_id)
+      // FIX 3: product_sales_daily upsert using composite PK (date, product_id).
+      // Revenue is NET of VAT — VAT is money owed to the revenue authority, not
+      // income. Storing the gross line total made the P&L disagree with the
+      // Sales Report by exactly the VAT for the period.
+      const netRevenue = round2(item.line_total - taxAmount)
       const cost = round2(costPrice * item.quantity)
-      const profit = round2(item.line_total - cost)
+      const profit = round2(netRevenue - cost)
 
       db.prepare(
         `
@@ -270,8 +281,12 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
           cost = cost + excluded.cost,
           profit = profit + excluded.profit
       `
-      ).run(today, item.product_id, item.quantity, item.line_total, cost, profit)
+      ).run(today, item.product_id, item.quantity, netRevenue, cost, profit)
     }
+
+    // The header VAT is the sum of the line VAT, so the two can never disagree
+    // and a VAT return can be built from either.
+    db.prepare('UPDATE sales SET tax_amount = ? WHERE id = ?').run(lineTaxTotal, saleId)
 
     // FIX 4: REMOVED — do NOT update shifts.expected_cash here
     // expected_cash is computed at shift-end from actual sales

@@ -32,10 +32,13 @@ export function CartTotals({
         </div>
       )}
 
-      <div className="flex justify-between text-sm">
-        <span className="text-muted-foreground">Tax ({vatRate}%):</span>
-        <span className="font-medium">{formatCurrency(taxAmount, currencySymbol)}</span>
-      </div>
+      {/* Prices include VAT, so this is a breakdown of the total — not an addition. */}
+      {taxAmount > 0 && (
+        <div className="flex justify-between text-sm">
+          <span className="text-muted-foreground">incl. VAT ({vatRate}%):</span>
+          <span className="font-medium">{formatCurrency(taxAmount, currencySymbol)}</span>
+        </div>
+      )}
 
       <div className="flex justify-between text-lg font-bold border-t pt-2">
         <span>Total:</span>

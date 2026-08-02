@@ -18,9 +18,11 @@ export function aggregateDailySales(date?: string): { processed: number } {
       date(s.created_at) as date,
       si.product_id,
       SUM(si.quantity) as quantity_sold,
-      SUM(si.line_total) as revenue,
-      SUM(si.cost_price * si.quantity) as cost,
-      SUM(si.line_total - (si.cost_price * si.quantity)) as profit
+      -- Net of VAT, matching what createSale writes live. Prices are tax-inclusive,
+      -- so the gross line total is not revenue — the VAT portion is a liability.
+      ROUND(SUM(si.line_total - si.tax_amount), 2) as revenue,
+      ROUND(SUM(si.cost_price * si.quantity), 2) as cost,
+      ROUND(SUM((si.line_total - si.tax_amount) - (si.cost_price * si.quantity)), 2) as profit
     FROM sale_items si
     JOIN sales s ON si.sale_id = s.id
     WHERE date(s.created_at) = ?

@@ -198,8 +198,10 @@ export function buildReceipt(input: ReceiptInput): ReceiptLine[] {
     left(amountRow('Discount:', `-${cur}${sale.discount_amount.toFixed(2)}`, width))
   }
   if (sale.tax_amount > 0) {
-    const label = business.vatRate ? `VAT (${business.vatRate}%):` : 'VAT:'
-    left(amountRow(label, `${cur}${sale.tax_amount.toFixed(2)}`, width))
+    // Prices are tax-inclusive, so this is a breakdown of what is already in the
+    // total — labelled "incl." so nobody reads it as an additional charge.
+    const rate = business.vatRate && business.vatRate !== '0' ? ` (${business.vatRate}%)` : ''
+    left(amountRow(`incl. VAT${rate}:`, `${cur}${sale.tax_amount.toFixed(2)}`, width))
   }
   rule()
 

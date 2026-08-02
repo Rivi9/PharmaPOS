@@ -82,12 +82,18 @@ export function generateSalesReport(startDate: string, endDate: string): SalesRe
     .prepare(
       `
     SELECT
+      -- Gross: what was actually banked, VAT included.
       COALESCE(SUM(total), 0) as total_sales,
-      COALESCE(SUM(total - (
-        SELECT SUM(si.cost_price * si.quantity)
+      COALESCE(SUM(tax_amount), 0) as total_vat,
+      -- Net revenue, the same basis the P&L uses, so the two reports reconcile.
+      ROUND(COALESCE(SUM(total - tax_amount), 0), 2) as total_net_sales,
+      -- Profit must be computed on NET revenue. Using the VAT-inclusive total
+      -- booked the pharmacy's VAT liability as profit.
+      ROUND(COALESCE(SUM((total - tax_amount) - (
+        SELECT COALESCE(SUM(si.cost_price * si.quantity), 0)
         FROM sale_items si
         WHERE si.sale_id = s.id
-      )), 0) as total_profit,
+      )), 0), 2) as total_profit,
       COALESCE(SUM((
         SELECT SUM(si.cost_price * si.quantity)
         FROM sale_items si
@@ -116,11 +122,11 @@ export function generateSalesReport(startDate: string, endDate: string): SalesRe
     SELECT
       date(s.created_at) as date,
       COALESCE(SUM(s.total), 0) as sales,
-      COALESCE(SUM(s.total - (
-        SELECT SUM(si.cost_price * si.quantity)
+      ROUND(COALESCE(SUM((s.total - s.tax_amount) - (
+        SELECT COALESCE(SUM(si.cost_price * si.quantity), 0)
         FROM sale_items si
         WHERE si.sale_id = s.id
-      )), 0) as profit,
+      )), 0), 2) as profit,
       COUNT(*) as transactions
     FROM sales s
     WHERE date(s.created_at) BETWEEN ? AND ?
