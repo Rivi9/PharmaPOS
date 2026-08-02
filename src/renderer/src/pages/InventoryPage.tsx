@@ -11,6 +11,7 @@ import { useAuthStore } from '@renderer/stores/authStore'
 import { ProductsTable } from '@renderer/components/inventory/ProductsTable'
 import { CategoriesTable } from '@renderer/components/inventory/CategoriesTable'
 import { SuppliersTable } from '@renderer/components/inventory/SuppliersTable'
+import { BatchHistoryDialog } from '@renderer/components/inventory/BatchHistoryDialog'
 import { StockBatchesTable } from '@renderer/components/inventory/StockBatchesTable'
 
 // Forms
@@ -129,6 +130,8 @@ export function InventoryPage(): React.JSX.Element {
       }
     }
   }
+
+  const [historyBatch, setHistoryBatch] = useState<StockBatch | null>(null)
 
   const handleProductReactivate = async (product: Product): Promise<void> => {
     const result = await window.electron.reactivateProduct(userId, product.id)
@@ -521,10 +524,17 @@ export function InventoryPage(): React.JSX.Element {
               batches={filteredBatches}
               onEdit={handleBatchEdit}
               onDelete={handleBatchDelete}
+              onViewHistory={setHistoryBatch}
             />
           </div>
         </TabsContent>
       </Tabs>
+
+      <BatchHistoryDialog
+        key={historyBatch?.id ?? 'none'}
+        batch={historyBatch}
+        onClose={() => setHistoryBatch(null)}
+      />
 
       {/* Dialogs */}
       <ProductFormDialog

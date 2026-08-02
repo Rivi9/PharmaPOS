@@ -6,7 +6,7 @@ import {
   useReactTable
 } from '@tanstack/react-table'
 import { Button } from '@renderer/components/ui/button'
-import { Edit, Trash2 } from 'lucide-react'
+import { Edit, Trash2, History } from 'lucide-react'
 import type { StockBatch } from '@renderer/stores/inventoryStore'
 
 const columnHelper = createColumnHelper<StockBatch>()
@@ -15,9 +15,15 @@ interface StockBatchesTableProps {
   batches: StockBatch[]
   onEdit: (batch: StockBatch) => void
   onDelete: (batch: StockBatch) => void
+  onViewHistory?: (batch: StockBatch) => void
 }
 
-export function StockBatchesTable({ batches, onEdit, onDelete }: StockBatchesTableProps) {
+export function StockBatchesTable({
+  batches,
+  onEdit,
+  onDelete,
+  onViewHistory
+}: StockBatchesTableProps) {
   const columns = useMemo(
     () => [
       columnHelper.accessor('product_name', {
@@ -89,35 +95,50 @@ export function StockBatchesTable({ batches, onEdit, onDelete }: StockBatchesTab
       columnHelper.display({
         id: 'actions',
         header: 'Actions',
-        cell: (info) => (
-          <div className="flex gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onEdit(info.row.original)}
-              className="h-8 w-8 p-0"
-            >
-              <Edit className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onDelete(info.row.original)}
-              className="h-8 w-8 p-0 text-red-600 hover:text-red-700"
-              disabled={info.row.original.quantity > 0}
-              title={
-                info.row.original.quantity > 0
-                  ? 'Cannot delete batch with remaining stock'
-                  : 'Delete batch'
-              }
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        )
+        cell: (info) => {
+          const hasStock = info.row.original.quantity > 0
+          return (
+            <div className="flex items-center gap-3">
+              {onViewHistory && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onViewHistory(info.row.original)}
+                  aria-label="Batch history"
+                >
+                  <History className="h-4 w-4" />
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onEdit(info.row.original)}
+                aria-label="Edit batch"
+              >
+                <Edit className="h-4 w-4" />
+              </Button>
+              {hasStock ? (
+                // A disabled button plus a title tooltip explained nothing on a
+                // touchscreen: hover never fires and pointer-events are off, so
+                // the operator saw a dead grey control with no reason given.
+                <span className="text-xs text-muted-foreground">has stock</span>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onDelete(info.row.original)}
+                  className="text-red-600 hover:text-red-700"
+                  aria-label="Delete batch"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+          )
+        }
       })
     ],
-    [onEdit, onDelete]
+    [onEdit, onDelete, onViewHistory]
   )
 
   const table = useReactTable({
