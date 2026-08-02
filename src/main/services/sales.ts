@@ -40,6 +40,8 @@ interface BatchDeduction {
   quantity: number
   /** Cost of THIS batch — the correct COGS basis, not products.cost_price. */
   cost_price: number
+  /** Batch's own selling price, or null to fall back to products.unit_price. */
+  selling_price: number | null
 }
 
 /**
@@ -80,7 +82,7 @@ function deductStockFEFO(productId: string, quantityNeeded: number): BatchDeduct
   const batches = db
     .prepare(
       `
-    SELECT id, quantity, expiry_date, cost_price
+    SELECT id, quantity, expiry_date, cost_price, selling_price
     FROM stock_batches
     WHERE product_id = ? AND quantity > 0
       -- Expired stock must never be dispensed. FEFO orders by expiry ascending,
@@ -97,6 +99,7 @@ function deductStockFEFO(productId: string, quantityNeeded: number): BatchDeduct
     quantity: number
     expiry_date: string | null
     cost_price: number
+    selling_price: number | null
   }[]
 
   let remaining = quantityNeeded
@@ -109,7 +112,8 @@ function deductStockFEFO(productId: string, quantityNeeded: number): BatchDeduct
     deductions.push({
       batch_id: batch.id,
       quantity: deductQty,
-      cost_price: batch.cost_price ?? 0
+      cost_price: batch.cost_price ?? 0,
+      selling_price: batch.selling_price ?? null
     })
     remaining -= deductQty
   }
@@ -262,6 +266,32 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
           createdAt: now
         })
         .run()
+
+      // R2: one row per batch this line actually drew from. sale_items keeps a
+      // single batch_id, so a line spanning two batches lost the rest — a recall
+      // could not tell which customers received an affected lot, and per-batch
+      // margin was unanswerable.
+      for (const batch of batches) {
+        db.prepare(
+          `INSERT INTO sale_item_batches
+             (id, sale_id, sale_item_id, batch_id, product_id, quantity, cost_price, selling_price, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          crypto.randomUUID(),
+          saleId,
+          itemId,
+          batch.batch_id,
+          item.product_id,
+          batch.quantity,
+          batch.cost_price,
+          // The price actually charged. The cart is quoted the price of the batch
+          // FEFO picks first, so for a single-batch line these agree; when a line
+          // spans batches the customer is charged the quoted price throughout and
+          // that is what gets recorded.
+          item.unit_price,
+          now
+        )
+      }
 
       // FIX 3: product_sales_daily upsert using composite PK (date, product_id).
       // Revenue is NET of VAT — VAT is money owed to the revenue authority, not
@@ -445,6 +475,74 @@ export function recordCashMovement(params: {
   })
 
   return { id }
+}
+
+/**
+ * R2: the full life of one stock batch — what came in, what went out, at what
+ * cost and price, and what remains. This is what makes per-batch margin
+ * answerable and a manufacturer recall traceable to individual sales.
+ */
+export function getBatchLedger(batchId: string): {
+  batch: {
+    id: string
+    batch_number: string | null
+    product_name: string
+    expiry_date: string | null
+    received_date: string
+    cost_price: number
+    selling_price: number | null
+    quantity_remaining: number
+  } | null
+  sold: Array<{
+    sale_id: string
+    receipt_number: string
+    created_at: string
+    quantity: number
+    cost_price: number
+    selling_price: number
+    status: string
+  }>
+  totals: { quantitySold: number; revenue: number; cost: number; margin: number }
+} {
+  const db = getDatabase()
+
+  const batch = db
+    .prepare(
+      `SELECT sb.id, sb.batch_number, p.name as product_name, sb.expiry_date,
+              sb.received_date, sb.cost_price, sb.selling_price,
+              sb.quantity as quantity_remaining
+       FROM stock_batches sb JOIN products p ON p.id = sb.product_id
+       WHERE sb.id = ?`
+    )
+    .get(batchId) as ReturnType<typeof getBatchLedger>['batch']
+
+  const sold = db
+    .prepare(
+      `SELECT s.id as sale_id, s.receipt_number, s.created_at, s.status,
+              sib.quantity, sib.cost_price, sib.selling_price
+       FROM sale_item_batches sib
+       JOIN sales s ON s.id = sib.sale_id
+       WHERE sib.batch_id = ?
+       ORDER BY s.created_at DESC`
+    )
+    .all(batchId) as ReturnType<typeof getBatchLedger>['sold']
+
+  // Voided and refunded sales are excluded from the money, but stay in the list
+  // so the recall trail is complete.
+  const counted = sold.filter((r) => r.status === 'completed')
+  const revenue = round2(counted.reduce((sum, r) => sum + r.selling_price * r.quantity, 0))
+  const cost = round2(counted.reduce((sum, r) => sum + r.cost_price * r.quantity, 0))
+
+  return {
+    batch,
+    sold,
+    totals: {
+      quantitySold: counted.reduce((sum, r) => sum + r.quantity, 0),
+      revenue,
+      cost,
+      margin: round2(revenue - cost)
+    }
+  }
 }
 
 /** Cash paid in and out during a shift, for the end-of-shift summary. */

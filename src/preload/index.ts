@@ -99,6 +99,8 @@ const electronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_UPDATE, { userId, id, data }),
   deleteStockBatch: (userId: string, id: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_DELETE, { userId, id }),
+  batchLedger: (userId: string, batchId: string) =>
+    ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_LEDGER, { userId, batchId }),
   adjustStockBatch: (userId: string, batchId: string, quantityChange: number, reason: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_ADJUST, {
       userId,

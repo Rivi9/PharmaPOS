@@ -428,6 +428,8 @@ export interface StockBatchData {
   batch_number?: string
   quantity: number
   cost_price: number
+  /** Optional per-batch selling price; falls back to the product price. */
+  selling_price?: number | null
   expiry_date?: string
   received_date?: string
   supplier_id?: string
@@ -462,6 +464,7 @@ export function createStockBatch(data: StockBatchData): { id: string } {
       batchNumber: data.batch_number ?? null,
       quantity: data.quantity,
       costPrice: data.cost_price,
+      sellingPrice: data.selling_price ?? null,
       expiryDate: data.expiry_date ?? null,
       receivedDate,
       supplierId: data.supplier_id ?? null,
@@ -512,6 +515,10 @@ export function updateStockBatch(id: string, data: Partial<StockBatchData>): voi
   if (data.cost_price !== undefined) {
     fields.push('cost_price = ?')
     values.push(data.cost_price)
+  }
+  if (data.selling_price !== undefined) {
+    fields.push('selling_price = ?')
+    values.push(data.selling_price === null ? null : data.selling_price)
   }
   if (data.expiry_date !== undefined) {
     fields.push('expiry_date = ?')

@@ -9,6 +9,20 @@ export type { Product, NewProduct }
 /**
  * Get all active products ordered by name
  */
+/**
+ * R1: the POS shows and charges the selling price of the batch FEFO will draw
+ * from next, falling back to the product price when that batch has none set.
+ * Applied here rather than in SQL so it cannot collide with `p.*`'s unit_price.
+ */
+function withBatchPrice<T>(row: T): T {
+  // These rows come from raw SQL, so they are snake_case at runtime even though
+  // they are cast to the camelCase Drizzle `Product` type.
+  const r = row as unknown as { unit_price?: number; batch_unit_price?: number | null }
+  if (r.batch_unit_price != null) r.unit_price = r.batch_unit_price
+  delete r.batch_unit_price
+  return row
+}
+
 export function getProducts(): Product[] {
   return getDb()
     .select()
@@ -38,6 +52,15 @@ export function searchProducts(
         WHERE b.product_id = p.id AND b.quantity > 0
           AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
       ), 0) as total_stock,
+      COALESCE((
+        SELECT b.selling_price FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0 AND b.selling_price IS NOT NULL
+          AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
+        ORDER BY
+          CASE WHEN b.expiry_date IS NULL OR b.expiry_date = '' THEN 1 ELSE 0 END,
+          b.expiry_date ASC, b.received_date ASC
+        LIMIT 1
+      ), p.unit_price) as batch_unit_price,
       (
         SELECT MIN(b.expiry_date) FROM stock_batches b
         WHERE b.product_id = p.id AND b.quantity > 0
@@ -61,7 +84,7 @@ export function searchProducts(
     nearest_expiry: string | null
   })[]
 
-  return results
+  return results.map(withBatchPrice)
 }
 
 /**
@@ -90,6 +113,15 @@ export function getProductByBarcode(
         WHERE b.product_id = p.id AND b.quantity > 0
           AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
       ), 0) as total_stock,
+      COALESCE((
+        SELECT b.selling_price FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0 AND b.selling_price IS NOT NULL
+          AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
+        ORDER BY
+          CASE WHEN b.expiry_date IS NULL OR b.expiry_date = '' THEN 1 ELSE 0 END,
+          b.expiry_date ASC, b.received_date ASC
+        LIMIT 1
+      ), p.unit_price) as batch_unit_price,
       (
         SELECT MIN(b.expiry_date) FROM stock_batches b
         WHERE b.product_id = p.id AND b.quantity > 0
@@ -102,7 +134,7 @@ export function getProductByBarcode(
     )
     .get(barcode) as (Product & { total_stock: number; nearest_expiry: string | null }) | undefined
 
-  return result ?? null
+  return result ? withBatchPrice(result) : null
 }
 
 /**
@@ -197,6 +229,15 @@ export function getQuickItems(): (Product & {
         WHERE b.product_id = p.id AND b.quantity > 0
           AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
       ), 0) as total_stock,
+      COALESCE((
+        SELECT b.selling_price FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0 AND b.selling_price IS NOT NULL
+          AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
+        ORDER BY
+          CASE WHEN b.expiry_date IS NULL OR b.expiry_date = '' THEN 1 ELSE 0 END,
+          b.expiry_date ASC, b.received_date ASC
+        LIMIT 1
+      ), p.unit_price) as batch_unit_price,
       (
         SELECT MIN(b.expiry_date) FROM stock_batches b
         WHERE b.product_id = p.id AND b.quantity > 0
@@ -214,7 +255,7 @@ export function getQuickItems(): (Product & {
     )
     .all() as (Product & { total_stock: number; nearest_expiry: string | null; sales_7d: number })[]
 
-  return results
+  return results.map(withBatchPrice)
 }
 
 /**
@@ -236,6 +277,15 @@ export function getProductsWithStock(): (Product & {
         WHERE b.product_id = p.id AND b.quantity > 0
           AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
       ), 0) as total_stock,
+      COALESCE((
+        SELECT b.selling_price FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0 AND b.selling_price IS NOT NULL
+          AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
+        ORDER BY
+          CASE WHEN b.expiry_date IS NULL OR b.expiry_date = '' THEN 1 ELSE 0 END,
+          b.expiry_date ASC, b.received_date ASC
+        LIMIT 1
+      ), p.unit_price) as batch_unit_price,
       (
         SELECT MIN(b.expiry_date) FROM stock_batches b
         WHERE b.product_id = p.id AND b.quantity > 0

@@ -105,6 +105,8 @@ export const stockBatches = sqliteTable('stock_batches', {
   batchNumber: text('batch_number'),
   quantity: real('quantity').notNull().default(0),
   costPrice: real('cost_price').notNull(),
+  /** Per-batch selling price. NULL falls back to products.unit_price. */
+  sellingPrice: real('selling_price'),
   expiryDate: text('expiry_date'),
   receivedDate: text('received_date').notNull(),
   supplierId: text('supplier_id').references(() => suppliers.id),
@@ -220,6 +222,29 @@ export const saleRefunds = sqliteTable('sale_refunds', {
   createdAt: text('created_at').notNull()
 })
 
+// ─── Sale Item Batches ────────────────────────────────────────────────────────
+// One row per batch a sale line drew from. sale_items keeps a single batch_id,
+// which silently dropped every batch after the first on a multi-batch line.
+export const saleItemBatches = sqliteTable('sale_item_batches', {
+  id: text('id').primaryKey(),
+  saleId: text('sale_id')
+    .notNull()
+    .references(() => sales.id, { onDelete: 'cascade' }),
+  saleItemId: text('sale_item_id')
+    .notNull()
+    .references(() => saleItems.id, { onDelete: 'cascade' }),
+  batchId: text('batch_id')
+    .notNull()
+    .references(() => stockBatches.id),
+  productId: text('product_id')
+    .notNull()
+    .references(() => products.id),
+  quantity: real('quantity').notNull(),
+  costPrice: real('cost_price').notNull(),
+  sellingPrice: real('selling_price').notNull(),
+  createdAt: text('created_at').notNull()
+})
+
 // ─── Product Sales Daily ─────────────────────────────────────────────────────
 
 export const productSalesDaily = sqliteTable(
@@ -279,5 +304,6 @@ export type SaleRefund = typeof saleRefunds.$inferSelect
 export type Category = typeof categories.$inferSelect
 export type Supplier = typeof suppliers.$inferSelect
 export type AuditLog = typeof auditLog.$inferSelect
+export type SaleItemBatch = typeof saleItemBatches.$inferSelect
 export type CashMovement = typeof cashMovements.$inferSelect
 export type NewCashMovement = typeof cashMovements.$inferInsert

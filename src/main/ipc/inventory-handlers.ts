@@ -2,6 +2,7 @@ import { ipcMain, dialog } from 'electron'
 import { IPC_CHANNELS } from './channels'
 import { withPermission, actingUserId } from './middleware'
 import * as inventory from '../services/inventory'
+import { getBatchLedger } from '../services/sales'
 import { logAudit } from '../services/audit'
 import { getDatabase } from '../services/database'
 
@@ -124,6 +125,10 @@ export function registerInventoryHandlers(): void {
     return wrap(() =>
       withPermission(_event, 'inventory:delete', () => inventory.deleteStockBatch(id))
     )
+  })
+
+  ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_LEDGER, async (_event, { batchId }) => {
+    return wrap(() => withPermission(_event, 'inventory:view', () => getBatchLedger(batchId)))
   })
 
   ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_ADJUST, async (_event, { ...params }) => {

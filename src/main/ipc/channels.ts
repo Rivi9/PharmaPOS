@@ -58,6 +58,7 @@ export const IPC_CHANNELS = {
   STOCK_BATCH_CREATE: 'stock:batchCreate',
   STOCK_BATCH_UPDATE: 'stock:batchUpdate',
   STOCK_BATCH_DELETE: 'stock:batchDelete',
+  STOCK_BATCH_LEDGER: 'stock:batchLedger',
   STOCK_BATCH_ADJUST: 'stock:batchAdjust',
 
   // Inventory - Import/Export

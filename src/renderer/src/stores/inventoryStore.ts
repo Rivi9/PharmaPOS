@@ -56,6 +56,7 @@ interface StockBatch {
   batch_number: string | null
   quantity: number
   cost_price: number
+  selling_price: number | null
   expiry_date: string | null
   received_date: string
   supplier_id: string | null

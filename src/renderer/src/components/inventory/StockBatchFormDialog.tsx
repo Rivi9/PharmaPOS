@@ -26,6 +26,7 @@ const stockBatchSchema = z.object({
   batch_number: z.string().optional(),
   quantity: z.number().int().min(1, 'Quantity must be at least 1'),
   cost_price: z.number().min(0, 'Cost price must be positive'),
+  selling_price: z.union([z.number().min(0), z.nan()]).optional(),
   expiry_date: z.string().optional(),
   received_date: z.string().optional(),
   supplier_id: z.string().optional()
@@ -83,6 +84,7 @@ export function StockBatchFormDialog({
         batch_number: batch.batch_number || '',
         quantity: batch.quantity,
         cost_price: batch.cost_price,
+        selling_price: batch.selling_price ?? undefined,
         expiry_date: batch.expiry_date || '',
         received_date: batch.received_date,
         supplier_id: batch.supplier_id || ''
@@ -237,6 +239,23 @@ export function StockBatchFormDialog({
               {errors.cost_price && (
                 <p className="text-sm text-red-500">{errors.cost_price.message}</p>
               )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="selling_price">Selling Price (Rs.)</Label>
+              <Input
+                id="selling_price"
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                className="h-11"
+                placeholder="Leave blank to use the product price"
+                {...register('selling_price', { valueAsNumber: true })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Set this when a batch sells at a different price to the product default — the
+                till charges the price of the batch it dispenses from.
+              </p>
             </div>
 
             <div className="space-y-2">

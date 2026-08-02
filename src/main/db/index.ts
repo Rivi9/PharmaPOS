@@ -83,6 +83,37 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
       ALTER TABLE users ADD COLUMN failed_attempts integer NOT NULL DEFAULT 0;
       ALTER TABLE users ADD COLUMN locked_until text;
     `
+  },
+  {
+    version: 5,
+    sql: `
+      -- R1: per-batch selling price. NULL means "use the product's price", so
+      -- existing stock keeps behaving exactly as it does today.
+      ALTER TABLE stock_batches ADD COLUMN selling_price real;
+
+      -- R2: which batches a sale line actually drew from, and at what cost and
+      -- price. sale_items stores only ONE batch_id, so a line spanning two
+      -- batches lost the rest — a recall could not identify who received a lot,
+      -- and per-batch margin was unanswerable.
+      CREATE TABLE IF NOT EXISTS sale_item_batches (
+        id text PRIMARY KEY NOT NULL,
+        sale_id text NOT NULL,
+        sale_item_id text NOT NULL,
+        batch_id text NOT NULL,
+        product_id text NOT NULL,
+        quantity real NOT NULL,
+        cost_price real NOT NULL,
+        selling_price real NOT NULL,
+        created_at text NOT NULL,
+        FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
+        FOREIGN KEY (sale_item_id) REFERENCES sale_items(id) ON DELETE CASCADE,
+        FOREIGN KEY (batch_id) REFERENCES stock_batches(id),
+        FOREIGN KEY (product_id) REFERENCES products(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_sib_batch ON sale_item_batches(batch_id);
+      CREATE INDEX IF NOT EXISTS idx_sib_sale ON sale_item_batches(sale_id);
+      CREATE INDEX IF NOT EXISTS idx_sib_product ON sale_item_batches(product_id);
+    `
   }
 ]
 
