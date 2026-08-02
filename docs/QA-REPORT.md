@@ -13,23 +13,24 @@
 
 | Severity | Raised | Fixed | Open |
 |----------|-------:|------:|-----:|
-| 🔴 Critical | 25 | **21** | 4 |
-| 🟠 High | 40 | **12** | 28 |
+| 🔴 Critical | 25 | **23** | 2 |
+| 🟠 High | 40 | **14** | 26 |
 | 🟡 Medium | 32 | **4** | 28 |
 | ⚪ Low | 16 | **3** | 13 |
-| **Total** | **113** | **40** | **73** |
+| **Total** | **113** | **44** | **69** |
 | 📋 Operator requirements | 5 | **2** | 3 |
 
-**Still-open Criticals:** C11 and C12 (main-process session, PIN hash exposure) and C21 and C22 (backup encryption, PII leaving the machine in the clear). Everything else at Critical is closed.
+**Still-open Criticals:** only C21 and C22 — backup encryption, and customer PII leaving the machine in the clear. Everything else at Critical is closed.
 
-Fixed across four rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
+Fixed across five rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
 
 | Round | Commit | Closed |
 |---|---|---|
 | 1 | `56475b9` | C16, L11 + AI insights removed, batch picker |
 | 2 | `75436fa`, `0851dba`, `d610807` | C1, C2, C4, C5, C6, C7, C10, C15, C17–C20, C23, C24, H1, H3, H29, H31–H33, H35, H37, M8, M12, L1, L2, R5 |
 | 3 | `ba57e9d`, `01006ed` | C8, C9, C14, H8, R3 + 2 Medium |
-| 4 | `e9dfeb0`, `792ab82`, this round | C3, C13, C25, H2, H26, H27 + install-time migrations |
+| 4 | `e9dfeb0`, `792ab82`, `677a2e8` | C3, C13, C25, H2, H26, H27 + install-time migrations |
+| 5 | `6ea0576` | C11, C12, H19, H21 (partial) + settings and bootstrap channels gated |
 
 **Two passes.** Pass 1 (C1–C15, H1–H25) covered the POS, payments, printing, auth/RBAC, inventory and the schema. Pass 2 (C16–C25, H26–H40) covered the areas pass 1 listed as gaps — the full money/analytics verification, report generation, backup/restore, scheduling, logging, auto-update, the audit log, customers, and the admin-screen touch review. **Coverage is now complete**; there is no remaining unreviewed area.
 
@@ -650,6 +651,16 @@ Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can d
 
 A test caught a genuine rounding split during this work: extracting VAT from the subtotal gave `117.46` on the real basket `R-2026-003849`, while summing per line gave `117.45`. The cart now sums per line, matching how the sale is stored, so cart, line items and header agree to the cent. Verified that `net + VAT == gross` and that 0% — the deployed store's setting — is a complete no-op.
 
+### Round 5 — authorisation and credentials (commit `6ea0576`)
+
+| Item | Change |
+|---|---|
+| **C11** — authorisation trusted the renderer | `withPermission` took a `userId` off the IPC payload, and `auth:getUsers` hands out every user's id and role *before* login — so any renderer context could act as the admin across all 55 gated channels. The authenticated user now lives in `src/main/ipc/session.ts`, keyed to the calling webContents, set only by a successful login and cleared by a new `auth:logout`. All 55 call sites converted; audit entries and service calls use `actingUserId(event)`, so the trail names the real actor. Sessions are pruned when a renderer is destroyed. |
+| **C12** — PIN hash shipped to the renderer | Login stripped `password_hash` but left `pin_code`, and `USER_LIST` returned it for everyone. bcrypt over a 4-digit PIN is 10,000 candidates — the admin's PIN was recoverable offline in minutes with no failed-login trace. Both now return `pin_set: boolean`. The legacy plaintext comparison branch is also gone. |
+| **H19** — editing a user destroyed their PIN | The form was prefilled from that field, so saving any unrelated change sent the bcrypt hash back as the new PIN and re-hashed it. The field is now always blank, submitted only when typed, and validated as 4–6 digits. |
+| `auth:createUser` was an open admin factory | Accepted any role at any time with no check. Now first-run only, refuses once any user exists, forces `admin`, and writes an audit entry. |
+| `settings:set` was completely ungated | `setSetting('vat_rate','0')` from any renderer changed the tax on every subsequent sale. Now gated on `settings:update`, whitelisted by key, validates the VAT rate, and emits `SETTINGS_UPDATED` with before/after values. |
+
 ### Receipt output — from three scanned bills of the deployed store
 
 Analysed real printed receipts from Nirogya Medical Center (`docs/bill-outputs.pdf`).
@@ -776,8 +787,7 @@ One caveat on confidence: every finding is derived from source, and the ones mar
 
 **Next, in order:**
 
-1. **C11, C12** — the main-process session, which also retires H24, and PIN hash exposure.
-2. **C21, C22** — encrypt backups unconditionally and stop uploading customer PII in the clear.
+1. **C21, C22** — the main-process session, which also retires H24, and PIN hash exposure.
 3. **R1 + R2 + H4** — per-batch pricing and batch history together.
 4. **H25** — a sale-to-receipt E2E test.
 5. Dependency bumps: `drizzle-orm` ≥0.45.2 and `jspdf` >4.2.0 both ship in the app with published advisories.
