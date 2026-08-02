@@ -128,6 +128,19 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
   const db = getDatabase()
   const drizzleDb = getDb()
 
+  // Enforced here as well as in the UI — the renderer can be bypassed.
+  if (saleData.payment_method !== 'cash') {
+    const cardEnabled =
+      (
+        db.prepare('SELECT value FROM settings WHERE key = ?').get('card_payment_enabled') as
+          | { value: string }
+          | undefined
+      )?.value !== '0'
+    if (!cardEnabled) {
+      throw new Error('Card payments are disabled for this pharmacy')
+    }
+  }
+
   return db.transaction(() => {
     const saleId = crypto.randomUUID()
     const receiptNumber = generateReceiptNumber()

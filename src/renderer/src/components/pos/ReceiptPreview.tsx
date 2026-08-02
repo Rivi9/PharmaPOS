@@ -3,6 +3,7 @@ import { Copy, X, Printer } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
+import { buildReceipt, receiptToPlainText } from '../../../../shared/receipt'
 
 interface ReceiptPreviewProps {
   open: boolean
@@ -22,7 +23,7 @@ interface ReceiptData {
     total: number
     payment_method: string
     cash_received: number
-    card_amount: number
+    card_received: number | null
     change_given: number
     customer_name?: string
     customer_phone?: string
@@ -44,6 +45,8 @@ export function ReceiptPreview({
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const [loading, setLoading] = useState(true)
   const [printing, setPrinting] = useState(false)
+  const [printError, setPrintError] = useState('')
+  const [hasPrinted, setHasPrinted] = useState(false)
   const settings = useSettingsStore((state) => state.settings)
 
   useEffect(() => {
@@ -54,6 +57,8 @@ export function ReceiptPreview({
 
   const loadReceipt = async () => {
     setLoading(true)
+    setPrintError('')
+    setHasPrinted(false)
     try {
       const data = await window.electron.getReceipt(saleId)
       setReceipt(data)
@@ -64,122 +69,31 @@ export function ReceiptPreview({
     }
   }
 
+  // Built from the SAME shared layout the printer uses, so the preview is
+  // literally the document that comes out of the printer.
+  // Read from the same setting the printer uses, so a 58mm (32 col) configuration
+  // previews at 32 columns too.
+  const receiptWidth = parseInt(settings.printer_width, 10) || 42
+
   const formatReceiptText = (): string => {
-    if (!receipt) return ''
-
-    const businessName = settings.business_name || 'My Pharmacy'
-    const businessAddress = settings.business_address || ''
-    const businessPhone = settings.business_phone || ''
-    const currency = settings.currency_symbol || 'Rs.'
-    const vatRate = settings.vat_rate || '0'
-    const footer = settings.receipt_footer || 'Thank you for your purchase!'
-
-    const date = new Date(receipt.sale.created_at)
-    const dateStr = date.toLocaleDateString('en-LK')
-    const timeStr = date.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' })
-
-    const W = 42
-    const LINE = '═'.repeat(W)
-    const line = '─'.repeat(W)
-
-    const centered = (s: string): string => {
-      if (s.length <= W) {
-        return s.padStart(Math.floor((W + s.length) / 2)).padEnd(W)
-      }
-      // Word-wrap long strings onto multiple centered lines
-      const words = s.split(' ')
-      const lines: string[] = []
-      let current = ''
-      for (const word of words) {
-        const candidate = current ? `${current} ${word}` : word
-        if (candidate.length <= W) {
-          current = candidate
-        } else {
-          if (current) lines.push(current)
-          current = word.length <= W ? word : word.slice(0, W)
-        }
-      }
-      if (current) lines.push(current)
-      return lines.map((l) => l.padStart(Math.floor((W + l.length) / 2)).padEnd(W)).join('\n')
-    }
-
-    // Column helper — matches tableRow() in receipt-formatter.ts
-    const col = (text: string, width: number, align: 'L' | 'C' | 'R'): string => {
-      const t = text.length > width ? text.substring(0, width) : text
-      if (align === 'R') return t.padStart(width)
-      if (align === 'C') {
-        const pad = Math.floor((width - t.length) / 2)
-        return ' '.repeat(pad) + t + ' '.repeat(width - t.length - pad)
-      }
-      return t.padEnd(width)
-    }
-    // Amount row: left label 29 chars, right amount 12 chars = 41 (matches print 0.7/0.3 split)
-    const amtRow = (label: string, amount: string): string =>
-      label.padEnd(29) + amount.padStart(12) + '\n'
-
-    let text = `\n${LINE}\n`
-    text += `${centered(businessName)}\n`
-    text += '\n'
-    if (businessAddress) text += `${centered(businessAddress)}\n`
-    if (businessPhone) text += `${centered('Tel: ' + businessPhone)}\n`
-    text += `${LINE}\n\n`
-
-    text += `Receipt #: ${receipt.sale.receipt_number}\n`
-    text += `Date: ${dateStr}  Time: ${timeStr}\n`
-    text += `Cashier: ${receipt.sale.cashier_name}\n\n`
-
-    // Items — 4 columns matching print: Item(16) Qty(4) Price(11) Total(11) = 42
-    text += `${line}\n`
-    text +=
-      col('Item', 16, 'L') +
-      col('Qty', 4, 'C') +
-      col(`Price(${currency})`, 11, 'R') +
-      col(`Total(${currency})`, 11, 'R') +
-      '\n'
-    text += `${line}\n`
-    receipt.items.forEach((item) => {
-      text +=
-        col(item.product_name, 16, 'L') +
-        col(item.quantity.toString(), 4, 'C') +
-        col(item.unit_price.toFixed(2), 11, 'R') +
-        col(item.line_total.toFixed(2), 11, 'R') +
-        '\n'
-    })
-
-    text += `${line}\n`
-    text += amtRow('Subtotal:', `${currency}${receipt.sale.subtotal.toFixed(2)}`)
-    if (receipt.sale.discount_amount > 0) {
-      text += amtRow('Discount:', `-${currency}${receipt.sale.discount_amount.toFixed(2)}`)
-    }
-    if (receipt.sale.tax_amount > 0) {
-      text += amtRow(`VAT (${vatRate}%):`, `${currency}${receipt.sale.tax_amount.toFixed(2)}`)
-    }
-    text += `${LINE}\n`
-    text += amtRow('TOTAL:', `${currency}${receipt.sale.total.toFixed(2)}`)
-    text += `${LINE}\n`
-
-    if (receipt.sale.payment_method === 'cash') {
-      text += amtRow('Cash:', `${currency}${receipt.sale.cash_received.toFixed(2)}`)
-      text += amtRow('Change:', `${currency}${receipt.sale.change_given.toFixed(2)}`)
-    } else if (receipt.sale.payment_method === 'card') {
-      text += amtRow('Card:', `${currency}${receipt.sale.card_amount.toFixed(2)}`)
-    } else if (receipt.sale.payment_method === 'mixed') {
-      text += amtRow('Cash:', `${currency}${receipt.sale.cash_received.toFixed(2)}`)
-      text += amtRow('Card:', `${currency}${receipt.sale.card_amount.toFixed(2)}`)
-    }
-
-    if (receipt.sale.customer_name || receipt.sale.customer_phone) {
-      text += `${line}\n`
-      if (receipt.sale.customer_name) text += `Customer: ${receipt.sale.customer_name}\n`
-      if (receipt.sale.customer_phone) text += `Phone: ${receipt.sale.customer_phone}\n`
-    }
-
-    text += `${line}\n`
-    text += `${centered(footer)}\n`
-    text += `${centered('Powered by PharmaPOS')}\n`
-    text += `${LINE}\n`
-
-    return text
+    if (!receipt?.sale || !Array.isArray(receipt.items)) return ''
+    return receiptToPlainText(
+      buildReceipt({
+        sale: receipt.sale,
+        items: receipt.items,
+        cashierName: receipt.sale.cashier_name,
+        business: {
+          name: settings.business_name || 'My Pharmacy',
+          address: settings.business_address,
+          phone: settings.business_phone,
+          footer: settings.receipt_footer || 'Thank you for your purchase!',
+          currency: settings.currency_symbol || 'Rs.',
+          vatRate: settings.vat_rate
+        },
+        width: receiptWidth
+      }),
+      receiptWidth
+    )
   }
 
   const handleCopyToClipboard = () => {
@@ -190,14 +104,25 @@ export function ReceiptPreview({
   const handlePrint = async () => {
     if (!receipt) return
     setPrinting(true)
+    setPrintError('')
     try {
-      await window.electron.printer.printReceipt({
+      // The handler resolves { success:false } rather than rejecting, so a catch
+      // block alone never fired and a failed print looked identical to a good one.
+      const result = await window.electron.printer.printReceipt({
         sale: receipt.sale,
         items: receipt.items,
-        user: { full_name: (receipt.sale as any).cashier_name || 'Cashier' }
+        user: { full_name: receipt.sale.cashier_name || 'Cashier' },
+        reprint: hasPrinted
       })
-    } catch (err) {
-      console.error('Print failed:', err)
+      if (result && (result as { success?: boolean }).success === false) {
+        setPrintError(
+          (result as { error?: string }).error || 'Printer did not respond. Check power and cable.'
+        )
+        return
+      }
+      setHasPrinted(true)
+    } catch (err: any) {
+      setPrintError(err?.message || 'Printer did not respond. Check power and cable.')
     } finally {
       setPrinting(false)
     }
@@ -219,6 +144,17 @@ export function ReceiptPreview({
               <pre className="font-mono text-xs whitespace-pre">{formatReceiptText()}</pre>
             </div>
 
+            {printError && (
+              <div className="flex-shrink-0 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
+                <p className="text-sm font-medium text-destructive">
+                  Not printed: {printError}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  The sale is saved. Fix the printer and tap Print again.
+                </p>
+              </div>
+            )}
+
             {/* Actions */}
             <div className="flex gap-2 flex-shrink-0">
               <Button
@@ -236,7 +172,7 @@ export function ReceiptPreview({
                 className="flex-1 flex items-center gap-2"
               >
                 <Printer className="h-4 w-4" />
-                {printing ? 'Printing...' : 'Print'}
+                {printing ? 'Printing...' : hasPrinted ? 'Reprint' : 'Print'}
               </Button>
               <Button onClick={onClose} className="flex-1 flex items-center gap-2">
                 <X className="h-4 w-4" />

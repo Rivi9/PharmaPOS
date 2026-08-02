@@ -11,6 +11,7 @@ import {
   type PrinterConfig
 } from '../services/printer/thermal-printer'
 import { printReceipt, printShiftReport } from '../services/printer/receipt-formatter'
+import { logError } from '../services/logging/logger'
 
 export function registerPrinterHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.PRINTER_GET_CONFIG, () => {
@@ -54,10 +55,11 @@ export function registerPrinterHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.PRINTER_PRINT_RECEIPT, async (_event, data) => {
     try {
       const printer = getPrinter()
-      await printReceipt(printer, data)
+      const { reprint, ...receipt } = data as { reprint?: boolean }
+      await printReceipt(printer, receipt as never, { reprint })
       return { success: true }
     } catch (error) {
-      console.warn('Print receipt failed:', (error as Error).message)
+      logError('Print receipt failed', error as Error)
       return { success: false, error: (error as Error).message }
     }
   })

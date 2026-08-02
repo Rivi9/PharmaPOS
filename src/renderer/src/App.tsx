@@ -8,6 +8,7 @@ import { SetupWizardPage } from './pages/SetupWizardPage'
 import { UpdateNotification } from './components/UpdateNotification'
 import { StartShiftModal } from './components/pos/StartShiftModal'
 import { EndShiftModal } from './components/pos/EndShiftModal'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 function App(): React.JSX.Element {
   const { user, isAuthenticated } = useAuthStore()
@@ -102,7 +103,9 @@ function App(): React.JSX.Element {
 
   return (
     <>
-      <MainLayout user={user} onEndShift={() => setEndShiftOpen(true)} />
+      <ErrorBoundary label="The main screen hit an unexpected error.">
+        <MainLayout user={user} onEndShift={() => setEndShiftOpen(true)} />
+      </ErrorBoundary>
       <EndShiftModal
         open={endShiftOpen}
         onClose={handleEndShiftClose}

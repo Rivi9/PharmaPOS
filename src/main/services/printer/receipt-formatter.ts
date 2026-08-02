@@ -1,6 +1,7 @@
 import { PrinterHandle } from './thermal-printer'
 import { EscPosBuilder } from './escpos-builder'
 import { getDatabase } from '../database'
+import { buildReceipt } from '../../../shared/receipt'
 
 export interface ReceiptData {
   sale: {
@@ -13,8 +14,10 @@ export interface ReceiptData {
     total: number
     payment_method: string
     cash_received: number
+    card_received?: number | null
     change_given: number
     customer_name?: string
+    customer_phone?: string
   }
   items: Array<{
     product_name: string
@@ -50,7 +53,11 @@ function tableRow(columns: Column[], totalWidth: number): string {
 }
 
 /** Format and print receipt */
-export async function printReceipt(handle: PrinterHandle, data: ReceiptData): Promise<void> {
+export async function printReceipt(
+  handle: PrinterHandle,
+  data: ReceiptData,
+  options?: { reprint?: boolean }
+): Promise<void> {
   const db = getDatabase()
   const get = (key: string): string | undefined =>
     (
@@ -59,161 +66,38 @@ export async function printReceipt(handle: PrinterHandle, data: ReceiptData): Pr
         | undefined
     )?.value
 
-  const businessName = get('business_name') || 'PharmaPOS'
-  const address = get('business_address')
-  const phone = get('business_phone')
-  const footer = get('receipt_footer')
-  const currency = get('currency_symbol') || 'Rs.'
   const width = handle.width
-  const line = '-'.repeat(width)
+
+  // Built from the shared layout so the printout is byte-for-byte the text the
+  // cashier previewed. Styling (bold / double size) is applied per line here.
+  const lines = buildReceipt({
+    sale: data.sale,
+    items: data.items,
+    cashierName: data.user.full_name,
+    business: {
+      name: get('business_name') || 'PharmaPOS',
+      address: get('business_address'),
+      phone: get('business_phone'),
+      footer: get('receipt_footer'),
+      currency: get('currency_symbol') || 'Rs.',
+      vatRate: get('vat_rate')
+    },
+    width,
+    reprint: options?.reprint
+  })
 
   const b = new EscPosBuilder()
 
-  // Header
-  b.align('CT').bold(true).size(2, 2).text(businessName + '\n').bold(false).size(1, 1).text('\n')
-  if (address) b.text(address + '\n')
-  if (phone) b.text(`Tel: ${phone}\n`)
-  b.text(line + '\n')
-
-  // Receipt info
-  b.align('LT')
-    .text(`Receipt: ${data.sale.receipt_number}\n`)
-    .text(`Date: ${new Date(data.sale.created_at).toLocaleString()}\n`)
-    .text(`Cashier: ${data.user.full_name}\n`)
-
-  if (data.sale.customer_name) b.text(`Customer: ${data.sale.customer_name}\n`)
-  b.text(line + '\n')
-
-  // Items header
-  b.bold(true)
-    .text(
-      tableRow(
-        [
-          { text: 'Item', align: 'LEFT', width: 0.382 },
-          { text: 'Qty', align: 'CENTER', width: 0.096 },
-          { text: `Price(${currency})`, align: 'RIGHT', width: 0.262 },
-          { text: `Total(${currency})`, align: 'RIGHT', width: 0.262 }
-        ],
-        width
-      ) + '\n'
-    )
-    .bold(false)
-
-  // Items
-  if (data.items.length === 0) b.text('(no items)\n')
-  for (const item of data.items) {
-    b.text(
-      tableRow(
-        [
-          { text: item.product_name, align: 'LEFT', width: 0.382 },
-          { text: item.quantity.toString(), align: 'CENTER', width: 0.096 },
-          { text: item.unit_price.toFixed(2), align: 'RIGHT', width: 0.262 },
-          { text: item.line_total.toFixed(2), align: 'RIGHT', width: 0.262 }
-        ],
-        width
-      ) + '\n'
-    )
+  for (const l of lines) {
+    b.align(l.align === 'center' ? 'CT' : 'LT')
+    if (l.bold) b.bold(true)
+    if (l.double) b.size(2, 2)
+    b.text(l.text + '\n')
+    if (l.double) b.size(1, 1)
+    if (l.bold) b.bold(false)
   }
 
-  b.text(line + '\n')
-
-  // Totals
-  b.text(
-    tableRow(
-      [
-        { text: 'Subtotal:', align: 'LEFT', width: 0.7 },
-        { text: `${currency}${data.sale.subtotal.toFixed(2)}`, align: 'RIGHT', width: 0.3 }
-      ],
-      width
-    ) + '\n'
-  )
-
-  if (data.sale.discount_amount > 0) {
-    b.text(
-      tableRow(
-        [
-          { text: 'Discount:', align: 'LEFT', width: 0.7 },
-          {
-            text: `-${currency}${data.sale.discount_amount.toFixed(2)}`,
-            align: 'RIGHT',
-            width: 0.3
-          }
-        ],
-        width
-      ) + '\n'
-    )
-  }
-
-  if (data.sale.tax_amount > 0) {
-    b.text(
-      tableRow(
-        [
-          { text: 'Tax:', align: 'LEFT', width: 0.7 },
-          { text: `${currency}${data.sale.tax_amount.toFixed(2)}`, align: 'RIGHT', width: 0.3 }
-        ],
-        width
-      ) + '\n'
-    )
-  }
-
-  b.text(line + '\n')
-
-  // Total — double size (halve the column width budget accordingly)
-  b.bold(true)
-    .size(2, 2)
-    .text(
-      tableRow(
-        [
-          { text: 'TOTAL:', align: 'LEFT', width: 0.5 },
-          { text: `${currency}${data.sale.total.toFixed(2)}`, align: 'RIGHT', width: 0.5 }
-        ],
-        Math.floor(width / 2)
-      ) + '\n'
-    )
-    .size(1, 1)
-    .bold(false)
-
-  b.text(line + '\n')
-
-  // Payment details
-  if (data.sale.payment_method === 'cash') {
-    b.text(
-      tableRow(
-        [
-          { text: 'Cash:', align: 'LEFT', width: 0.7 },
-          { text: `${currency}${data.sale.cash_received.toFixed(2)}`, align: 'RIGHT', width: 0.3 }
-        ],
-        width
-      ) + '\n'
-    ).text(
-      tableRow(
-        [
-          { text: 'Change:', align: 'LEFT', width: 0.7 },
-          { text: `${currency}${data.sale.change_given.toFixed(2)}`, align: 'RIGHT', width: 0.3 }
-        ],
-        width
-      ) + '\n'
-    )
-  } else if (data.sale.payment_method === 'card') {
-    b.text('Payment: CARD\n')
-  } else if (data.sale.payment_method === 'mixed') {
-    b.text(`Cash: ${currency}${data.sale.cash_received.toFixed(2)}\n`).text(
-      `Card: ${currency}${(data.sale.total - data.sale.cash_received).toFixed(2)}\n`
-    )
-  }
-
-  b.text(line + '\n')
-
-  // Footer
-  b.align('CT')
-  if (footer) b.text(footer + '\n')
-  b.text('Powered by PharmaPOS\n').feed(4)
-
-  // Open cash drawer for cash/mixed payments (not card)
-  if (data.sale.payment_method === 'cash' || data.sale.payment_method === 'mixed') {
-    b.cashdraw(2)
-  }
-
+  b.align('LT').feed(4)
   b.cut()
 
   await handle.send(b.build())

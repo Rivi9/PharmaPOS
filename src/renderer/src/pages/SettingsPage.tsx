@@ -457,6 +457,33 @@ export function SettingsPage(): React.JSX.Element {
                     <p className="text-sm text-destructive mt-1">{fieldErrors.currency_symbol}</p>
                   )}
                 </div>
+                <div className="border-t pt-4">
+                  <label className="text-sm font-medium">Payment methods</label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Turn card off if this pharmacy has no card terminal — the Card button is then
+                    hidden at checkout and card sales are rejected.
+                  </p>
+                  <div className="flex gap-3">
+                    <Button
+                      variant={
+                        localSettings.card_payment_enabled !== '0' ? 'default' : 'outline'
+                      }
+                      className="h-11 flex-1"
+                      onClick={() => handleChange('card_payment_enabled', '1')}
+                    >
+                      Cash &amp; Card
+                    </Button>
+                    <Button
+                      variant={
+                        localSettings.card_payment_enabled === '0' ? 'default' : 'outline'
+                      }
+                      className="h-11 flex-1"
+                      onClick={() => handleChange('card_payment_enabled', '0')}
+                    >
+                      Cash only
+                    </Button>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 

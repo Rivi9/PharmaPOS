@@ -51,11 +51,21 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   const currentShift = useShiftStore((state) => state.currentShift)
   const addToTodaySales = useShiftStore((state) => state.addToTodaySales)
   const currencySymbol = useSettingsStore((state) => state.settings.currency_symbol)
+  const cardEnabled = useSettingsStore((state) => state.settings.card_payment_enabled !== '0')
 
   // Clear stale errors each time the dialog opens
   useEffect(() => {
     if (open) setError('')
   }, [open])
+
+  // If card payment is turned off while a card sale is part-entered, fall back to cash
+  // so the dialog can never submit a method the pharmacy does not accept.
+  useEffect(() => {
+    if (!cardEnabled && paymentMethod !== 'cash') {
+      setPaymentMethod('cash')
+      setCardAmount('')
+    }
+  }, [cardEnabled, paymentMethod])
 
   useEffect(() => {
     if (customerPhone.length < 7) {
@@ -241,14 +251,16 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
               <Banknote className="h-6 w-6" />
               <span>Cash</span>
             </Button>
-            <Button
-              variant={paymentMethod === 'card' ? 'default' : 'outline'}
-              onClick={() => handlePaymentMethodChange('card')}
-              className="h-16 grow flex flex-col items-center gap-1"
-            >
-              <CreditCard className="h-6 w-6" />
-              <span>Card</span>
-            </Button>
+            {cardEnabled && (
+              <Button
+                variant={paymentMethod === 'card' ? 'default' : 'outline'}
+                onClick={() => handlePaymentMethodChange('card')}
+                className="h-16 grow flex flex-col items-center gap-1"
+              >
+                <CreditCard className="h-6 w-6" />
+                <span>Card</span>
+              </Button>
+            )}
             {/* <Button
               variant={paymentMethod === 'mixed' ? 'default' : 'outline'}
               onClick={() => handlePaymentMethodChange('mixed')}
