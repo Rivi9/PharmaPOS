@@ -13,16 +13,16 @@
 
 | Severity | Raised | Fixed | Open |
 |----------|-------:|------:|-----:|
-| 🔴 Critical | 25 | **23** | 2 |
-| 🟠 High | 40 | **14** | 26 |
+| 🔴 Critical | 25 | **25** | 0 |
+| 🟠 High | 40 | **15** | 25 |
 | 🟡 Medium | 32 | **4** | 28 |
 | ⚪ Low | 16 | **3** | 13 |
-| **Total** | **113** | **44** | **69** |
+| **Total** | **113** | **47** | **66** |
 | 📋 Operator requirements | 5 | **2** | 3 |
 
-**Still-open Criticals:** only C21 and C22 — backup encryption, and customer PII leaving the machine in the clear. Everything else at Critical is closed.
+**Every Critical is now closed.** The remaining work is High and below — see [Suggested order of work](#suggested-order-of-work).
 
-Fixed across five rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
+Fixed across six rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
 
 | Round | Commit | Closed |
 |---|---|---|
@@ -31,6 +31,7 @@ Fixed across five rounds — see [Fixed in this session](#-fixed-in-this-session
 | 3 | `ba57e9d`, `01006ed` | C8, C9, C14, H8, R3 + 2 Medium |
 | 4 | `e9dfeb0`, `792ab82`, `677a2e8` | C3, C13, C25, H2, H26, H27 + install-time migrations |
 | 5 | `6ea0576` | C11, C12, H19, H21 (partial) + settings and bootstrap channels gated |
+| 6 | `541feb8` | C21, C22, H30 (partial) + versioned encryption container |
 
 **Two passes.** Pass 1 (C1–C15, H1–H25) covered the POS, payments, printing, auth/RBAC, inventory and the schema. Pass 2 (C16–C25, H26–H40) covered the areas pass 1 listed as gaps — the full money/analytics verification, report generation, backup/restore, scheduling, logging, auto-update, the audit log, customers, and the admin-screen touch review. **Coverage is now complete**; there is no remaining unreviewed area.
 
@@ -651,6 +652,16 @@ Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can d
 
 A test caught a genuine rounding split during this work: extracting VAT from the subtotal gave `117.46` on the real basket `R-2026-003849`, while summing per line gave `117.45`. The cart now sums per line, matching how the sale is stored, so cart, line items and header agree to the cent. Verified that `net + VAT == gross` and that 0% — the deployed store's setting — is a complete no-op.
 
+### Round 6 — backup confidentiality (commit `541feb8`)
+
+| Item | Change |
+|---|---|
+| **C22** — PII uploaded in the clear | An unencrypted archive holding the full customers table, every line item linking a named customer to the medicines dispensed to them, and the users table with password and PIN hashes was the *default* payload — sitting in `%APPDATA%` and streamed to Google Drive as-is. Encryption is no longer optional, and the plaintext intermediate is removed in a `finally`, including on the failure path where it previously survived. |
+| **C21** — encryption key never persisted | The password was never stored, so an encrypted archive was unrecoverable the moment it was mistyped; and the scheduler read a `backup_password` setting that no code ever wrote, so every scheduled backup would have been unencrypted anyway. Replaced with a recovery key stored only in `safeStorage` (DPAPI) form. **It is deliberately also transcribable** — a purely machine-bound key would make every archive unreadable the moment the POS dies, which is the disaster backups exist for. Restore tries this machine's key first, then an operator-entered recovery key, so replacement hardware works. |
+| Container format | Versioned: `[magic][version][iterations][salt][iv][tag][ciphertext]`, standard 12-byte GCM nonce (was 16), PBKDF2 raised to 200k. The KDF cost can now be raised later without orphaning archives, and a non-backup file fails with a clear message. |
+
+Verified: round-trips; none of the customer name, phone, address, `admin`, `$2b$10$` or `customers` appears anywhere in the ciphertext; tampered ciphertext and wrong keys fail closed; non-backup input is rejected.
+
 ### Round 5 — authorisation and credentials (commit `6ea0576`)
 
 | Item | Change |
@@ -787,7 +798,7 @@ One caveat on confidence: every finding is derived from source, and the ones mar
 
 **Next, in order:**
 
-1. **C21, C22** — the main-process session, which also retires H24, and PIN hash exposure.
+1. **H21** — PIN brute-force protection: no attempt counter, lockout or audit row for failed logins. — the main-process session, which also retires H24, and PIN hash exposure.
 3. **R1 + R2 + H4** — per-batch pricing and batch history together.
 4. **H25** — a sale-to-receipt E2E test.
 5. Dependency bumps: `drizzle-orm` ≥0.45.2 and `jspdf` >4.2.0 both ship in the app with published advisories.
