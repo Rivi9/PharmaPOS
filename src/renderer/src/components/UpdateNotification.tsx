@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Progress } from './ui/progress'
-import { Download, RefreshCw } from 'lucide-react'
+import { Download, RefreshCw, AlertTriangle } from 'lucide-react'
+import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
+import { useConfirm } from '@renderer/hooks/useConfirm'
 
 interface UpdateInfo {
   version: string
@@ -22,6 +24,8 @@ export function UpdateNotification(): React.JSX.Element | null {
   const [downloading, setDownloading] = useState(false)
   const [downloadProgress, setDownloadProgress] = useState<DownloadProgress | null>(null)
   const [updateDownloaded, setUpdateDownloaded] = useState(false)
+  const [updateError, setUpdateError] = useState('')
+  const { confirm, confirmProps } = useConfirm()
 
   useEffect(() => {
     // Listen for update events
@@ -30,6 +34,7 @@ export function UpdateNotification(): React.JSX.Element | null {
         case 'update-available':
           setUpdateAvailable(true)
           setUpdateInfo(status.data)
+          setUpdateError('')
           break
 
         case 'download-progress':
@@ -43,8 +48,11 @@ export function UpdateNotification(): React.JSX.Element | null {
           break
 
         case 'update-error':
+          // Shown inside the card, not as an alert(): a modal that steals focus
+          // mid-transaction over a failed background download is worse than the
+          // failure itself, and the till can carry on running the old version.
           setDownloading(false)
-          alert(`Update error: ${status.data.message}`)
+          setUpdateError(status.data?.message || 'The update could not be downloaded.')
           break
       }
     }
@@ -60,13 +68,17 @@ export function UpdateNotification(): React.JSX.Element | null {
     window.electron.updates.download()
   }
 
-  const handleInstall = () => {
-    if (confirm('The application will restart to install the update. Continue?')) {
-      window.electron.updates.install()
-    }
+  const handleInstall = async (): Promise<void> => {
+    const ok = await confirm({
+      title: 'Restart now to install the update?',
+      description:
+        'The till closes immediately. Finish or cancel the sale on screen first — anything in the cart is lost, and an open shift stays open until you close it after the restart.',
+      confirmLabel: 'Restart and install'
+    })
+    if (ok) window.electron.updates.install()
   }
 
-  if (!updateAvailable) {
+  if (!updateAvailable && !updateError) {
     return null
   }
 
@@ -76,12 +88,28 @@ export function UpdateNotification(): React.JSX.Element | null {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <RefreshCw className="h-5 w-5" />
-            Update Available
+            {updateAvailable ? 'Update Available' : 'Update'}
           </CardTitle>
-          <CardDescription>Version {updateInfo?.version} is ready to install</CardDescription>
+          <CardDescription>
+            {updateInfo?.version
+              ? `Version ${updateInfo.version} is ready to install`
+              : 'Checking for a newer version'}
+          </CardDescription>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="space-y-3">
+          {updateError && (
+            <div className="flex gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <div className="min-w-0">
+                <p className="font-medium">Update failed</p>
+                <p className="text-xs break-words">{updateError}</p>
+                <p className="text-xs mt-1 text-muted-foreground">
+                  The till keeps working on the current version.
+                </p>
+              </div>
+            </div>
+          )}
           {!updateDownloaded ? (
             <>
               {downloading && downloadProgress ? (
@@ -93,9 +121,15 @@ export function UpdateNotification(): React.JSX.Element | null {
                   </p>
                 </div>
               ) : (
-                <Button onClick={handleDownload} className="w-full">
+                <Button
+                  onClick={() => {
+                    setUpdateError('')
+                    handleDownload()
+                  }}
+                  className="w-full"
+                >
                   <Download className="h-4 w-4 mr-2" />
-                  Download Update
+                  {updateError ? 'Try again' : 'Download Update'}
                 </Button>
               )}
             </>
@@ -111,6 +145,8 @@ export function UpdateNotification(): React.JSX.Element | null {
           )}
         </CardContent>
       </Card>
+
+      <ConfirmDialog {...confirmProps} />
     </div>
   )
 }

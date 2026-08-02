@@ -5,6 +5,7 @@ import { sales, saleItems, products, customers } from '../db/schema'
 import type { Sale, SaleItem, SaleRefund } from '../db/schema'
 import { round2, extractIncludedTax } from '../../shared/money'
 import { logAudit } from './audit'
+import { normalisePhone } from './customers'
 
 // Re-export types that may be consumed by other modules
 export type { Sale, SaleItem, SaleRefund }
@@ -167,13 +168,16 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
     const now = new Date().toISOString()
     const today = now.split('T')[0]
 
-    // FIX 1: Auto-link customer by phone
+    // Auto-link the customer by phone. Both sides go through normalisePhone so
+    // "077 123 4567" typed at the till still matches "+94771234567" on file —
+    // exact-equality matching silently dropped the sale from their history.
+    const customerPhone = normalisePhone(saleData.customer_phone)
     let customerId: string | null = null
-    if (saleData.customer_phone) {
+    if (customerPhone) {
       const customer = drizzleDb
         .select({ id: customers.id })
         .from(customers)
-        .where(eq(customers.phone, saleData.customer_phone))
+        .where(eq(customers.phone, customerPhone))
         .get()
       customerId = customer?.id ?? null
     }
@@ -198,8 +202,8 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
         cardReceived: saleData.card_received,
         changeGiven: saleData.change_given,
         status: 'completed',
-        customerName: saleData.customer_name ?? null,
-        customerPhone: saleData.customer_phone ?? null,
+        customerName: saleData.customer_name?.trim() || null,
+        customerPhone: customerPhone,
         createdAt: now
       })
       .run()

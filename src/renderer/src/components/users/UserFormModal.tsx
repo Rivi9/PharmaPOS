@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/comp
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
+import { ipcErrorMessage } from '@renderer/lib/ipc-error'
 import type { User } from '@renderer/pages/UsersPage'
 
 interface UserFormModalProps {
@@ -73,8 +74,10 @@ export function UserFormModal({
       }
       onSuccess()
       onClose()
-    } catch (error: any) {
-      alert(error.message)
+    } catch (error) {
+      // Inline, not alert(): the modal stays open so the operator can correct
+      // the field rather than retyping the whole form.
+      setFormError(ipcErrorMessage(error, 'Could not save the user'))
     }
   }
 

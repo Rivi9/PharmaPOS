@@ -10,9 +10,12 @@ import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { CheckCircle2, Store, User } from 'lucide-react'
+import { ipcErrorMessage } from '@renderer/lib/ipc-error'
 
 export function SetupWizardPage(): React.JSX.Element {
   const [currentStep, setCurrentStep] = useState(1)
+  const [setupError, setSetupError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [formData, setFormData] = useState({
     businessName: '',
     businessAddress: '',
@@ -35,7 +38,9 @@ export function SetupWizardPage(): React.JSX.Element {
     }
   }
 
-  const handleComplete = async () => {
+  const handleComplete = async (): Promise<void> => {
+    setSetupError('')
+    setIsSubmitting(true)
     try {
       // Initialize database settings AND create the first admin user
       await window.electron.setup.initialize(formData)
@@ -45,8 +50,11 @@ export function SetupWizardPage(): React.JSX.Element {
 
       // Reload to show login page
       window.location.reload()
-    } catch (error: any) {
-      alert(`Setup failed: ${error.message}`)
+    } catch (error) {
+      // Inline rather than alert(): the installer runs on a bare touchscreen
+      // where an OS modal is the one thing that cannot be dismissed by finger.
+      setSetupError(ipcErrorMessage(error, 'Setup failed'))
+      setIsSubmitting(false)
     }
   }
 
@@ -206,6 +214,12 @@ export function SetupWizardPage(): React.JSX.Element {
             </div>
           )}
 
+          {setupError && (
+            <p className="mt-4 rounded-md bg-destructive/10 p-3 text-sm font-medium text-destructive">
+              {setupError}
+            </p>
+          )}
+
           {/* Navigation Buttons */}
           <div className="flex gap-2 mt-6">
             {currentStep > 1 && (
@@ -226,8 +240,8 @@ export function SetupWizardPage(): React.JSX.Element {
                 Next
               </Button>
             ) : (
-              <Button onClick={handleComplete} className="ml-auto">
-                Complete Setup
+              <Button onClick={handleComplete} disabled={isSubmitting} className="ml-auto">
+                {isSubmitting ? 'Setting up…' : 'Complete Setup'}
               </Button>
             )}
           </div>

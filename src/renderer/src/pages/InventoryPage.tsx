@@ -23,10 +23,14 @@ import { StockBatchFormDialog } from '@renderer/components/inventory/StockBatchF
 // Alerts
 import { LowStockAlert } from '@renderer/components/inventory/LowStockAlert'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
+import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
+import { useConfirm } from '@renderer/hooks/useConfirm'
+import { ipcErrorMessage } from '@renderer/lib/ipc-error'
 
 export function InventoryPage(): React.JSX.Element {
   const { user } = useAuthStore()
   const userId = user?.id ?? ''
+  const { confirm, notify, confirmProps } = useConfirm()
 
   const {
     products,
@@ -138,7 +142,7 @@ export function InventoryPage(): React.JSX.Element {
     if (result.success) {
       await Promise.all([loadProducts(), loadStockBatches()])
     } else {
-      alert(result.error || 'Could not restore the product')
+      await notify('Could not restore the product', result.error)
     }
   }
 
@@ -148,14 +152,20 @@ export function InventoryPage(): React.JSX.Element {
   }
 
   const handleProductDelete = async (product: Product) => {
-    if (confirm(`Are you sure you want to delete ${product.name}?`)) {
-      const result = await window.electron.deleteProduct(userId, product.id)
-      if (result.success) {
-        // Reload batches too — the deleted product's batches are now stale.
-        await Promise.all([loadProducts(), loadStockBatches()])
-      } else {
-        alert(result.error || 'Failed to delete product')
-      }
+    const ok = await confirm({
+      title: `Discontinue ${product.name}?`,
+      description:
+        'It disappears from the till and from searches. Any remaining stock stays recorded, and you can restore it later from the Discontinued filter.',
+      confirmLabel: 'Discontinue',
+      destructive: true
+    })
+    if (!ok) return
+    const result = await window.electron.deleteProduct(userId, product.id)
+    if (result.success) {
+      // Reload batches too — the deleted product's batches are now stale.
+      await Promise.all([loadProducts(), loadStockBatches()])
+    } else {
+      await notify('Could not discontinue the product', result.error)
     }
   }
 
@@ -185,13 +195,19 @@ export function InventoryPage(): React.JSX.Element {
   }
 
   const handleCategoryDelete = async (category: Category) => {
-    if (confirm(`Are you sure you want to delete ${category.name}?`)) {
-      const result = await window.electron.deleteCategory(userId, category.id)
-      if (result.success) {
-        await loadCategories()
-      } else {
-        alert(result.error || 'Failed to delete category')
-      }
+    const ok = await confirm({
+      title: `Delete the ${category.name} category?`,
+      description: 'This cannot be undone. Categories still holding products cannot be deleted.',
+      confirmLabel: 'Delete',
+      destructive: true
+    })
+    if (!ok) return
+    const result = await window.electron.deleteCategory(userId, category.id)
+    if (result.success) {
+      await loadCategories()
+      await loadProducts()
+    } else {
+      await notify('Could not delete the category', result.error)
     }
   }
 
@@ -221,13 +237,19 @@ export function InventoryPage(): React.JSX.Element {
   }
 
   const handleSupplierDelete = async (supplier: Supplier) => {
-    if (confirm(`Are you sure you want to deactivate ${supplier.name}?`)) {
-      const result = await window.electron.deleteSupplier(userId, supplier.id)
-      if (result.success) {
-        await loadSuppliers()
-      } else {
-        alert(result.error || 'Failed to deactivate supplier')
-      }
+    const ok = await confirm({
+      title: `Deactivate ${supplier.name}?`,
+      description:
+        'They stop appearing when you record new stock. Existing batches keep their link to them.',
+      confirmLabel: 'Deactivate',
+      destructive: true
+    })
+    if (!ok) return
+    const result = await window.electron.deleteSupplier(userId, supplier.id)
+    if (result.success) {
+      await loadSuppliers()
+    } else {
+      await notify('Could not deactivate the supplier', result.error)
     }
   }
 
@@ -261,15 +283,21 @@ export function InventoryPage(): React.JSX.Element {
   }
 
   const handleBatchDelete = async (batch: StockBatch) => {
-    if (confirm(`Are you sure you want to delete this batch?`)) {
-      const result = await window.electron.deleteStockBatch(userId, batch.id)
-      if (result.success) {
-        await loadStockBatches()
-        await loadProducts() // Refresh products to update stock counts
-        await loadLowStockProducts()
-      } else {
-        alert(result.error || 'Failed to delete batch')
-      }
+    const ok = await confirm({
+      title: batch.batch_number ? `Delete batch ${batch.batch_number}?` : 'Delete this batch?',
+      description:
+        'This removes it from the stock history for good. Batches that still hold stock cannot be deleted — adjust the quantity to zero first.',
+      confirmLabel: 'Delete',
+      destructive: true
+    })
+    if (!ok) return
+    const result = await window.electron.deleteStockBatch(userId, batch.id)
+    if (result.success) {
+      await loadStockBatches()
+      await loadProducts() // Refresh products to update stock counts
+      await loadLowStockProducts()
+    } else {
+      await notify('Could not delete the batch', result.error)
     }
   }
 
@@ -287,8 +315,8 @@ export function InventoryPage(): React.JSX.Element {
         await loadLowStockProducts()
         setImportResult({ imported: result.imported, errors: result.errors })
       }
-    } catch (error: any) {
-      alert(`Import failed: ${error.message}`)
+    } catch (error) {
+      await notify('Import failed', ipcErrorMessage(error))
     }
   }
 
@@ -620,6 +648,8 @@ export function InventoryPage(): React.JSX.Element {
           )}
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog {...confirmProps} />
     </div>
   )
 }

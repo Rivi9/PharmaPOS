@@ -5,6 +5,9 @@ import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Pencil, UserX, UserCheck, Key } from 'lucide-react'
+import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
+import { useConfirm } from '@renderer/hooks/useConfirm'
+import { ipcErrorMessage } from '@renderer/lib/ipc-error'
 import type { User } from '@renderer/pages/UsersPage'
 
 interface UsersTableProps {
@@ -23,13 +26,25 @@ export function UsersTable({
   const [changePwUser, setChangePwUser] = useState<User | null>(null)
   const [newPassword, setNewPassword] = useState('')
   const [pwError, setPwError] = useState('')
+  const { confirm, notify, confirmProps } = useConfirm()
 
   const handleToggleActive = async (user: User) => {
-    const action = user.is_active ? 'deactivate' : 'reactivate'
-    if (confirm(`Are you sure you want to ${action} ${user.full_name}?`)) {
+    const ok = await confirm({
+      title: user.is_active ? `Deactivate ${user.full_name}?` : `Reactivate ${user.full_name}?`,
+      description: user.is_active
+        ? 'They will not be able to sign in, and any till session they have open stays open until someone closes it.'
+        : 'They will be able to sign in again with their existing password.',
+      confirmLabel: user.is_active ? 'Deactivate' : 'Reactivate',
+      destructive: Boolean(user.is_active)
+    })
+    if (!ok) return
+    try {
       await window.electron.users.delete(userId, user.id, !user.is_active)
-      onRefresh()
+    } catch (error) {
+      await notify('Could not update the user', ipcErrorMessage(error))
+      return
     }
+    onRefresh()
   }
 
   const openChangePassword = (user: User) => {
@@ -46,8 +61,8 @@ export function UsersTable({
     try {
       await window.electron.users.changePassword(userId, changePwUser!.id, newPassword)
       setChangePwUser(null)
-    } catch (err: any) {
-      setPwError(err.message)
+    } catch (error) {
+      setPwError(ipcErrorMessage(error, 'Could not change the password'))
     }
   }
 
@@ -125,6 +140,8 @@ export function UsersTable({
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog {...confirmProps} />
     </>
   )
 }

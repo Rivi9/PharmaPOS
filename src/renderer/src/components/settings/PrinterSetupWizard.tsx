@@ -10,6 +10,7 @@ import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
 import { Label } from '@renderer/components/ui/label'
 import { CheckCircle2, XCircle, Printer } from 'lucide-react'
+import { ipcErrorMessage } from '@renderer/lib/ipc-error'
 
 export function PrinterSetupWizard(): React.JSX.Element {
   const [step, setStep] = useState(1)
@@ -26,6 +27,7 @@ export function PrinterSetupWizard(): React.JSX.Element {
   const [isLoading, setIsLoading] = useState(false)
   const [usbPrinters, setUsbPrinters] = useState<Array<{ name: string; path: string }>>([])
   const [usbListLoading, setUsbListLoading] = useState(false)
+  const [saveMessage, setSaveMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
   const loadUsbPrinters = async (currentPath?: string) => {
     setUsbListLoading(true)
@@ -103,8 +105,9 @@ export function PrinterSetupWizard(): React.JSX.Element {
     }
   }
 
-  const handleSaveConfig = async () => {
+  const handleSaveConfig = async (): Promise<void> => {
     setIsLoading(true)
+    setSaveMessage(null)
     try {
       const saveResult = (await window.electron.printer.saveConfig(config)) as
         | { success?: boolean; error?: string }
@@ -112,10 +115,16 @@ export function PrinterSetupWizard(): React.JSX.Element {
       if (saveResult && saveResult.success === false) {
         throw new Error(saveResult.error || 'Failed to save printer configuration')
       }
-      alert('Printer configuration saved successfully!')
+      // Reported in place rather than through alert(): the wizard jumps back to
+      // step 1 on success, and an OS modal on a touchscreen puts an unreachably
+      // small OK button between the operator and that transition.
+      setSaveMessage({ ok: true, text: 'Printer configuration saved.' })
       setStep(1)
-    } catch (error: any) {
-      alert(error.message)
+    } catch (error) {
+      setSaveMessage({
+        ok: false,
+        text: ipcErrorMessage(error, 'Failed to save printer configuration')
+      })
     } finally {
       setIsLoading(false)
     }
@@ -330,6 +339,23 @@ export function PrinterSetupWizard(): React.JSX.Element {
                 </Button>
               </div>
             </div>
+          </div>
+        )}
+        {saveMessage && (
+          <div
+            role="status"
+            className={
+              saveMessage.ok
+                ? 'mt-4 flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm font-medium text-green-800'
+                : 'mt-4 flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm font-medium text-destructive'
+            }
+          >
+            {saveMessage.ok ? (
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+            ) : (
+              <XCircle className="h-4 w-4 shrink-0" />
+            )}
+            <span>{saveMessage.text}</span>
           </div>
         )}
       </CardContent>

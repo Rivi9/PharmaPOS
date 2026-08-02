@@ -6,6 +6,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/u
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import { Label } from '@renderer/components/ui/label'
 import { useAuthStore } from '@renderer/stores/authStore'
+import { ipcErrorMessage } from '@renderer/lib/ipc-error'
+import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
+import { useConfirm } from '@renderer/hooks/useConfirm'
 
 interface Customer {
   id: string
@@ -43,6 +46,8 @@ export function CustomersPage(): React.JSX.Element {
   const [formAddress, setFormAddress] = useState('')
   const [formNotes, setFormNotes] = useState('')
   const [formError, setFormError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
+  const { confirm, notify, confirmProps } = useConfirm()
 
   const loadCustomers = useCallback(async () => {
     setIsLoading(true)
@@ -112,16 +117,25 @@ export function CustomersPage(): React.JSX.Element {
       notes: formNotes.trim() || undefined
     }
 
-    let result: { success?: boolean; error?: string } | undefined
-    if (editCustomer) {
-      result = await window.electron.customers.update(userId, editCustomer.id, data)
-    } else {
-      result = await window.electron.customers.create(userId, data)
-    }
-
-    if (result && result.success === false) {
-      setFormError(result.error || 'Failed to save customer')
+    // The handlers report failure by throwing, not by returning
+    // `{ success: false }` — the old check could never fire, so a duplicate
+    // phone number or a permission error closed the dialog as if it had saved.
+    setIsSaving(true)
+    try {
+      if (editCustomer) {
+        await window.electron.customers.update(userId, editCustomer.id, data)
+      } else {
+        await window.electron.customers.create(userId, data)
+      }
+    } catch (error) {
+      setFormError(
+        /UNIQUE constraint failed: customers.phone/.test(String(error))
+          ? 'Another customer already uses that phone number'
+          : ipcErrorMessage(error, 'Failed to save customer')
+      )
       return
+    } finally {
+      setIsSaving(false)
     }
 
     setShowForm(false)
@@ -129,8 +143,20 @@ export function CustomersPage(): React.JSX.Element {
   }
 
   const handleDelete = async (customer: Customer) => {
-    if (!confirm(`Delete customer "${customer.name}"?`)) return
-    await window.electron.customers.delete(userId, customer.id)
+    const ok = await confirm({
+      title: `Remove ${customer.name}?`,
+      description:
+        'Their past sales stay on record; they just stop appearing in the customer list.',
+      confirmLabel: 'Remove',
+      destructive: true
+    })
+    if (!ok) return
+    try {
+      await window.electron.customers.delete(userId, customer.id)
+    } catch (error) {
+      await notify('Could not remove customer', ipcErrorMessage(error))
+      return
+    }
     if (selected?.id === customer.id) setSelected(null)
     loadCustomers()
   }
@@ -362,14 +388,18 @@ export function CustomersPage(): React.JSX.Element {
               />
             </div>
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setShowForm(false)}>
+              <Button variant="outline" onClick={() => setShowForm(false)} disabled={isSaving}>
                 Cancel
               </Button>
-              <Button onClick={handleSaveCustomer}>{editCustomer ? 'Update' : 'Create'}</Button>
+              <Button onClick={handleSaveCustomer} disabled={isSaving}>
+                {isSaving ? 'Saving…' : editCustomer ? 'Update' : 'Create'}
+              </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+
+      <ConfirmDialog {...confirmProps} />
     </div>
   )
 }
