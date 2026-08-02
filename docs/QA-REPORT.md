@@ -619,6 +619,19 @@ Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can d
 | End Shift accepted a blank count on a stray Enter | Requires a closing count, explains why, and is re-entrancy guarded. |
 | Overlay tap discarded a keyed-in payment | `PaymentModal` no longer dismisses on outside interaction; capped at 90vh. |
 
+### Round 4 — the VAT model (commit `e9dfeb0`)
+
+**Operator decision:** prices are entered tax-inclusive (shelf/MRP), one global rate applies to everything, existing sales are left as-is.
+
+| Item | Change |
+|---|---|
+| **C3** — two contradictory VAT models | VAT is now **extracted, never added**, everywhere: `VAT = gross − gross/(1+rate/100)` and `total = subtotal − discount`. `createSale` reads the rate server-side, computes VAT per line, and sets the header to the sum of the lines, so the two reconcile by construction. A default install previously charged Rs. 135.70 for a Rs. 115.00 MRP pack and recorded a header VAT against zero line-item VAT. |
+| **H26** — VAT counted as profit | The Sales Report computed `SUM(total − COGS)` on a VAT-inclusive total, booking the pharmacy's VAT liability as profit. Profit is now on net revenue, in both the summary and the daily breakdown. |
+| **H27** — two revenue definitions | `product_sales_daily.revenue` is consistently net of VAT in both the live write and the batch aggregation, and the Sales Report now exposes gross, VAT and net side by side — so it reconciles to the drawer *and* to the P&L. |
+| Cart/receipt wording | Labelled `incl. VAT (x%)` so it cannot be read as an additional charge; hidden entirely at 0%. |
+
+A test caught a genuine rounding split during this work: extracting VAT from the subtotal gave `117.46` on the real basket `R-2026-003849`, while summing per line gave `117.45`. The cart now sums per line, matching how the sale is stored, so cart, line items and header agree to the cent. Verified that `net + VAT == gross` and that 0% — the deployed store's setting — is a complete no-op.
+
 ### Receipt output — from three scanned bills of the deployed store
 
 Analysed real printed receipts from Nirogya Medical Center (`docs/bill-outputs.pdf`).
@@ -722,17 +735,16 @@ One caveat on confidence: every finding is derived from source, and the ones mar
 
 ## Suggested order of work
 
-**Done (33 findings + 2 requirements):** C1, C2, C4, C5, C6, C7, C8, C9, C10, C14, C15, C16, C17, C18, C19, C20, C23, C24, H1, H3, H8, H29, H31, H32, H33, H35, H37, M8, M12, plus several Medium touch/UX items, R3 and R5, the receipt layout, AI removal and the batch-picker fixes.
+**Done (36 findings + 2 requirements):** C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C14, C15, C16, C17, C18, C19, C20, C23, C24, H1, H3, H8, H26, H27, H29, H31, H32, H33, H35, H37, M8, M12, plus several Medium touch/UX items, R3 and R5, the receipt layout, AI removal and the batch-picker fixes.
 
 **Next, in order:**
 
-1. **C3** — the VAT model. **Blocked on a pricing decision:** are shelf prices tax-inclusive? The schema says yes (`is_tax_inclusive` defaults to 1) but the cart adds the global rate on top, and the answer changes what every customer is charged. The deployed store runs at 0% so nothing is currently mis-charged, but every remaining reporting inconsistency traces back to this.
-2. **C25 + H26 + H27** — refunds (recorded net of VAT, never marked refunded, invisible to every report and to the drawer) and picking one revenue/profit definition so the P&L and Sales report agree.
-3. **C11, C12** — the main-process session, which also retires H24, and PIN hash exposure.
-4. **C21, C22** — encrypt backups unconditionally and stop uploading customer PII in the clear.
-5. **R1 + R2 + H4** — per-batch pricing and batch history together.
-6. **H25** — a sale-to-receipt E2E test.
-7. Dependency bumps: `drizzle-orm` ≥0.45.2 and `jspdf` >4.2.0 both ship in the app with published advisories.
+1. **C25** — refunds: recorded net of VAT, never marked `refunded`, and invisible to every report and to the drawer.
+2. **C11, C12** — the main-process session, which also retires H24, and PIN hash exposure.
+3. **C21, C22** — encrypt backups unconditionally and stop uploading customer PII in the clear.
+4. **R1 + R2 + H4** — per-batch pricing and batch history together.
+5. **H25** — a sale-to-receipt E2E test.
+6. Dependency bumps: `drizzle-orm` ≥0.45.2 and `jspdf` >4.2.0 both ship in the app with published advisories.
 
 ### Original order (retained for reference)
 
