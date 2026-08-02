@@ -1,5 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
-import { join } from 'path'
+import { join, basename, resolve } from 'path'
+import { spawnSync } from 'child_process'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 
 // Forge Vite plugin injects these globals at build time
@@ -17,7 +18,7 @@ interface SaleData {
   change_given?: number
   currency?: string
 }
-import { initializeDatabase, closeDatabase } from './services/database'
+import { initializeDatabase, closeDatabase, migrateDatabaseOnly } from './services/database'
 import { registerIpcHandlers } from './ipc/handlers'
 import { initializeAggregationJob } from './jobs/aggregation'
 import { startBackupScheduler, stopBackupScheduler } from './services/backup/scheduler'
@@ -27,6 +28,65 @@ import { initializeAutoUpdater } from './services/updates/auto-updater'
 import { IPC_CHANNELS } from './ipc/channels'
 import * as poleDisplay from './services/pole-display'
 import { getDatabase } from './services/database'
+
+/**
+ * Squirrel.Windows runs the installed executable with a `--squirrel-*` argument
+ * at install, update and uninstall. Those runs must not open a window, and they
+ * are the right moment to bring the database schema up to date — so the first
+ * time the pharmacy opens the new version, the migration has already happened.
+ *
+ * Nothing handled these before, so the app briefly launched a full window during
+ * every install and update.
+ *
+ * Returns true when this process was an installer hook and should exit.
+ */
+function handleSquirrelEvent(): boolean {
+  if (process.platform !== 'win32' || process.argv.length < 2) return false
+
+  const command = process.argv[1]
+  if (!command.startsWith('--squirrel')) return false
+
+  // Update.exe lives one directory above the versioned app folder.
+  const updateExe = resolve(process.execPath, '..', '..', 'Update.exe')
+  const exeName = basename(process.execPath)
+  const runUpdate = (args: string[]): void => {
+    try {
+      spawnSync(updateExe, args, { timeout: 15_000 })
+    } catch {
+      /* shortcut management is best-effort — never block the install */
+    }
+  }
+
+  switch (command) {
+    case '--squirrel-install':
+    case '--squirrel-updated':
+      // Migrate first: a failure here must not stop the install, because the
+      // startup path re-checks and will surface the error to the operator.
+      try {
+        migrateDatabaseOnly()
+      } catch (error) {
+        logError('Install-time database migration failed', error as Error)
+      }
+      runUpdate(['--createShortcut', exeName])
+      break
+
+    case '--squirrel-uninstall':
+      // Never migrate on the way out.
+      runUpdate(['--removeShortcut', exeName])
+      break
+
+    case '--squirrel-obsolete':
+      break
+  }
+
+  // exit() rather than quit(): the End-Shift close guard must not trap an installer hook.
+  app.exit(0)
+  return true
+}
+
+// Runs before anything else boots. app.exit() terminates the process, so nothing
+// below executes when this was an installer hook.
+handleSquirrelEvent()
 
 // Initialize error tracking
 initializeErrorTracking()

@@ -36,6 +36,22 @@ export function initializeDatabase(): void {
   console.log('Database initialized at:', app.getPath('userData'))
 }
 
+/**
+ * Apply pending schema migrations and close again, without booting the app.
+ *
+ * Called from the Squirrel install/update hook so the schema is already current
+ * before the pharmacy first opens the new version. `initDb` is idempotent and
+ * version-guarded, so the normal startup path re-checking costs nothing and
+ * still covers installs that never run the hook (zip builds, restored backups).
+ */
+export function migrateDatabaseOnly(): void {
+  try {
+    initializeDatabase()
+  } finally {
+    closeDatabase()
+  }
+}
+
 export function closeDatabase(): void {
   if (db) {
     db.close()

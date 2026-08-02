@@ -11,15 +11,25 @@
 
 ## Summary
 
-| Severity | Count |
-|----------|-------|
-| 🔴 Critical | 25 |
-| 🟠 High | 40 |
-| 🟡 Medium | 32 |
-| ⚪ Low | 16 |
-| **Total** | **113** |
+| Severity | Raised | Fixed | Open |
+|----------|-------:|------:|-----:|
+| 🔴 Critical | 25 | **19** | 6 |
+| 🟠 High | 40 | **12** | 28 |
+| 🟡 Medium | 32 | **4** | 28 |
+| ⚪ Low | 16 | **3** | 13 |
+| **Total** | **113** | **38** | **75** |
+| 📋 Operator requirements | 5 | **2** | 3 |
 
-Plus **5 operator requirements** raised from the shop floor — see [Operator requirements](#-operator-requirements).
+**Still-open Criticals:** C11 and C12 (main-process session, PIN hash exposure), C13 and C25 (the refund path), C21 and C22 (backup encryption and PII leaving the machine in the clear). Everything else at Critical is closed.
+
+Fixed across four rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
+
+| Round | Commit | Closed |
+|---|---|---|
+| 1 | `56475b9` | C16, L11 + AI insights removed, batch picker |
+| 2 | `75436fa`, `0851dba`, `d610807` | C1, C2, C4, C5, C6, C7, C10, C15, C17–C20, C23, C24, H1, H3, H29, H31–H33, H35, H37, M8, M12, L1, L2, R5 |
+| 3 | `ba57e9d`, `01006ed` | C8, C9, C14, H8, R3 + 2 Medium |
+| 4 | `e9dfeb0`, this round | C3, H2, H26, H27 |
 
 **Two passes.** Pass 1 (C1–C15, H1–H25) covered the POS, payments, printing, auth/RBAC, inventory and the schema. Pass 2 (C16–C25, H26–H40) covered the areas pass 1 listed as gaps — the full money/analytics verification, report generation, backup/restore, scheduling, logging, auto-update, the audit log, customers, and the admin-screen touch review. **Coverage is now complete**; there is no remaining unreviewed area.
 
@@ -619,7 +629,13 @@ Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can d
 | End Shift accepted a blank count on a stray Enter | Requires a closing count, explains why, and is re-entrancy guarded. |
 | Overlay tap discarded a keyed-in payment | `PaymentModal` no longer dismisses on outside interaction; capped at 90vh. |
 
-### Round 4 — the VAT model (commit `e9dfeb0`)
+### Round 4 — the VAT model and install-time migrations (commit `e9dfeb0` onward)
+
+| Item | Change |
+|---|---|
+| **H2** — cash drawer, and a regression I introduced | Decoupling the drawer from the receipt in round 2 removed `cashdraw` from the print stream without adding the replacement, so the drawer stopped opening entirely. `printer.openDrawer()` now fires straight after the sale commits for cash and mixed payments, so the till opens whether or not the cashier prints and a paper fault cannot lock it. |
+| **Migrations now run at install time** | Squirrel runs the executable with `--squirrel-install` / `--squirrel-updated`; nothing handled those, so the app briefly opened a full window during every install and update. The hook is now handled: it migrates the database, manages shortcuts and exits without booting the UI. The startup check remains as the safety net — see [How migrations run](#how-migrations-run). |
+
 
 **Operator decision:** prices are entered tax-inclusive (shelf/MRP), one global rate applies to everything, existing sales are left as-is.
 
@@ -689,6 +705,25 @@ Raised from the shop floor. These are **feature gaps, not defects** — but seve
 
 ### R5 — Setting to disable card payments
 Covered in full under **C6**. Ship the toggle with the crash fix.
+
+---
+
+## How migrations run
+
+Schema versions are tracked in the database itself with `PRAGMA user_version`. `src/main/db/index.ts` holds an ordered `MIGRATIONS` array; each entry runs inside a transaction and bumps the version in the same transaction, so a migration either fully applies or does not apply at all.
+
+There are **two** trigger points, deliberately:
+
+1. **At install/update (Windows, Squirrel).** Squirrel launches the installed exe with `--squirrel-install` or `--squirrel-updated`. `handleSquirrelEvent()` in `src/main/index.ts` intercepts this, calls `migrateDatabaseOnly()` (open → migrate → close), manages the desktop shortcut, and exits **without creating a window**. So by the time the pharmacy opens the new version, the schema is already current.
+2. **At every startup**, as the safety net. `initializeDatabase()` → `initDb()` re-checks `user_version` and applies anything outstanding.
+
+Keeping both matters. The install hook alone is not sufficient because it has a time limit and can be killed, a zip/portable build never runs Squirrel hooks at all, and **restoring an older backup puts an out-of-date database under a current app** — only the startup check catches that. Because `initDb` is version-guarded, the second check costs one `PRAGMA` read when there is nothing to do.
+
+**Behaviour on an existing database.** A database created before versioning existed reports `user_version = 0`. The runner probes for a known table: if the schema is already there it is adopted as version 1 *without re-running the baseline*, then later migrations apply normally. Verified against a copy of the deployed database — 0 → 1 → 2 with all rows intact and `integrity_check` returning `ok`.
+
+**Adding a migration.** Append to `MIGRATIONS` with the next version number and idempotent DDL (`IF NOT EXISTS`, additive columns), and update `src/main/db/schema.ts` to match. Never edit `0000_chilly_alice.sql` — it is the baseline for fresh installs only, and changing it would desync every machine already in the field.
+
+**Two caveats worth knowing.** A migration that fails at install is logged and swallowed so it cannot brick the installer; the startup path then retries and surfaces the error. And `app.exit(0)` is used rather than `app.quit()` in the hook, because the End-Shift close guard would otherwise trap the installer process.
 
 ---
 

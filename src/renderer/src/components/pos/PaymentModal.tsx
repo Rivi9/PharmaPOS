@@ -215,6 +215,15 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
 
       addToTodaySales(total)
 
+      // Drawer is kicked independently of printing. It used to ride inside the
+      // receipt byte stream, so a cashier who pressed Close instead of Print — or
+      // hit any printer fault — got a committed cash sale with a locked till.
+      if (paymentMethod !== 'card') {
+        window.electron.printer.openDrawer().catch(() => {
+          /* no drawer attached, or printer offline — the sale is already committed */
+        })
+      }
+
       window.electron.display
         .saleComplete({
           total,
