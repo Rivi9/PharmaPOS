@@ -18,5 +18,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
   login: (user) => set({ user, isAuthenticated: true }),
-  logout: () => set({ user: null, isAuthenticated: false })
+  logout: () => {
+    // Release the main-process session too, or the renderer would keep its
+    // authorisation after the UI has signed out.
+    window.electron.logout().catch(() => {
+      /* already gone */
+    })
+    set({ user: null, isAuthenticated: false })
+  }
 }))

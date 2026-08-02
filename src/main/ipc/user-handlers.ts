@@ -28,7 +28,10 @@ function mapUser(u: User) {
     username: u.username,
     full_name: u.fullName,
     role: u.role,
-    pin_code: u.pinCode,
+    // Never expose the PIN hash. It is bcrypt over a 4-digit PIN — 10,000
+    // candidates — so shipping it to the renderer made every PIN, including the
+    // admin's, recoverable offline in minutes with no failed-login trace.
+    pin_set: Boolean(u.pinCode),
     is_active: u.isActive,
     created_at: u.createdAt,
     updated_at: u.updatedAt
@@ -38,34 +41,34 @@ function mapUser(u: User) {
 export function registerUserHandlers(): void {
   // User management
 
-  ipcMain.handle(IPC_CHANNELS.USER_LIST, async (_event, { userId }) => {
-    return withPermission(userId, 'users:view', () => listUsers().map(mapUser))
+  ipcMain.handle(IPC_CHANNELS.USER_LIST, async (_event) => {
+    return withPermission(_event, 'users:view', () => listUsers().map(mapUser))
   })
 
   ipcMain.handle(
     IPC_CHANNELS.USER_GET,
-    async (_event, { userId, id }: { userId: string; id: string }) => {
-      return withPermission(userId, 'users:view', () => {
+    async (_event, { id }: { id: string }) => {
+      return withPermission(_event, 'users:view', () => {
         const u = getUserById(id)
         return u ? mapUser(u) : null
       })
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.USER_CREATE, async (_event, { userId, ...data }) => {
-    return withPermission(userId, 'users:create', () => createUser(data))
+  ipcMain.handle(IPC_CHANNELS.USER_CREATE, async (_event, { ...data }) => {
+    return withPermission(_event, 'users:create', () => createUser(data))
   })
 
-  ipcMain.handle(IPC_CHANNELS.USER_UPDATE, async (_event, { userId, id, data }) => {
-    return withPermission(userId, 'users:update', () => updateUser(id, data))
+  ipcMain.handle(IPC_CHANNELS.USER_UPDATE, async (_event, { id, data }) => {
+    return withPermission(_event, 'users:update', () => updateUser(id, data))
   })
 
-  ipcMain.handle(IPC_CHANNELS.USER_CHANGE_PASSWORD, async (_event, { userId, id, password }) => {
-    return withPermission(userId, 'users:update', () => changeUserPassword(id, password))
+  ipcMain.handle(IPC_CHANNELS.USER_CHANGE_PASSWORD, async (_event, { id, password }) => {
+    return withPermission(_event, 'users:update', () => changeUserPassword(id, password))
   })
 
-  ipcMain.handle(IPC_CHANNELS.USER_DELETE, async (_event, { userId, id, reactivate }) => {
-    return withPermission(userId, 'users:delete', async () => {
+  ipcMain.handle(IPC_CHANNELS.USER_DELETE, async (_event, { id, reactivate }) => {
+    return withPermission(_event, 'users:delete', async () => {
       if (reactivate) {
         reactivateUser(id)
       } else {

@@ -67,7 +67,7 @@ export function UsersTable({
                   <p className="font-medium">{user.full_name}</p>
                   <p className="text-sm text-muted-foreground">
                     @{user.username} • {user.role}
-                    {user.pin_code && ' • PIN set'}
+                    {user.pin_set && ' • PIN set'}
                   </p>
                 </div>
                 <div className="flex gap-2">

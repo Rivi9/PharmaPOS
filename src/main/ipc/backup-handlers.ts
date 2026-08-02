@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from './channels'
-import { withPermission } from './middleware'
+import { withPermission, actingUserId } from './middleware'
 import {
   createBackup,
   restoreBackup,
@@ -37,11 +37,11 @@ function safeBackupFileName(fileName: string): string {
 export function registerBackupHandlers(): void {
   ipcMain.handle(
     IPC_CHANNELS.BACKUP_CREATE,
-    async (_event, { userId, password }: { userId: string; password?: string }) => {
-      return withPermission(userId, 'backup:create', async () => {
+    async (_event, { password }: { password?: string }) => {
+      return withPermission(_event, 'backup:create', async () => {
         const backupPath = await createBackup(password)
         logAudit({
-          userId,
+        userId: actingUserId(_event),
           action: 'BACKUP_CREATED',
           entityType: 'backup',
           entityId: path.basename(backupPath),
@@ -56,13 +56,13 @@ export function registerBackupHandlers(): void {
     IPC_CHANNELS.BACKUP_RESTORE,
     async (
       _event,
-      { userId, backupPath, password }: { userId: string; backupPath: string; password?: string }
+      { backupPath, password }: { backupPath: string; password?: string }
     ) => {
-      return withPermission(userId, 'backup:restore', async () => {
+      return withPermission(_event, 'backup:restore', async () => {
         const metadata = await restoreBackup(backupPath, password)
         // Written after the swap, so it survives into the restored database.
         logAudit({
-          userId,
+        userId: actingUserId(_event),
           action: 'BACKUP_RESTORED',
           entityType: 'backup',
           entityId: path.basename(backupPath),
@@ -73,14 +73,14 @@ export function registerBackupHandlers(): void {
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.BACKUP_LIST_LOCAL, (_event, userId: string) => {
-    return withPermission(userId, 'backup:create', () => listBackups())
+  ipcMain.handle(IPC_CHANNELS.BACKUP_LIST_LOCAL, (_event) => {
+    return withPermission(_event, 'backup:create', () => listBackups())
   })
 
   ipcMain.handle(
     IPC_CHANNELS.BACKUP_DELETE_LOCAL,
-    (_event, { userId, backupPath }: { userId: string; backupPath: string }) => {
-      return withPermission(userId, 'backup:restore', () => {
+    (_event, { backupPath }: { backupPath: string }) => {
+      return withPermission(_event, 'backup:restore', () => {
         // Without containment this deletes any path the renderer names, including
         // the live database.
         const safePath = assertInsideBackupDir(backupPath)
@@ -93,8 +93,8 @@ export function registerBackupHandlers(): void {
   // Google Drive operations
   ipcMain.handle(
     IPC_CHANNELS.BACKUP_DRIVE_AUTH,
-    (_event, { userId, accessToken }: { userId: string; accessToken: string }) => {
-      return withPermission(userId, 'backup:create', () => {
+    (_event, { accessToken }: { accessToken: string }) => {
+      return withPermission(_event, 'backup:create', () => {
         storeDriveToken(accessToken)
         return { success: true }
       })
@@ -105,25 +105,25 @@ export function registerBackupHandlers(): void {
     IPC_CHANNELS.BACKUP_DRIVE_UPLOAD,
     async (
       _event,
-      { userId, filePath, fileName }: { userId: string; filePath: string; fileName: string }
+      { filePath, fileName }: { filePath: string; fileName: string }
     ) => {
-      return withPermission(userId, 'backup:create', () =>
+      return withPermission(_event, 'backup:create', () =>
         uploadBackupToDrive(assertInsideBackupDir(filePath), safeBackupFileName(fileName))
       )
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.BACKUP_DRIVE_LIST, async (_event, userId: string) => {
-    return withPermission(userId, 'backup:create', () => listDriveBackups())
+  ipcMain.handle(IPC_CHANNELS.BACKUP_DRIVE_LIST, async (_event) => {
+    return withPermission(_event, 'backup:create', () => listDriveBackups())
   })
 
   ipcMain.handle(
     IPC_CHANNELS.BACKUP_DRIVE_DOWNLOAD,
     async (
       _event,
-      { userId, fileId, fileName }: { userId: string; fileId: string; fileName: string }
+      { fileId, fileName }: { fileId: string; fileName: string }
     ) => {
-      return withPermission(userId, 'backup:restore', async () => {
+      return withPermission(_event, 'backup:restore', async () => {
         const destPath = path.join(getBackupDir(), safeBackupFileName(fileName))
         await downloadBackupFromDrive(fileId, destPath)
         return { path: destPath }
@@ -133,8 +133,8 @@ export function registerBackupHandlers(): void {
 
   ipcMain.handle(
     IPC_CHANNELS.BACKUP_DRIVE_DELETE,
-    async (_event, { userId, fileId }: { userId: string; fileId: string }) => {
-      return withPermission(userId, 'backup:restore', async () => {
+    async (_event, { fileId }: { fileId: string }) => {
+      return withPermission(_event, 'backup:restore', async () => {
         await deleteBackupFromDrive(fileId)
         return { success: true }
       })
@@ -144,23 +144,23 @@ export function registerBackupHandlers(): void {
   // Scheduler operations
   ipcMain.handle(
     IPC_CHANNELS.BACKUP_SCHEDULER_START,
-    (_event, userId: string) => {
-      return withPermission(userId, 'backup:create', () => {
+    (_event) => {
+      return withPermission(_event, 'backup:create', () => {
         setBackupsEnabled(true)
         return { success: true }
       })
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.BACKUP_SCHEDULER_STOP, (_event, userId: string) => {
-    return withPermission(userId, 'backup:create', () => {
+  ipcMain.handle(IPC_CHANNELS.BACKUP_SCHEDULER_STOP, (_event) => {
+    return withPermission(_event, 'backup:create', () => {
       setBackupsEnabled(false)
       return { success: true }
     })
   })
 
-  ipcMain.handle(IPC_CHANNELS.BACKUP_SCHEDULER_STATUS, (_event, userId: string) => {
-    return withPermission(userId, 'backup:create', () => getBackupStatus())
+  ipcMain.handle(IPC_CHANNELS.BACKUP_SCHEDULER_STATUS, (_event) => {
+    return withPermission(_event, 'backup:create', () => getBackupStatus())
   })
 }
 

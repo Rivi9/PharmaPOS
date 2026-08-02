@@ -8,15 +8,15 @@ import { queryAuditLog, exportAuditLogCsv, type AuditQueryOptions } from '../ser
 export function registerAuditHandlers(): void {
   ipcMain.handle(
     IPC_CHANNELS.AUDIT_LOG_QUERY,
-    (_event, { userId, ...options }: AuditQueryOptions & { userId: string }) => {
-      return withPermission(userId, 'reports:view', () => queryAuditLog(options))
+    (_event, { ...options }: AuditQueryOptions) => {
+      return withPermission(_event, 'reports:view', () => queryAuditLog(options))
     }
   )
 
   ipcMain.handle(
     IPC_CHANNELS.AUDIT_LOG_EXPORT_CSV,
-    async (event, { userId, ...options }: AuditQueryOptions & { userId: string }) => {
-      return withPermission(userId, 'reports:view', async () => {
+    async (event, { ...options }: AuditQueryOptions) => {
+      return withPermission(event, 'reports:view', async () => {
         const csv = exportAuditLogCsv(options)
 
         const win = require('electron').BrowserWindow.fromWebContents(event.sender)

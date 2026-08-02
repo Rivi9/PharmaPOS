@@ -11,7 +11,8 @@ export interface User {
   username: string
   full_name: string
   role: 'admin' | 'manager' | 'cashier'
-  pin_code: string | null
+  /** Whether a PIN is set. The hash itself never leaves the main process. */
+  pin_set: boolean
   is_active: number
   created_at: string
   updated_at: string

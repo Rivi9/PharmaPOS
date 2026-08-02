@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from './channels'
-import { withPermission } from './middleware'
+import { withPermission, actingUserId } from './middleware'
 import {
   searchProducts,
   getProductByBarcode,
@@ -38,8 +38,7 @@ export function registerPOSHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.SALE_CREATE, async (_event, saleData: unknown) => {
     const result = createSale(saleData as any) // Type validated by service
     const sale = saleData as { user_id: string; total: number; payment_method: string }
-    logAudit({
-      userId: sale.user_id,
+    logAudit({      userId: sale.user_id,
       action: 'SALE_CREATED',
       entityType: 'sale',
       entityId: result.sale_id,
@@ -75,18 +74,18 @@ export function registerPOSHandlers(): void {
   )
 
   // Void sale — requires sales:void permission
-  ipcMain.handle(IPC_CHANNELS.SALE_VOID, async (_event, { userId, saleId, reason }) => {
-    return withPermission(userId, 'sales:void', () => voidSale(saleId, userId, reason))
+  ipcMain.handle(IPC_CHANNELS.SALE_VOID, async (_event, { saleId, reason }) => {
+    return withPermission(_event, 'sales:void', () => voidSale(saleId, actingUserId(_event), reason))
   })
 
   // Refund sale — requires sales:refund permission
   ipcMain.handle(
     IPC_CHANNELS.SALE_REFUND,
-    async (_event, { userId, saleId, items, reason, restock }) => {
-      return withPermission(userId, 'sales:refund', () => {
-        const result = createRefund(saleId, userId, items, reason ?? '', restock ?? false)
+    async (_event, { saleId, items, reason, restock }) => {
+      return withPermission(_event, 'sales:refund', () => {
+        const result = createRefund(saleId, actingUserId(_event), items, reason ?? '', restock ?? false)
         logAudit({
-          userId,
+        userId: actingUserId(_event),
           action: 'SALE_REFUNDED',
           entityType: 'sale',
           entityId: saleId,

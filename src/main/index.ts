@@ -26,6 +26,7 @@ import { initializeErrorTracking, setupGlobalErrorHandlers } from './services/lo
 import { logInfo, logError } from './services/logging/logger'
 import { initializeAutoUpdater } from './services/updates/auto-updater'
 import { IPC_CHANNELS } from './ipc/channels'
+import { pruneDeadSessions } from './ipc/session'
 import * as poleDisplay from './services/pole-display'
 import { getDatabase } from './services/database'
 
@@ -163,6 +164,13 @@ app.whenReady().then(() => {
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.
   // see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
+  // A reloaded or crashed renderer must not leave an authenticated session bound
+  // to a webContents id that a later renderer could be assigned.
+  app.on('browser-window-created', (_, window) => {
+    pruneDeadSessions()
+    window.webContents.on('destroyed', () => pruneDeadSessions())
+  })
+
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })

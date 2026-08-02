@@ -1,6 +1,8 @@
 import { ipcMain } from 'electron'
 import { getDatabase, generateId } from '../services/database'
 import { IPC_CHANNELS } from './channels'
+import { setSession, clearSession, getSessionUser } from './session'
+import { withPermission, actingUserId } from './middleware'
 import bcrypt from 'bcryptjs'
 import { logAudit } from '../services/audit'
 import { registerPOSHandlers } from './pos-handlers'
@@ -64,7 +66,7 @@ export function registerIpcHandlers(): void {
   })
 
   // Login with PIN or password
-  ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, async (_, { userId, pin, password }) => {
+  ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, async (event, { userId, pin, password }) => {
     const db = getDatabase()
     const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(userId) as any
 
@@ -72,14 +74,14 @@ export function registerIpcHandlers(): void {
       return { success: false, error: 'User not found' }
     }
 
-    // Check PIN (bcrypt-compare; also handles legacy plain-text PINs via startsWith guard)
+    // PIN is always bcrypt-compared. The old fallback branch did a plain `===`
+    // against the stored column when it did not look like a hash — non
+    // constant-time, and it would have accepted an unhashed PIN outright.
     if (pin && user.pin_code) {
-      const isBcryptHash = user.pin_code.startsWith('$2')
-      const pinValid = isBcryptHash
-        ? await bcrypt.compare(pin, user.pin_code)
-        : user.pin_code === pin
+      const pinValid = await bcrypt.compare(pin, user.pin_code)
       if (pinValid) {
-        const { password_hash, ...safeUser } = user
+        const { password_hash, pin_code, ...rest } = user
+        const safeUser = { ...rest, pin_set: Boolean(pin_code) }
         const activeShift = db
           .prepare(
             `SELECT opening_cash FROM shifts WHERE user_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`
@@ -92,6 +94,12 @@ export function registerIpcHandlers(): void {
           entityType: 'user',
           entityId: user.id,
           details: activeShift ? { opening_cash: activeShift.opening_cash } : undefined
+        })
+        setSession(event, {
+          id: user.id,
+          username: user.username,
+          fullName: user.full_name,
+          role: user.role
         })
         return { success: true, user: safeUser }
       }
@@ -101,7 +109,8 @@ export function registerIpcHandlers(): void {
     if (password) {
       const valid = await bcrypt.compare(password, user.password_hash)
       if (valid) {
-        const { password_hash, ...safeUser } = user
+        const { password_hash, pin_code, ...rest } = user
+        const safeUser = { ...rest, pin_set: Boolean(pin_code) }
         const activeShift = db
           .prepare(
             `SELECT opening_cash FROM shifts WHERE user_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`
@@ -115,6 +124,12 @@ export function registerIpcHandlers(): void {
           entityId: user.id,
           details: activeShift ? { opening_cash: activeShift.opening_cash } : undefined
         })
+        setSession(event, {
+          id: user.id,
+          username: user.username,
+          fullName: user.full_name,
+          role: user.role
+        })
         return { success: true, user: safeUser }
       }
     }
@@ -122,23 +137,55 @@ export function registerIpcHandlers(): void {
     return { success: false, error: 'Invalid credentials' }
   })
 
-  // Create user (legacy auth route — used by LoginPage first-run fallback)
+  ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, (event) => {
+    const session = getSessionUser(event)
+    if (session) {
+      logAudit({
+        userId: session.id,
+        userName: session.fullName,
+        action: 'USER_LOGOUT',
+        entityType: 'user',
+        entityId: session.id
+      })
+    }
+    clearSession(event)
+    return { success: true }
+  })
+
+  /**
+   * First-run bootstrap only. This channel used to accept any role and create an
+   * admin at any time with no permission check — one console call was enough to
+   * mint an administrator. It now refuses once any user exists.
+   */
   ipcMain.handle(
     IPC_CHANNELS.AUTH_CREATE_USER,
-    async (_, { username, password, fullName, role, pin }) => {
+    async (_event, { username, password, fullName, pin }) => {
       const db = getDatabase()
+      const { count } = db.prepare('SELECT COUNT(*) as count FROM users').get() as {
+        count: number
+      }
+      if (count > 0) {
+        return { success: false, error: 'Setup has already been completed' }
+      }
+
       const id = generateId()
       const passwordHash = await bcrypt.hash(password, 10)
       const pinHash = pin ? await bcrypt.hash(pin, 10) : null
 
       try {
         db.prepare(
-          `
-        INSERT INTO users (id, username, password_hash, full_name, role, pin_code)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `
-        ).run(id, username, passwordHash, fullName, role, pinHash)
+          `INSERT INTO users (id, username, password_hash, full_name, role, pin_code)
+           VALUES (?, ?, ?, ?, 'admin', ?)`
+        ).run(id, username, passwordHash, fullName, pinHash)
 
+        logAudit({
+          userId: id,
+          userName: fullName,
+          action: 'USER_CREATED',
+          entityType: 'user',
+          entityId: id,
+          details: { bootstrap: true, role: 'admin' }
+        })
         return { success: true, id }
       } catch (error: any) {
         return { success: false, error: error.message }
@@ -153,8 +200,61 @@ export function registerIpcHandlers(): void {
     return row?.value || null
   })
 
-  // Set setting
-  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET, (_, { key, value }) => {
+  /**
+   * Settings writes are permission-gated and whitelisted.
+   *
+   * This channel had no check at all: `setSetting('vat_rate','0')` from any
+   * renderer context changed the tax on every subsequent sale immediately,
+   * because the live cart reads the value.
+   */
+  const WRITABLE_SETTINGS = new Set([
+    'business_name',
+    'business_address',
+    'business_phone',
+    'vat_rate',
+    'currency_symbol',
+    'receipt_footer',
+    'card_payment_enabled',
+    'printer_width',
+    'display_port',
+    'display_baud_rate',
+    'backup_enabled',
+    'backup_frequency',
+    'backup_time'
+  ])
+
+  ipcMain.handle(IPC_CHANNELS.SETTINGS_SET, async (event, { key, value }) => {
+    return withPermission(event, 'settings:update', () => {
+      if (!WRITABLE_SETTINGS.has(key)) {
+        throw new Error(`"${key}" is not a writable setting`)
+      }
+      if (key === 'vat_rate') {
+        const rate = parseFloat(value)
+        if (!Number.isFinite(rate) || rate < 0 || rate > 100) {
+          throw new Error('VAT rate must be between 0 and 100')
+        }
+      }
+
+      const previous = (
+        getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+          | { value: string }
+          | undefined
+      )?.value
+
+      writeSetting(key, value)
+
+      logAudit({
+        userId: actingUserId(event),
+        action: 'SETTINGS_UPDATED',
+        entityType: 'setting',
+        entityId: key,
+        details: { from: previous ?? null, to: value }
+      })
+      return { success: true }
+    })
+  })
+
+  function writeSetting(key: string, value: string): void {
     const db = getDatabase()
     db.prepare(
       `
@@ -163,8 +263,7 @@ export function registerIpcHandlers(): void {
       ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')
     `
     ).run(key, value, value)
-    return { success: true }
-  })
+  }
 
   // Get all settings
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_ALL, () => {

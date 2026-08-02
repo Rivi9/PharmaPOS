@@ -20,6 +20,7 @@ export function UserFormModal({
   userId,
   onSuccess
 }: UserFormModalProps): React.JSX.Element {
+  const [formError, setFormError] = useState('')
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -35,7 +36,7 @@ export function UserFormModal({
         password: '',
         full_name: user.full_name,
         role: user.role,
-        pin_code: user.pin_code || ''
+        pin_code: ''
       })
     } else {
       setFormData({
@@ -52,11 +53,21 @@ export function UserFormModal({
     e.preventDefault()
     try {
       if (user) {
-        await window.electron.users.update(userId, user.id, {
+        // Only send the PIN when one was actually typed. The field is
+        // deliberately blank on open, so sending it unconditionally would clear
+        // the user's existing PIN every time an unrelated field was edited.
+        const updates: Record<string, unknown> = {
           full_name: formData.full_name,
-          role: formData.role,
-          pin_code: formData.pin_code || null
-        })
+          role: formData.role
+        }
+        if (formData.pin_code.trim()) {
+          if (!/^\d{4,6}$/.test(formData.pin_code.trim())) {
+            setFormError('PIN must be 4 to 6 digits')
+            return
+          }
+          updates.pin_code = formData.pin_code.trim()
+        }
+        await window.electron.users.update(userId, user.id, updates)
       } else {
         await window.electron.users.create(userId, formData)
       }
@@ -133,11 +144,19 @@ export function UserFormModal({
             <Input
               id="pin_code"
               type="password"
+              inputMode="numeric"
               maxLength={6}
+              className="h-11"
+              placeholder={user ? 'Leave blank to keep the current PIN' : '4 to 6 digits'}
               value={formData.pin_code}
-              onChange={(e) => setFormData({ ...formData, pin_code: e.target.value })}
+              onChange={(e) => {
+                setFormData({ ...formData, pin_code: e.target.value })
+                if (formError) setFormError('')
+              }}
             />
           </div>
+
+          {formError && <p className="text-sm text-destructive font-medium">{formError}</p>}
 
           <div className="flex gap-2 pt-4">
             <Button type="button" variant="outline" onClick={onClose}>

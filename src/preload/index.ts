@@ -4,6 +4,7 @@ import { IPC_CHANNELS } from '../main/ipc/channels'
 const electronAPI = {
   // Auth
   getUsers: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_GET_USERS),
+  logout: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGOUT),
   login: (data: { userId: string; pin?: string; password?: string }) =>
     ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGIN, data),
   createUser: (data: {
