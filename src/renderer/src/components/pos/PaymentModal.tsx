@@ -127,7 +127,9 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
       // Half-cent tolerance so an exact tender is never rejected by float drift —
       // this used to fail with "Insufficient cash. Need Rs. 0.00 more."
       if (!isAtLeast(cashReceivedNum, total)) {
-        setError(`Insufficient cash. Need ${formatCurrency(total - cashReceivedNum, currencySymbol)} more.`)
+        setError(
+          `Insufficient cash. Need ${formatCurrency(total - cashReceivedNum, currencySymbol)} more.`
+        )
         return false
       }
     } else if (paymentMethod === 'mixed') {
@@ -175,9 +177,10 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
         return
       }
 
+      // shift_id and user_id are deliberately not sent: the main process resolves
+      // both from the authenticated session, so a sale cannot be booked against
+      // someone else or against a shift that has already been counted and closed.
       const saleData = {
-        shift_id: currentShift.id,
-        user_id: currentShift.user_id,
         items: items.map((item) => ({
           product_id: item.product.id,
           product_name: item.product.name,
@@ -261,7 +264,9 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
         onInteractOutside={(e) => e.preventDefault()}
       >
         <DialogHeader>
-          <DialogTitle className="text-xl">Complete Sale — {formatCurrency(total, currencySymbol)}</DialogTitle>
+          <DialogTitle className="text-xl">
+            Complete Sale — {formatCurrency(total, currencySymbol)}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -411,7 +416,9 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
                         <span className="text-muted-foreground">
                           {new Date(sale.createdAt).toLocaleDateString()}
                         </span>
-                        <span className="font-medium">{formatCurrency(sale.total, currencySymbol)}</span>
+                        <span className="font-medium">
+                          {formatCurrency(sale.total, currencySymbol)}
+                        </span>
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
                         {sale.items.map((item, i) => (

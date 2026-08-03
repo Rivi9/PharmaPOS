@@ -21,12 +21,12 @@ const electronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_SET, { key, value }),
   getAllSettings: () => ipcRenderer.invoke(IPC_CHANNELS.SETTINGS_GET_ALL),
 
-  // Shift
-  startShift: (data: { userId: string; openingCash: number }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.SHIFT_START, data),
+  // Shift. The acting user comes from the main-process session, so no userId is
+  // sent — passing one let a renderer open or read another cashier's shift.
+  startShift: (data: { openingCash: number }) => ipcRenderer.invoke(IPC_CHANNELS.SHIFT_START, data),
   endShift: (data: { shiftId: string; closingCash: number; notes?: string }) =>
     ipcRenderer.invoke(IPC_CHANNELS.SHIFT_END, data),
-  getActiveShift: (userId: string) => ipcRenderer.invoke(IPC_CHANNELS.SHIFT_GET_ACTIVE, userId),
+  getActiveShift: () => ipcRenderer.invoke(IPC_CHANNELS.SHIFT_GET_ACTIVE),
 
   // Product
   searchProducts: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_SEARCH, query),
@@ -176,8 +176,7 @@ const electronAPI = {
     driveDelete: (userId: string, fileId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.BACKUP_DRIVE_DELETE, { userId, fileId }),
 
-    recoveryKey: (userId: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RECOVERY_KEY, userId),
+    recoveryKey: (userId: string) => ipcRenderer.invoke(IPC_CHANNELS.BACKUP_RECOVERY_KEY, userId),
     schedulerStart: (userId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.BACKUP_SCHEDULER_START, userId),
     schedulerStop: (userId: string) =>
@@ -239,6 +238,8 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_UPDATE, { userId, id, data }),
     delete: (userId: string, id: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_DELETE, { userId, id }),
+    erase: (userId: string, id: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_ERASE, { userId, id }),
     purchaseHistory: (customerId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_PURCHASE_HISTORY, customerId)
   },

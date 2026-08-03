@@ -9,6 +9,7 @@ import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useAuthStore } from '@renderer/stores/authStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { formatCurrency } from '@renderer/lib/calculations'
+import { ipcErrorMessage } from '@renderer/lib/ipc-error'
 
 interface EndShiftModalProps {
   open: boolean
@@ -118,6 +119,11 @@ export function EndShiftModal({
       setCurrentShift(null)
       logout()
       onShiftEnded?.()
+    } catch (error) {
+      // The handler now rejects on an already-closed or someone-else's shift
+      // rather than reporting success. Without this the button just stopped
+      // working and the cashier had no idea why.
+      setCountError(ipcErrorMessage(error, 'Could not end the shift'))
     } finally {
       setLoading(false)
     }
@@ -161,9 +167,9 @@ export function EndShiftModal({
                       // mid-shift movements from the expected drawer figure.
                       computedExpectedCash !== null
                         ? computedExpectedCash -
-                          openingCash -
-                          cashMovements.cashIn +
-                          cashMovements.cashOut
+                            openingCash -
+                            cashMovements.cashIn +
+                            cashMovements.cashOut
                         : 0,
                       currencySymbol
                     )}

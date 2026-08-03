@@ -3,7 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { getDatabase } from '../database'
 import { createBackup, getBackupDir } from './database-backup'
-import { uploadBackupToDrive, isDriveConfigured, initializeDrive } from './google-drive'
+import { uploadBackupToDrive, readDriveToken, initializeDrive } from './google-drive'
 import { logError, logInfo, logWarning } from '../logging/logger'
 
 let scheduledJob: schedule.Job | null = null
@@ -90,7 +90,9 @@ async function runCatchUpIfMissed(frequency: string): Promise<void> {
   const interval = FREQUENCY_MS[frequency] ?? FREQUENCY_MS.daily
   if (last && Date.now() - new Date(last).getTime() < interval) return
 
-  logWarning('No recent backup found — running catch-up backup now', { lastBackup: last ?? 'never' })
+  logWarning('No recent backup found — running catch-up backup now', {
+    lastBackup: last ?? 'never'
+  })
   try {
     await performScheduledBackup()
   } catch (error) {
@@ -116,17 +118,19 @@ async function performScheduledBackup(): Promise<void> {
   writeSetting('last_backup_time', new Date().toISOString())
   writeSetting('last_backup_error', '')
 
-  if (isDriveConfigured()) {
-    const token = readSetting('google_drive_token')
-    if (token) {
-      try {
-        initializeDrive(token)
-        const result = await uploadBackupToDrive(backupPath, path.basename(backupPath))
-        logInfo('Backup uploaded to Google Drive', { fileId: result.fileId })
-      } catch (error) {
-        // A Drive failure must not abort retention below.
-        logError('Google Drive upload failed', error as Error)
-      }
+  // Read through readDriveToken: the credential is DPAPI-wrapped now, and a
+  // token restored from another machine's backup cannot be decrypted here.
+  const token = readDriveToken()
+  if (token) {
+    try {
+      initializeDrive(token)
+      const result = await uploadBackupToDrive(backupPath, path.basename(backupPath))
+      logInfo('Backup uploaded to Google Drive', { fileId: result.fileId })
+    } catch (error) {
+      // A Drive failure must not abort retention below, but it must be visible:
+      // the whole point of off-site copies is that someone notices when they stop.
+      logError('Google Drive upload failed', error as Error)
+      writeSetting('last_backup_error', (error as Error).message)
     }
   }
 

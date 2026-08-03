@@ -18,6 +18,7 @@ import {
   createRefund
 } from '../services/sales'
 import { getCustomerPurchaseHistory } from '../services/customers'
+import { getActiveShiftForUser } from '../services/shifts'
 import { logAudit } from '../services/audit'
 
 export function registerPOSHandlers(): void {
@@ -34,21 +35,41 @@ export function registerPOSHandlers(): void {
     return getQuickItems()
   })
 
-  // Sales handlers
-  ipcMain.handle(IPC_CHANNELS.SALE_CREATE, async (_event, saleData: unknown) => {
-    const result = createSale(saleData as any) // Type validated by service
-    const sale = saleData as { user_id: string; total: number; payment_method: string }
-    logAudit({      userId: sale.user_id,
-      action: 'SALE_CREATED',
-      entityType: 'sale',
-      entityId: result.sale_id,
-      details: {
-        receipt_number: result.receipt_number,
-        total: sale.total,
-        payment_method: sale.payment_method
+  // Sales handlers.
+  // `user_id` and `shift_id` used to be taken from the payload, so a sale could
+  // be booked against another cashier or against a closed, already-reconciled
+  // shift — where it would never appear in any cash count. Both are now resolved
+  // from the session, and the audit entry names the real actor.
+  ipcMain.handle(IPC_CHANNELS.SALE_CREATE, async (event, saleData: unknown) => {
+    return withPermission(event, 'sales:create', () => {
+      const userId = actingUserId(event)
+      const shift = getActiveShiftForUser(userId)
+      if (!shift) {
+        throw new Error('Start a shift before ringing up a sale')
       }
+
+      const result = createSale({
+        ...(saleData as Record<string, unknown>),
+        user_id: userId,
+        shift_id: shift.id
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any)
+
+      const sale = saleData as { total: number; payment_method: string }
+      logAudit({
+        userId,
+        action: 'SALE_CREATED',
+        entityType: 'sale',
+        entityId: result.sale_id,
+        details: {
+          receipt_number: result.receipt_number,
+          shift_id: shift.id,
+          total: sale.total,
+          payment_method: sale.payment_method
+        }
+      })
+      return result
     })
-    return result
   })
 
   ipcMain.handle(IPC_CHANNELS.SALE_GET_RECEIPT, async (_event, saleId: string) => {
@@ -75,29 +96,34 @@ export function registerPOSHandlers(): void {
 
   // Void sale — requires sales:void permission
   ipcMain.handle(IPC_CHANNELS.SALE_VOID, async (_event, { saleId, reason }) => {
-    return withPermission(_event, 'sales:void', () => voidSale(saleId, actingUserId(_event), reason))
+    return withPermission(_event, 'sales:void', () =>
+      voidSale(saleId, actingUserId(_event), reason)
+    )
   })
 
   // Refund sale — requires sales:refund permission
-  ipcMain.handle(
-    IPC_CHANNELS.SALE_REFUND,
-    async (_event, { saleId, items, reason, restock }) => {
-      return withPermission(_event, 'sales:refund', () => {
-        const result = createRefund(saleId, actingUserId(_event), items, reason ?? '', restock ?? false)
-        logAudit({
+  ipcMain.handle(IPC_CHANNELS.SALE_REFUND, async (_event, { saleId, items, reason, restock }) => {
+    return withPermission(_event, 'sales:refund', () => {
+      const result = createRefund(
+        saleId,
+        actingUserId(_event),
+        items,
+        reason ?? '',
+        restock ?? false
+      )
+      logAudit({
         userId: actingUserId(_event),
-          action: 'SALE_REFUNDED',
-          entityType: 'sale',
-          entityId: saleId,
-          details: {
-            refund_id: result.refund_id,
-            total_refunded: items.reduce((s: number, i: any) => s + i.line_total, 0)
-          }
-        })
-        return result
+        action: 'SALE_REFUNDED',
+        entityType: 'sale',
+        entityId: saleId,
+        details: {
+          refund_id: result.refund_id,
+          total_refunded: items.reduce((s: number, i: any) => s + i.line_total, 0)
+        }
       })
-    }
-  )
+      return result
+    })
+  })
 
   // Customer purchase history — no permission gate (cashier needs this)
   ipcMain.handle(IPC_CHANNELS.CUSTOMER_PURCHASE_HISTORY, async (_event, customerId: string) => {

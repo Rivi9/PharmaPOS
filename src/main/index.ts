@@ -18,10 +18,11 @@ interface SaleData {
   change_given?: number
   currency?: string
 }
-import { initializeDatabase, closeDatabase, migrateDatabaseOnly } from './services/database'
+import { initializeDatabase, migrateDatabaseOnly } from './services/database'
 import { registerIpcHandlers } from './ipc/handlers'
 import { initializeAggregationJob } from './jobs/aggregation'
 import { startBackupScheduler, stopBackupScheduler } from './services/backup/scheduler'
+import { confirmClose, isCloseConfirmed, runShutdownCleanup } from './shutdown'
 import { initializeErrorTracking, setupGlobalErrorHandlers } from './services/logging/error-handler'
 import { logInfo, logError } from './services/logging/logger'
 import { initializeAutoUpdater } from './services/updates/auto-updater'
@@ -89,13 +90,21 @@ function handleSquirrelEvent(): boolean {
 // below executes when this was an installer hook.
 handleSquirrelEvent()
 
+// One till, one process. Two instances on the same SQLite file means two
+// independent receipt-number generators handing out the same receipt number,
+// and two WAL writers. Double-tapping the desktop shortcut did exactly that.
+// Squirrel's own hooks have already exited above, so this only guards real
+// launches; the outgoing process releases the lock before Update.exe relaunches.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0)
+}
+
 // Initialize error tracking
 initializeErrorTracking()
 setupGlobalErrorHandlers()
 
-// Module-level flag: set to true once the user has confirmed close via EndShift.
-// Shared between the 'close' event handler and the 'before-quit' backup layer.
-let closingConfirmed = false
+// The close-confirmed flag lives in ./shutdown so the updater can release it
+// too — see the comment there.
 let mainWindowRef: BrowserWindow | null = null
 
 // Log app start
@@ -181,6 +190,15 @@ app.whenReady().then(() => {
   const mainWindow = createWindow()
   mainWindowRef = mainWindow
 
+  // Second launch attempt — bring the running till forward instead of starting
+  // a rival process. Without this the operator sees nothing happen and taps again.
+  app.on('second-instance', () => {
+    if (mainWindow.isDestroyed()) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
+  })
+
   // ── Window close interception ──────────────────────────────────────────────
   // Dual-layer protection against Alt+F4 / OS close button.
   // Layer 1: mainWindow 'close' event — preventDefault() stops normal close.
@@ -188,14 +206,14 @@ app.whenReady().then(() => {
   // The renderer sends APP_CONFIRM_CLOSE when the user completes End Shift
   // (or when there is no active shift). Only then do we allow the app to exit.
   mainWindow.on('close', (event) => {
-    if (!closingConfirmed) {
+    if (!isCloseConfirmed()) {
       event.preventDefault()
       mainWindow.webContents.send(IPC_CHANNELS.APP_CLOSE_REQUESTED)
     }
   })
 
   ipcMain.on(IPC_CHANNELS.APP_CONFIRM_CLOSE, () => {
-    closingConfirmed = true
+    confirmClose()
     mainWindow.destroy()
   })
 
@@ -203,7 +221,7 @@ app.whenReady().then(() => {
   // End-Shift guard cannot trap us here — the database has already been closed
   // and swapped by restoreBackup(), and continuing to run would be unsafe.
   ipcMain.on(IPC_CHANNELS.APP_RELAUNCH, () => {
-    closingConfirmed = true
+    confirmClose()
     stopBackupScheduler()
     app.relaunch()
     app.exit(0)
@@ -265,10 +283,12 @@ app.whenReady().then(() => {
     await poleDisplay.openDisplay(port, baudRate ?? 9600)
     // Persist to settings
     const db = getDatabase()
-    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('display_port', ?, datetime('now'))").run(port)
-    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('display_baud_rate', ?, datetime('now'))").run(
-      String(baudRate ?? 9600)
-    )
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('display_port', ?, datetime('now'))"
+    ).run(port)
+    db.prepare(
+      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('display_baud_rate', ?, datetime('now'))"
+    ).run(String(baudRate ?? 9600))
     return { success: true }
   })
 
@@ -313,7 +333,7 @@ app.on('window-all-closed', () => {
 // through our EndShift flow. Intercept, restore the window, and re-send the close signal.
 // If closingConfirmed is true, the window is already destroyed — just run cleanup.
 app.on('before-quit', (event) => {
-  if (!closingConfirmed) {
+  if (!isCloseConfirmed()) {
     event.preventDefault()
     const win = mainWindowRef
     if (win && !win.isDestroyed()) {
@@ -322,14 +342,12 @@ app.on('before-quit', (event) => {
       win.webContents.send(IPC_CHANNELS.APP_CLOSE_REQUESTED)
     } else {
       // No window to restore — nothing we can do, allow quit
-      closingConfirmed = true
+      confirmClose()
     }
     return
   }
   // Confirmed — run cleanup before the process exits
-  stopBackupScheduler()
-  poleDisplay.closeDisplay().catch(() => {})
-  closeDatabase()
+  runShutdownCleanup()
 })
 
 // In this file you can include the rest of your app's specific main process

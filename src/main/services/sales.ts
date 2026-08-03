@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { getDb } from '../db/index'
 import { getDatabase } from './database'
 import { sales, saleItems, products, customers } from '../db/schema'
@@ -177,7 +177,9 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
       const customer = drizzleDb
         .select({ id: customers.id })
         .from(customers)
-        .where(eq(customers.phone, customerPhone))
+        // Active only — a removed customer must not quietly start accruing
+        // history again just because the number was typed in.
+        .where(and(eq(customers.phone, customerPhone), eq(customers.isActive, 1)))
         .get()
       customerId = customer?.id ?? null
     }
@@ -383,7 +385,14 @@ export function voidSale(saleId: string, userId: string, reason: string): void {
                  profit = profit - ?
            WHERE date = ? AND product_id = ?`
         )
-        .run(item.quantity, item.line_total, cost, round2(item.line_total - cost), saleDate, item.product_id)
+        .run(
+          item.quantity,
+          item.line_total,
+          cost,
+          round2(item.line_total - cost),
+          saleDate,
+          item.product_id
+        )
     }
 
     raw
@@ -440,9 +449,7 @@ export function computeShiftExpectedCash(shiftId: string, openingCash: number): 
     )
     .get(shiftId) as { total: number }
 
-  return round2(
-    openingCash + sales.total + movements.cash_in - movements.cash_out - refunds.total
-  )
+  return round2(openingCash + sales.total + movements.cash_in - movements.cash_out - refunds.total)
 }
 
 /** Record a mid-shift cash movement. Amount is always positive; `type` gives direction. */
@@ -458,9 +465,9 @@ export function recordCashMovement(params: {
   if (!params.reason.trim()) throw new Error('A reason is required')
 
   const db = getDatabase()
-  const shift = db
-    .prepare(`SELECT status FROM shifts WHERE id = ?`)
-    .get(params.shiftId) as { status: string } | undefined
+  const shift = db.prepare(`SELECT status FROM shifts WHERE id = ?`).get(params.shiftId) as
+    | { status: string }
+    | undefined
   if (!shift) throw new Error('Shift not found')
   if (shift.status !== 'active') throw new Error('Cannot record cash against a closed shift')
 
@@ -468,7 +475,15 @@ export function recordCashMovement(params: {
   db.prepare(
     `INSERT INTO cash_movements (id, shift_id, user_id, type, amount, reason, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, params.shiftId, params.userId, params.type, amount, params.reason.trim(), new Date().toISOString())
+  ).run(
+    id,
+    params.shiftId,
+    params.userId,
+    params.type,
+    amount,
+    params.reason.trim(),
+    new Date().toISOString()
+  )
 
   logAudit({
     userId: params.userId,
@@ -664,7 +679,13 @@ export function createRefund(
     const sale = rawDb
       .prepare('SELECT status, subtotal, total, receipt_number, created_at FROM sales WHERE id = ?')
       .get(saleId) as
-      | { status: string; subtotal: number; total: number; receipt_number: string; created_at: string }
+      | {
+          status: string
+          subtotal: number
+          total: number
+          receipt_number: string
+          created_at: string
+        }
       | undefined
     if (!sale) throw new Error('Sale not found')
     if (sale.status === 'voided') throw new Error('Cannot refund a voided sale')
@@ -786,7 +807,14 @@ export function createRefund(
                  profit = profit - ?
            WHERE date = ? AND product_id = ?`
         )
-        .run(item.quantity, netBack, costBack, round2(netBack - costBack), saleDate, item.product_id)
+        .run(
+          item.quantity,
+          netBack,
+          costBack,
+          round2(netBack - costBack),
+          saleDate,
+          item.product_id
+        )
     }
 
     // Mark the sale refunded once nothing remains refundable, so it stops being

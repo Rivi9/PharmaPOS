@@ -2,6 +2,7 @@ import { app, autoUpdater } from 'electron'
 import { updateElectronApp, UpdateSourceType } from 'update-electron-app'
 import { BrowserWindow } from 'electron'
 import { logInfo, logError } from '../logging/logger'
+import { confirmClose, runShutdownCleanup } from '../../shutdown'
 
 let mainWindow: BrowserWindow | null = null
 
@@ -70,9 +71,20 @@ export function downloadUpdate(): void {
 }
 
 /**
- * Quit and install the downloaded update
+ * Quit and install the downloaded update.
+ *
+ * Two things have to happen before `quitAndInstall`. The End-Shift close guard
+ * must be released, or `before-quit` calls `preventDefault()` and re-shows the
+ * window while Squirrel has already launched the replacement — two processes,
+ * one WAL database, two receipt-number generators. And the database has to be
+ * closed here rather than in the `before-quit` cleanup, because Squirrel starts
+ * the incoming process as soon as this one exits and we do not get to choose
+ * the order those two race in.
  */
 export function installUpdate(): void {
+  logInfo('Installing update — quitting')
+  confirmClose()
+  runShutdownCleanup()
   autoUpdater.quitAndInstall()
 }
 

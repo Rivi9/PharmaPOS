@@ -6,6 +6,7 @@ import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useAuthStore } from '@renderer/stores/authStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { formatCurrency } from '@renderer/lib/calculations'
+import { ipcErrorMessage } from '@renderer/lib/ipc-error'
 
 /**
  * Full-page screen shown between login and the main POS whenever
@@ -15,6 +16,7 @@ import { formatCurrency } from '@renderer/lib/calculations'
 export function StartShiftModal(): React.JSX.Element {
   const [openingCash, setOpeningCash] = useState('')
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [now, setNow] = useState(() => new Date())
 
   // The POS sits idle on this screen between shifts — tick so the clock stays honest.
@@ -32,12 +34,17 @@ export function StartShiftModal(): React.JSX.Element {
 
   const handleStartShift = async () => {
     if (!user) return
+    setError('')
     setLoading(true)
     try {
-      await window.electron.startShift({ userId: user.id, openingCash: cashAmount })
-      const shift = await window.electron.getActiveShift(user.id)
+      await window.electron.startShift({ openingCash: cashAmount })
+      const shift = await window.electron.getActiveShift()
       setTodaySalesTotal(0)
       setCurrentShift(shift)
+    } catch (err) {
+      // A duplicate-shift rejection used to leave the button doing nothing
+      // forever, with the operator convinced the till was broken.
+      setError(ipcErrorMessage(err, 'Could not start the shift'))
     } finally {
       setLoading(false)
     }
@@ -69,7 +76,9 @@ export function StartShiftModal(): React.JSX.Element {
             {currencySymbol}&nbsp;{openingCash || '0.00'}
           </p>
           {cashAmount > 0 && (
-            <p className="text-sm text-muted-foreground">{formatCurrency(cashAmount, currencySymbol)}</p>
+            <p className="text-sm text-muted-foreground">
+              {formatCurrency(cashAmount, currencySymbol)}
+            </p>
           )}
         </div>
 
@@ -80,6 +89,12 @@ export function StartShiftModal(): React.JSX.Element {
           onSubmit={handleStartShift}
           buttonClassName="h-14 text-xl"
         />
+
+        {error && (
+          <p className="rounded-md bg-destructive/10 p-3 text-center text-sm font-medium text-destructive">
+            {error}
+          </p>
+        )}
 
         {/* Start shift */}
         <Button

@@ -33,9 +33,7 @@ export function LoginPage(): React.JSX.Element {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  const [firstRunCreds, setFirstRunCreds] = useState<{ pin: string; password: string } | null>(
-    null
-  )
+  const [firstRunCreds, setFirstRunCreds] = useState<{ pin: string; password: string } | null>(null)
   const bootstrapAttempted = useRef(false)
 
   const login = useAuthStore((state) => state.login)
@@ -84,8 +82,8 @@ export function LoginPage(): React.JSX.Element {
   }
 
   /** Load an existing active shift and restore its sales total from the DB. */
-  const resumeShift = async (userId: string): Promise<void> => {
-    const shift = await window.electron.getActiveShift(userId)
+  const resumeShift = async (): Promise<void> => {
+    const shift = await window.electron.getActiveShift()
     setCurrentShift(shift)
     if (shift) {
       const total = await window.electron.getTodaySalesTotal(shift.id)
@@ -100,7 +98,7 @@ export function LoginPage(): React.JSX.Element {
     const result = await window.electron.login({ userId: selectedUser.id, pin })
 
     if (result.success) {
-      await resumeShift(result.user.id)
+      await resumeShift()
       login(result.user)
     } else {
       setError(result.error || 'Invalid PIN')
@@ -114,7 +112,7 @@ export function LoginPage(): React.JSX.Element {
     const result = await window.electron.login({ userId: selectedUser.id, password })
 
     if (result.success) {
-      await resumeShift(result.user.id)
+      await resumeShift()
       login(result.user)
     } else {
       setError(result.error || 'Invalid password')

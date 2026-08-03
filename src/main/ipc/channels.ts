@@ -82,7 +82,6 @@ export const IPC_CHANNELS = {
   // Analytics - Aggregation
   ANALYTICS_RUN_AGGREGATION: 'analytics:run-aggregation',
 
-
   // Backup - Local
   BACKUP_CREATE: 'backup:create',
   BACKUP_RESTORE: 'backup:restore',
@@ -157,6 +156,7 @@ export const IPC_CHANNELS = {
   CUSTOMER_CREATE: 'customer:create',
   CUSTOMER_UPDATE: 'customer:update',
   CUSTOMER_DELETE: 'customer:delete',
+  CUSTOMER_ERASE: 'customer:erase',
   CUSTOMER_PURCHASE_HISTORY: 'customer:purchase-history',
   SHIFT_COMPUTE_EXPECTED_CASH: 'shift:compute-expected-cash',
   SHIFT_CASH_MOVEMENT: 'shift:cash-movement',

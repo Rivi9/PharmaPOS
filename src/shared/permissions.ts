@@ -14,6 +14,7 @@ export type Permission =
   | 'customers:create'
   | 'customers:update'
   | 'customers:delete'
+  | 'customers:erase'
   | 'shifts:manage'
   | 'users:view'
   | 'users:create'
@@ -47,6 +48,7 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'customers:create',
     'customers:update',
     'customers:delete',
+    'customers:erase',
     'shifts:manage',
     'users:view',
     'users:create',
@@ -131,6 +133,7 @@ export function getPermissionDescription(permission: Permission): string {
     'customers:create': 'Register new customers',
     'customers:update': 'Update customer information',
     'customers:delete': 'Delete customers',
+    'customers:erase': 'Permanently erase a customer’s personal details',
     'shifts:manage': 'Open and close shifts',
     'users:view': 'View user list',
     'users:create': 'Create new users',

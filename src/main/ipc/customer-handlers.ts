@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from './channels'
-import { withPermission } from './middleware'
+import { withPermission, actingUserId } from './middleware'
+import { logAudit } from '../services/audit'
 import {
   listCustomers,
   getCustomer,
@@ -8,6 +9,7 @@ import {
   createCustomer,
   updateCustomer,
   deleteCustomer,
+  eraseCustomer,
   type CustomerData
 } from '../services/customers'
 import type { Customer } from '../db/schema'
@@ -56,15 +58,29 @@ export function registerCustomerHandlers(): void {
     }
   )
 
-  ipcMain.handle(
-    IPC_CHANNELS.CUSTOMER_DELETE,
-    (_event, { id }: { id: string }) => {
-      return withPermission(_event, 'customers:delete', () => {
-        deleteCustomer(id)
-        return { success: true }
+  ipcMain.handle(IPC_CHANNELS.CUSTOMER_DELETE, (_event, { id }: { id: string }) => {
+    return withPermission(_event, 'customers:delete', () => {
+      deleteCustomer(id)
+      return { success: true }
+    })
+  })
+
+  ipcMain.handle(IPC_CHANNELS.CUSTOMER_ERASE, (_event, { id }: { id: string }) => {
+    return withPermission(_event, 'customers:erase', () => {
+      // Logged before the erase so the entry can still name who was removed;
+      // afterwards there is deliberately nothing left to identify them by.
+      const target = getCustomer(id)
+      const result = eraseCustomer(id)
+      logAudit({
+        userId: actingUserId(_event),
+        action: 'CUSTOMER_ERASED',
+        entityType: 'customer',
+        entityId: id,
+        details: { name: target?.name, salesScrubbed: result.salesScrubbed }
       })
-    }
-  )
+      return { success: true, ...result }
+    })
+  })
 
   // NOTE: CUSTOMER_PURCHASE_HISTORY is handled in pos-handlers.ts
 }

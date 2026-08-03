@@ -1,5 +1,6 @@
 import { eq, and, like, or, desc } from 'drizzle-orm'
 import { getDb } from '../db/index'
+import { getDatabase } from './database'
 import { customers, sales, saleItems, products } from '../db/schema'
 import type { Customer } from '../db/schema'
 
@@ -36,10 +37,22 @@ export function getCustomerById(id: string): Customer | null {
   return getDb().select().from(customers).where(eq(customers.id, id)).get() ?? null
 }
 
+/**
+ * Deactivated customers are deliberately excluded: this is the lookup the till
+ * uses to attach a sale, and a customer someone removed must not silently start
+ * collecting purchase history again. `getCustomerById` stays unfiltered so an
+ * old sale can still resolve the name it was rung up against.
+ */
 export function getCustomerByPhone(phone: string): Customer | null {
   const normalised = normalisePhone(phone)
   if (!normalised) return null
-  return getDb().select().from(customers).where(eq(customers.phone, normalised)).get() ?? null
+  return (
+    getDb()
+      .select()
+      .from(customers)
+      .where(and(eq(customers.phone, normalised), eq(customers.isActive, 1)))
+      .get() ?? null
+  )
 }
 
 /**
@@ -175,6 +188,63 @@ export function updateCustomer(id: string, data: Partial<CustomerData>): Custome
 
   getDb().update(customers).set(updateObj).where(eq(customers.id, id)).run()
   return getCustomerById(id)
+}
+
+/**
+ * Destroy a customer's personal details while keeping the sales themselves.
+ *
+ * `deactivateCustomer` only flips a flag — the name, phone, email and address
+ * all stay in the file, and `sales` holds its own denormalised copy of the name
+ * and phone on every transaction, so a customer who asks to be removed is still
+ * fully readable in the sales table and in every backup taken since.
+ *
+ * The sale rows are kept and re-pointed at a placeholder rather than deleted:
+ * they are accounting records, and the stock, VAT and shift totals all depend
+ * on them. Only the identifying fields go.
+ */
+export function eraseCustomer(id: string): { salesScrubbed: number } {
+  const db = getDb()
+  const existing = getCustomerById(id)
+  if (!existing) throw new Error('Customer not found')
+
+  const now = new Date().toISOString()
+  let salesScrubbed = 0
+
+  getDatabase().transaction(() => {
+    const result = db
+      .update(sales)
+      .set({ customerName: null, customerPhone: null })
+      .where(eq(sales.customerId, id))
+      .run()
+    salesScrubbed = result.changes
+
+    // Sales rung up under the same number before the customer record existed
+    // carry the phone without a customer_id, so they need clearing too.
+    if (existing.phone) {
+      const orphans = db
+        .update(sales)
+        .set({ customerName: null, customerPhone: null })
+        .where(eq(sales.customerPhone, existing.phone))
+        .run()
+      salesScrubbed += orphans.changes
+    }
+
+    db.update(customers)
+      .set({
+        name: 'Erased customer',
+        phone: null,
+        email: null,
+        address: null,
+        dateOfBirth: null,
+        notes: null,
+        isActive: 0,
+        updatedAt: now
+      })
+      .where(eq(customers.id, id))
+      .run()
+  })()
+
+  return { salesScrubbed }
 }
 
 export function deactivateCustomer(id: string): void {

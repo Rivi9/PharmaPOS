@@ -9,6 +9,7 @@ import { useAuthStore } from '@renderer/stores/authStore'
 import { ipcErrorMessage } from '@renderer/lib/ipc-error'
 import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
 import { useConfirm } from '@renderer/hooks/useConfirm'
+import { usePermission } from '@renderer/hooks/usePermission'
 
 interface Customer {
   id: string
@@ -48,6 +49,7 @@ export function CustomersPage(): React.JSX.Element {
   const [formError, setFormError] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const { confirm, notify, confirmProps } = useConfirm()
+  const canErase = usePermission('customers:erase')
 
   const loadCustomers = useCallback(async () => {
     setIsLoading(true)
@@ -161,6 +163,36 @@ export function CustomersPage(): React.JSX.Element {
     loadCustomers()
   }
 
+  /**
+   * The data-protection path, separate from Remove. Remove only hides the
+   * customer; this destroys the identifying fields for good, including the
+   * copies the sales table keeps on every transaction.
+   */
+  const handleErase = async (customer: Customer): Promise<void> => {
+    const ok = await confirm({
+      title: `Permanently erase ${customer.name}?`,
+      description:
+        'Their name, phone, email, address and notes are destroyed, here and on every past sale. The sales themselves are kept for the accounts. This cannot be undone and it cannot be recovered from a backup taken afterwards.',
+      confirmLabel: 'Erase permanently',
+      destructive: true
+    })
+    if (!ok) return
+    try {
+      const result = (await window.electron.customers.erase(userId, customer.id)) as {
+        salesScrubbed?: number
+      }
+      setSelected(null)
+      await notify(
+        'Customer erased',
+        `${result?.salesScrubbed ?? 0} sale${result?.salesScrubbed === 1 ? '' : 's'} had their stored name and phone cleared.`
+      )
+    } catch (error) {
+      await notify('Could not erase the customer', ipcErrorMessage(error))
+      return
+    }
+    loadCustomers()
+  }
+
   return (
     <div className="h-full flex overflow-hidden">
       {/* Customer List */}
@@ -239,8 +271,18 @@ export function CustomersPage(): React.JSX.Element {
                       className="text-destructive hover:text-destructive"
                       onClick={() => handleDelete(selected)}
                     >
-                      Delete
+                      Remove
                     </Button>
+                    {canErase && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => handleErase(selected)}
+                      >
+                        Erase data
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardHeader>

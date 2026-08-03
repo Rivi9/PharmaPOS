@@ -16,6 +16,8 @@ import { registerUpdateHandlers } from './update-handlers'
 import { registerAuditHandlers } from './audit-handlers'
 import { registerCustomerHandlers } from './customer-handlers'
 import { computeShiftExpectedCash } from '../services/sales'
+import { getUserById } from '../services/users/user-management'
+import { round2 } from '../../shared/money'
 
 export function registerIpcHandlers(): void {
   // Register POS handlers
@@ -333,63 +335,120 @@ export function registerIpcHandlers(): void {
     return Object.fromEntries(rows.map((r) => [r.key, r.value]))
   })
 
-  // Start shift
-  ipcMain.handle(IPC_CHANNELS.SHIFT_START, (_, { userId, openingCash }) => {
-    const db = getDatabase()
-    const id = generateId()
+  // Start shift.
+  // The user id comes from the main-process session, never the payload: it used
+  // to be possible to open a shift in another cashier's name.
+  ipcMain.handle(IPC_CHANNELS.SHIFT_START, (event, { openingCash }) => {
+    return withPermission(event, 'shifts:manage', () => {
+      const db = getDatabase()
+      const userId = actingUserId(event)
 
-    db.prepare(
-      `
+      const opening = Number(openingCash)
+      if (!Number.isFinite(opening) || opening < 0) {
+        throw new Error('Enter a valid opening float')
+      }
+
+      // One active shift per user. Without this a second Start Shift left the
+      // first one open forever, and every later sale landed on whichever the
+      // "active" lookup happened to return.
+      const existing = db
+        .prepare("SELECT id FROM shifts WHERE user_id = ? AND status = 'active' LIMIT 1")
+        .get(userId) as { id: string } | undefined
+      if (existing) {
+        throw new Error('You already have a shift open. End it before starting another.')
+      }
+
+      const id = generateId()
+      db.prepare(
+        `
       INSERT INTO shifts (id, user_id, opening_cash, status, started_at)
       VALUES (?, ?, ?, 'active', datetime('now'))
     `
-    ).run(id, userId, openingCash)
+      ).run(id, userId, round2(opening))
 
-    const user = db.prepare('SELECT id, full_name FROM users WHERE id = ?').get(userId) as
-      | { id: string; full_name: string }
-      | undefined
+      const user = db.prepare('SELECT id, full_name FROM users WHERE id = ?').get(userId) as
+        | { id: string; full_name: string }
+        | undefined
 
-    logAudit({
-      userId,
-      userName: user?.full_name,
-      action: 'SHIFT_STARTED',
-      entityType: 'shift',
-      entityId: id,
-      details: { opening_cash: openingCash }
+      logAudit({
+        userId,
+        userName: user?.full_name,
+        action: 'SHIFT_STARTED',
+        entityType: 'shift',
+        entityId: id,
+        details: { opening_cash: round2(opening) }
+      })
+
+      return { success: true, shiftId: id }
     })
-
-    return { success: true, shiftId: id }
   })
 
-  // End shift
-  ipcMain.handle(IPC_CHANNELS.SHIFT_END, (_, { shiftId, closingCash, notes }) => {
-    const db = getDatabase()
-    const shift = db
-      .prepare(
-        `
-        SELECT s.id, s.user_id, s.opening_cash, u.full_name as user_name
+  // End shift.
+  // Previously any renderer could close any shift: the handler took `shiftId`
+  // verbatim, had no permission check, no ownership check and no status check,
+  // so `endShift({shiftId: <someone else's>, closingCash: 0})` closed another
+  // cashier's shift and rewrote their cash figure — and re-closing an already
+  // reconciled shift silently overwrote `closing_cash` and `ended_at` again.
+  // It also returned `{success:true}` when `shiftId` matched nothing at all.
+  ipcMain.handle(IPC_CHANNELS.SHIFT_END, (event, { shiftId, closingCash, notes }) => {
+    return withPermission(event, 'shifts:manage', () => {
+      const db = getDatabase()
+      const actor = actingUserId(event)
+
+      const closing = Number(closingCash)
+      if (!Number.isFinite(closing) || closing < 0) {
+        throw new Error('Enter the counted cash before closing the shift')
+      }
+
+      const shift = db
+        .prepare(
+          `
+        SELECT s.id, s.user_id, s.opening_cash, s.status, u.full_name as user_name
         FROM shifts s
         JOIN users u ON s.user_id = u.id
         WHERE s.id = ?
       `
-      )
-      .get(shiftId) as
-      | { id: string; user_id: string; opening_cash: number; user_name: string }
-      | undefined
+        )
+        .get(shiftId) as
+        | {
+            id: string
+            user_id: string
+            opening_cash: number
+            status: string
+            user_name: string
+          }
+        | undefined
 
-    const openingCash = shift?.opening_cash ?? 0
-    const expectedCash = computeShiftExpectedCash(shiftId, openingCash)
-    const cashDifference = closingCash - expectedCash
+      if (!shift) throw new Error('That shift no longer exists')
+      if (shift.status !== 'active') throw new Error('That shift has already been closed')
 
-    db.prepare(
-      `
+      // A manager may close someone else's shift (they hold the drawer key);
+      // a cashier may only close their own.
+      if (shift.user_id !== actor) {
+        const actorUser = getUserById(actor)
+        const role = actorUser?.role as 'admin' | 'manager' | 'cashier' | undefined
+        if (!role || role === 'cashier') {
+          throw new Error('You can only close your own shift')
+        }
+      }
+
+      const openingCash = shift.opening_cash ?? 0
+      const expectedCash = computeShiftExpectedCash(shiftId, openingCash)
+      const cashDifference = round2(closing - expectedCash)
+
+      const result = db
+        .prepare(
+          `
       UPDATE shifts
       SET ended_at = datetime('now'), closing_cash = ?, notes = ?, status = 'closed'
-      WHERE id = ?
+      WHERE id = ? AND status = 'active'
     `
-    ).run(closingCash, notes || null, shiftId)
+        )
+        .run(round2(closing), notes || null, shiftId)
 
-    if (shift) {
+      // Lost the race with another close — say so rather than reporting success.
+      if (result.changes === 0) throw new Error('That shift has already been closed')
+
       const cashDetails = {
         opening_cash: openingCash,
         expected_cash: expectedCash,
@@ -415,14 +474,16 @@ export function registerIpcHandlers(): void {
         entityId: shift.user_id,
         details: { shift_id: shiftId, ...cashDetails }
       })
-    }
 
-    return { success: true }
+      return { success: true, expectedCash, cashDifference }
+    })
   })
 
-  // Get active shift for user
-  ipcMain.handle(IPC_CHANNELS.SHIFT_GET_ACTIVE, (_, userId: string) => {
+  // The caller's own active shift. The userId argument is ignored — it let one
+  // renderer read another cashier's open drawer figures.
+  ipcMain.handle(IPC_CHANNELS.SHIFT_GET_ACTIVE, (event) => {
     const db = getDatabase()
+    const userId = actingUserId(event)
     const shift = db
       .prepare(
         `

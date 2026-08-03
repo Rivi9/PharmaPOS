@@ -27,6 +27,7 @@ export type AuditAction =
   | 'BACKUP_RESTORED'
   | 'PRICE_CHANGED'
   | 'PRODUCTS_IMPORTED_EXCEL'
+  | 'CUSTOMER_ERASED'
 
 export type AuditEntityType =
   | 'sale'
@@ -36,6 +37,7 @@ export type AuditEntityType =
   | 'shift'
   | 'setting'
   | 'backup'
+  | 'customer'
   | 'system'
 
 export interface AuditLogEntry {
@@ -108,9 +110,9 @@ export function logAudit(params: LogAuditParams): void {
 function resolveUserName(userId?: string): string | null {
   if (!userId) return null
   try {
-    const row = getDatabase()
-      .prepare('SELECT full_name FROM users WHERE id = ?')
-      .get(userId) as { full_name: string } | undefined
+    const row = getDatabase().prepare('SELECT full_name FROM users WHERE id = ?').get(userId) as
+      | { full_name: string }
+      | undefined
     return row?.full_name ?? null
   } catch {
     return null
