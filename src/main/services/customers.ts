@@ -77,17 +77,25 @@ export function normalisePhone(input: string | null | undefined): string | null 
 /**
  * Strip LIKE wildcards from a user's search term.
  *
- * `%` matched every customer and `_` matched any single character. Escaping
- * them would need an `ESCAPE` clause that Drizzle's `like()` does not emit, and
- * neither character is meaningful in a name or phone number, so they are simply
- * removed.
+ * `%` and `_` were passed straight into `like()`, so searching for `Nim%la`
+ * matched names the operator never typed. Escaping them would need an `ESCAPE`
+ * clause that Drizzle's `like()` does not emit, and neither character is
+ * meaningful in a name or a phone number, so they are simply removed.
+ *
+ * A term made up entirely of wildcards therefore sanitises to nothing, which is
+ * treated as "no filter" — the same as an empty search box. That is deliberate:
+ * the alternative is a search that silently returns zero rows for input the
+ * operator can see in the box.
  */
 function sanitiseSearch(value: string): string {
   return value.replace(/[%_]/g, '')
 }
 
 export function searchCustomers(query: string): Customer[] {
-  const q = `%${sanitiseSearch(query)}%`
+  const term = sanitiseSearch(query).trim()
+  if (!term) return getCustomers()
+
+  const q = `%${term}%`
   return getDb()
     .select()
     .from(customers)
