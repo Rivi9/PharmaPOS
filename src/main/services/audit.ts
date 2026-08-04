@@ -28,6 +28,12 @@ export type AuditAction =
   | 'PRICE_CHANGED'
   | 'PRODUCTS_IMPORTED_EXCEL'
   | 'CUSTOMER_ERASED'
+  | 'CATEGORY_CREATED'
+  | 'CATEGORY_UPDATED'
+  | 'CATEGORY_DELETED'
+  | 'SUPPLIER_CREATED'
+  | 'SUPPLIER_UPDATED'
+  | 'SUPPLIER_DELETED'
 
 export type AuditEntityType =
   | 'sale'
@@ -38,6 +44,8 @@ export type AuditEntityType =
   | 'setting'
   | 'backup'
   | 'customer'
+  | 'category'
+  | 'supplier'
   | 'system'
 
 export interface AuditLogEntry {

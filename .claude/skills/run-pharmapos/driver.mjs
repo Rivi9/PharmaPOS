@@ -328,8 +328,26 @@ async function run(line) {
   const trimmed = line.trim()
   if (!trimmed || trimmed.startsWith('#')) return
   // `name:arg1:arg2` in batch mode, `name arg1 arg2` in the REPL.
-  const parts = trimmed.includes(':') ? trimmed.split(':') : trimmed.split(/\s+/)
-  const [cmd, ...args] = parts
+  //
+  // These commands take the rest of the line VERBATIM. Splitting them on every
+  // colon truncated any JS object literal or SQL cast — `eval:...{name:'x'}`
+  // arrived as `...{name` and failed with a bare `SyntaxError: Unexpected token`
+  // that pointed nowhere near the real cause.
+  const FREEFORM = new Set(['eval', 'sql', 'clicktext', 'text', 'click'])
+  const separator = trimmed.includes(':') ? ':' : ' '
+  const head = trimmed.split(/[: ]/)[0]
+
+  let cmd, args
+  if (FREEFORM.has(head)) {
+    const rest = trimmed.slice(head.length + 1).trim()
+    cmd = head
+    args = rest ? [rest] : []
+  } else {
+    const parts = separator === ':' ? trimmed.split(':') : trimmed.split(/\s+/)
+    cmd = parts[0]
+    args = parts.slice(1)
+  }
+
   const fn = COMMANDS[cmd]
   if (!fn) return log('unknown command:', cmd, '— try: help')
   await fn(...args)

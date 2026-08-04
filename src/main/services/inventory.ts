@@ -118,6 +118,19 @@ function assertName(label: string, value: unknown): string {
   return name
 }
 
+/**
+ * One product row in the database's own snake_case shape.
+ *
+ * `products.getProductById` returns the Drizzle camelCase model; audit entries
+ * record column names, so the before/after diff reads the raw row instead of
+ * translating field names in two places.
+ */
+export function getProductRow(id: string): Record<string, unknown> | undefined {
+  return getDatabase().prepare('SELECT * FROM products WHERE id = ?').get(id) as
+    | Record<string, unknown>
+    | undefined
+}
+
 export function createProduct(data: ProductData): { id: string } {
   const db = getDatabase()
   const id = generateId()
@@ -603,8 +616,13 @@ export function updateStockBatch(id: string, data: Partial<StockBatchData>): voi
     values.push(data.batch_number?.trim() || null)
   }
   if (data.quantity !== undefined) {
-    fields.push('quantity = ?')
-    values.push(assertQuantity('Quantity', data.quantity))
+    // Deliberately refused. An absolute `SET quantity = ?` leaves no
+    // `inventory_adjustments` row, so a batch could go 5 → 500 → 5 with nothing
+    // to attribute the shrinkage to. Quantity moves through `adjustStockBatch`,
+    // which records the delta, the reason and who did it (H13).
+    throw new Error(
+      'Stock quantity cannot be set directly — use a stock adjustment so the change is recorded'
+    )
   }
   if (data.cost_price !== undefined) {
     fields.push('cost_price = ?')

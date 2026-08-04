@@ -25,6 +25,9 @@ const stockBatchSchema = z.object({
   product_id: z.string().min(1, 'Product is required'),
   batch_number: z.string().optional(),
   quantity: z.number().int().min(1, 'Quantity must be at least 1'),
+  // Only used when editing: a quantity change becomes a recorded stock
+  // adjustment, and an adjustment without a reason is untraceable shrinkage.
+  adjustment_reason: z.string().optional(),
   cost_price: z.number().min(0, 'Cost price must be positive'),
   selling_price: z.union([z.number().min(0), z.nan()]).optional(),
   expiry_date: z.string().optional(),
@@ -102,6 +105,12 @@ export function StockBatchFormDialog({
 
   const handleFormSubmit = async (data: StockBatchFormData) => {
     setSubmitError('')
+    // Enforced here rather than in the zod schema because it is conditional on
+    // the quantity actually having moved, which the schema cannot see.
+    if (quantityChanged && !data.adjustment_reason?.trim()) {
+      setSubmitError('Say why the quantity changed — it is recorded as a stock adjustment')
+      return
+    }
     try {
       await onSubmit(data)
     } catch (err) {
@@ -117,12 +126,21 @@ export function StockBatchFormDialog({
 
   const supplierId = watch('supplier_id')
 
+  // A quantity edit is a stock adjustment, not a correction of a typo: the
+  // absolute UPDATE it used to issue left no adjustment row and no audit entry,
+  // so shrinkage could not be attributed. Surface that it is being recorded, and
+  // ask why, before the operator commits it.
+  const watchedQuantity = watch('quantity')
+  const quantityChanged =
+    batch != null && Number.isFinite(watchedQuantity) && watchedQuantity !== batch.quantity
+
   // Client-side filter — no IPC needed since products are already loaded.
   // An empty box browses the whole catalogue, and so does re-focusing after a
   // selection (where the box holds the chosen product's label, not a query).
   const selectedProduct = products.find((p) => p.id === watch('product_id'))
   const query = productSearch.trim().toLowerCase()
-  const browsingAll = query.length === 0 || (selectedProduct && productSearch === productLabel(selectedProduct))
+  const browsingAll =
+    query.length === 0 || (selectedProduct && productSearch === productLabel(selectedProduct))
 
   const matchingProducts = browsingAll
     ? products
@@ -224,7 +242,29 @@ export function StockBatchFormDialog({
                 {...register('quantity', { valueAsNumber: true })}
               />
               {errors.quantity && <p className="text-sm text-red-500">{errors.quantity.message}</p>}
+              {batch && quantityChanged && (
+                <p className="text-xs text-muted-foreground">
+                  {watchedQuantity > batch.quantity ? 'Adding' : 'Removing'}{' '}
+                  {Math.abs(watchedQuantity - batch.quantity)} — recorded as a stock adjustment
+                </p>
+              )}
             </div>
+
+            {batch && quantityChanged && (
+              <div className="space-y-2 col-span-2">
+                <Label htmlFor="adjustment_reason">
+                  Reason for the quantity change <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="adjustment_reason"
+                  placeholder="Damaged, miscount, expired stock removed…"
+                  {...register('adjustment_reason')}
+                />
+                {errors.adjustment_reason && (
+                  <p className="text-sm text-red-500">{errors.adjustment_reason.message}</p>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="cost_price">
@@ -253,8 +293,8 @@ export function StockBatchFormDialog({
                 {...register('selling_price', { valueAsNumber: true })}
               />
               <p className="text-xs text-muted-foreground">
-                Set this when a batch sells at a different price to the product default — the
-                till charges the price of the batch it dispenses from.
+                Set this when a batch sells at a different price to the product default — the till
+                charges the price of the batch it dispenses from.
               </p>
             </div>
 
@@ -285,11 +325,7 @@ export function StockBatchFormDialog({
             </div>
           </div>
 
-          {submitError && (
-
-            <p className="text-sm text-destructive font-medium">{submitError}</p>
-
-          )}
+          {submitError && <p className="text-sm text-destructive font-medium">{submitError}</p>}
 
           <div className="flex justify-end gap-2 pt-4">
             <Button type="button" variant="outline" onClick={onClose}>

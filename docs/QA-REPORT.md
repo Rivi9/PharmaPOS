@@ -14,15 +14,15 @@
 | Severity | Raised | Fixed | Open |
 |----------|-------:|------:|-----:|
 | 🔴 Critical | 25 | **25** | 0 |
-| 🟠 High | 40 | **33** | 7 |
+| 🟠 High | 40 | **36** | 4 |
 | 🟡 Medium | 32 | **11** | 21 |
 | ⚪ Low | 16 | **4** | 12 |
-| **Total** | **113** | **73** | **40** |
+| **Total** | **113** | **76** | **37** |
 | 📋 Operator requirements | 5 | **5** | 0 |
 
 **Every Critical and every operator requirement is now closed.** The remaining work is High and below — see [Suggested order of work](#suggested-order-of-work).
 
-Fixed across eleven rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
+Fixed across twelve rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
 
 | Round | Commit | Closed |
 |---|---|---|
@@ -36,7 +36,8 @@ Fixed across eleven rounds — see [Fixed in this session](#-fixed-in-this-sessi
 | 8 | `f488d65`, `0d1b1a1` | **R1, R2**, R4, H4, M16 |
 | 9 | `3631510`, `1377df2` | H40, M17 + batch history UI, disabled-Delete explanation |
 | 10 | `5a5a184`, `b93b886` | H22, H30 (rest), H34, H38, H39, L11 (second half) + native `confirm()`/`alert()` removed, customer erasure, single-instance lock |
-| 11 | this round | H12, H14, H23, H25 + admin password rule, 27-test E2E suite, CI |
+| 11 | `f8d6b85`, `ae16266` | H12, H14, H23, H25 + admin password rule, E2E suite, CI, `/run-pharmapos` skill |
+| 12 | this round | H13, H16, H17 + atomic Excel import, inventory audit trail |
 
 **Two passes.** Pass 1 (C1–C15, H1–H25) covered the POS, payments, printing, auth/RBAC, inventory and the schema. Pass 2 (C16–C25, H26–H40) covered the areas pass 1 listed as gaps — the full money/analytics verification, report generation, backup/restore, scheduling, logging, auto-update, the audit log, customers, and the admin-screen touch review. **Coverage is now complete**; there is no remaining unreviewed area.
 
@@ -416,7 +417,7 @@ The drawer pulse is emitted **only** inside the receipt byte stream. Press Close
 `deductStockFEFO` returns every batch it touched; the insert stores `batches[0].batch_id`. Selling 10 units across a 4-unit and a 6-unit batch records one batch id — **a manufacturer recall cannot identify which customers received the affected lot**, which is a traceability requirement for a pharmacy. The same line takes cost from `products.cost_price` rather than the batches actually dispensed (compounding C5).
 **Fix:** One `sale_items` row per batch touched (or a `sale_item_batches` child table), each using its own batch `cost_price`.
 
-### H5 — A sale can be refunded without limit, for more than was sold
+### H5 ✅ FIXED (round 4, with C25) — A sale can be refunded without limit, for more than was sold
 **File:** `src/main/services/sales.ts:353-355`
 `createRefund` guards on `status !== 'completed'` but **never sets the status to `refunded`**, so the guard always passes and the same sale can be refunded repeatedly, restocking each time. The caller's `items` array is trusted and stored as opaque JSON with no check against what was sold, so a refund of 100 units against a 1-unit sale is accepted.
 **Fix:** Inside the transaction, aggregate prior refunds, validate cumulative quantity ≤ sold quantity and unit price against the sold price, then set `status='refunded'` (or track `refunded_total` for partials).
@@ -456,7 +457,7 @@ All four submit handlers are `if (result.success) { …close… }` with no `else
 `z.string().optional()` with no date parse and no bounds; main copies the string straight into TEXT. `2020-01-01`, `2026-13-45` and locale-formatted `20/08/2026` all save cleanly, and a batch may expire before it was received. Given expiry is legally critical here, entry is the last place to catch a typo.
 **Fix:** Validate the format and parseability, reject past dates (with an explicit opt-in for receiving stock destined for return), enforce `expiry_date > received_date`, and mirror all of it in the main process.
 
-### H13 — Batch quantity can be rewritten with no adjustment record, and no inventory mutation is audited at all
+### H13 ✅ FIXED (round 12) — Batch quantity can be rewritten with no adjustment record, and no inventory mutation is audited at all
 **File:** `src/main/services/inventory.ts:506`, `src/main/ipc/inventory-handlers.ts:107-127`
 The Edit pencil issues an absolute `UPDATE … SET quantity = ?` — 5 to 500 or back — with no `inventory_adjustments` row and no `logAudit`. Across the whole inventory handler file `logAudit` appears **twice** (`STOCK_ADJUSTED` on the broken channel of M14, and the Excel import). Creating, updating or deleting products, categories, suppliers and batches leaves **no trace whatsoever**, so shrinkage cannot be attributed and price history cannot be reconstructed for tax.
 **Fix:** Route quantity changes through `adjustStockBatch` (delta + reason + user, which already writes adjustments) and drop `quantity` from `updateStockBatch`. Add `logAudit` with before/after values to every mutating handler.
@@ -471,12 +472,12 @@ The UI zod schemas are the only gate and the Excel importer bypasses them entire
 `row.map(cell => `"${cell}"`)` — a product named `6" Crepe Bandage` shifts **every subsequent column** for that row in Excel. A name starting `=`, `+`, `-` or `@` is executed as a formula on open. No UTF-8 BOM, so Sinhala/Tamil names open as mojibake.
 **Fix:** Escape by doubling quotes, prefix `'` to cells matching `/^[=+\-@\t\r]/`, and prepend `﻿`.
 
-### H16 — Excel import silently discards expiry date, batch number, category and supplier
+### H16 ✅ FIXED (round 12) — Excel import silently discards expiry date, batch number, category and supplier
 **File:** `src/main/ipc/inventory-handlers.ts:264-287`
 Only ten columns are read; `createStockBatch` is called with just product, quantity and cost. A supplier price list containing `Expiry Date` and `Batch No` imports "successfully" with `expiry_date = NULL`. So a 10,000-line opening-stock import produces an entire inventory **with no expiry tracking**, reported as a clean success, while `track_expiry` defaults to 1 and claims otherwise.
 **Fix:** Read and resolve those columns; reject a row with `current_stock > 0` and no expiry when `track_expiry = 1`.
 
-### H17 — Import mangles numbers, half-applies, and can freeze the app
+### H17 ✅ FIXED (round 12) — Import mangles numbers, half-applies, and can freeze the app
 **File:** `src/main/ipc/inventory-handlers.ts:246-278`
 `parseFloat('1,234.50')` returns **1** — the product is created at Rs. 1.00 and counted as imported with no error. `|| 0` on `tax_rate` and `|| 5` on `reorder_level` silently rewrite legitimate values. The transaction is **per row**, so a failure at row 4,000 leaves 3,999 committed with no rollback. A missing `name` column produces one error per row, all rendered as `<li>` — 10k DOM nodes in a modal. The whole loop is synchronous on the main process with no progress indicator.
 **Fix:** Reject non-numeric cells outright (or read the native cell type), validate the header row up front, wrap the whole import in one transaction after a dry-run pass, and cap displayed errors at ~50.
@@ -606,6 +607,23 @@ Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can d
 
 ## ✅ Fixed in this session
 
+### Round 12 — the Excel import, and an inventory audit trail
+
+| Item | Change |
+|---|---|
+| **H16** — the import silently discarded expiry date, batch number, category and supplier | Ten columns were read and `createStockBatch` was called with product, quantity and cost only. A supplier price list containing `Expiry Date` and `Batch No` imported "successfully" with `expiry_date = NULL` — so a 10,000-line opening-stock import produced **an entire inventory with no expiry tracking, reported as a clean success**, while `track_expiry` defaulted to 1 and claimed otherwise. All four columns are now read, categories and suppliers are resolved by name and created when absent, and a row carrying stock but no expiry is **refused** unless it explicitly sets `Track Expiry` to "no". Expiry accepts `YYYY-MM-DD`, `DD/MM/YYYY`, `MM-YYYY` and real Excel date cells; `YYYY-MM` means end of month, as a blister pack is printed. A slash format whose first component could be either day or month is refused rather than guessed — guessing wrong on a medicine expiry is not an acceptable outcome. |
+| **H17** — numbers mangled, import half-applied, app frozen | `parseFloat('1,234.50')` returns **1**, so the product was created at Rs. 1.00 and counted as imported with no error. Numbers are now parsed whole or rejected: real numeric cells are used as-is, strings must be *entirely* numeric, and both comma thousands separators and the European decimal comma are understood. `|| 0` on `tax_rate` and `|| 5` on `reorder_level` conflated "absent" with "present but unreadable" and silently rewrote real values — absent now takes a documented default, unreadable is an error naming the row. The transaction was **per row**, so a failure at row 4,000 left 3,999 committed with nothing to roll back to; 10,000 separate transactions is also what actually froze the main process. |
+| **The import is now atomic** | Every row is parsed and validated first, and nothing is written unless the whole sheet is clean. A half-imported medicine catalogue is worse than a refused one: nobody can tell which half is missing, and the stock figures are wrong in a way no report reveals. The dialog says so explicitly instead of reporting a partial success. Duplicate barcodes *within the sheet* are caught before the database, naming both rows — left to the `UNIQUE` constraint they failed mid-transaction and rolled back the whole file with an error naming neither. A missing `Name` column is reported once rather than once per row (10,000 `<li>` nodes in a modal), and displayed errors are capped at 50 with a count of the rest. |
+| **H13** — batch quantity rewritable with no record, and no inventory mutation audited at all | The Edit pencil issued an absolute `UPDATE … SET quantity = ?` — 5 to 500 or back — with no `inventory_adjustments` row and no audit entry, so **shrinkage could not be attributed to anyone**. Across the whole inventory handler file `logAudit` appeared twice. A quantity change now routes through `adjustStockBatch`, which records the delta, the reason and who did it, and the delta is derived from the stored row rather than trusted from the renderer. `updateStockBatch` **refuses** a bare quantity write outright, so no future caller can bypass the record. The form asks why before it lets the change through, and shows what is about to be recorded. Every create, update and delete of a product, category, supplier and batch now writes an audit entry with before/after values; a price move additionally emits `PRICE_CHANGED`, because that is what a tax audit reads and it should not have to sift unrelated edits to find it. An edit that changes nothing writes nothing. |
+
+`inventory-import.ts` was extracted so the parsing and validation are testable at the seam that matters — arrays in, decisions out. **26 unit assertions** cover it with no new dependencies: esbuild (already present via Vite) bundles the module with the database and inventory layers stubbed, so it runs on plain Node with no native modules. `npm run test:import`, wired into CI.
+
+Seven new E2E specs cover the audit trail itself, including that an edit which changes nothing writes nothing, that a batch quantity edit produces an `inventory_adjustments` row with the delta and the reason, and that every entry names the real actor rather than "system". **34 E2E specs, all passing.**
+
+Wall-clock note: the suite ran in 47 seconds on an idle machine and 11 minutes on a busy one — every spec slows proportionally, because each cold-starts Electron and walks the setup wizard. A slow run is not a signal about the code. The IPC calls the audit changes touch were measured directly at 6–24 ms, so the added `logAudit` writes are not felt at the till.
+
+**H5 was already closed in round 4** alongside C25, not now: `createRefund` validates cumulative refunded quantity against what was actually sold and flips the sale to `refunded` once nothing remains refundable. Verified by reading the current code rather than trusting the earlier note.
+
 ### Round 11 — a working E2E suite, and the admin password rule
 
 **Reported from the shop floor during a live run of the app:** *"admin account creation still have no password 8+ check."* Correct, and my round-7 note claiming the rule was "enforced in the service so every entry point inherits it" was wrong about this path.
@@ -634,7 +652,7 @@ A fifth thing surfaced only once the specs were green: **`app.close()` never res
 
 **A `/run-pharmapos` skill now exists** at `.claude/skills/run-pharmapos/`, with a driver that boots a fresh till (wizard → login → seeded product → open shift) in one command and exposes `scan`, `pay`, `clicktext`, `ss`, `eval` (renderer/IPC) and `sql` (this run's database). It is how the sticky-footer regression above was reproduced and verified, and it carries the same throwaway-profile isolation as the tests. All five launch gotchas are written down there rather than rediscovered.
 
-**Result: 27 specs, all passing, ~1.2 minutes** — setup wizard (5), shift guards (6), customers (5), inventory validation (8), cash sale (3). A new `.github/workflows/ci.yml` runs typecheck and the suite on every push and pull request, on `windows-latest` — a green Linux run would not tell us the shipped artefact works, given native modules and Windows-only Squirrel hooks.
+**Result: 27 specs, all passing (~1.2 minutes on an idle machine; the figure tracks machine load, not code)** — setup wizard (5), shift guards (6), customers (5), inventory validation (8), cash sale (3). A new `.github/workflows/ci.yml` runs typecheck and the suite on every push and pull request, on `windows-latest` — a green Linux run would not tell us the shipped artefact works, given native modules and Windows-only Squirrel hooks.
 
 Isolation: every test gets its own `--user-data-dir` *and* its own `TEST_DB_PATH`, so a run can never touch the operator's real database. Verified — the live file's mtime is unchanged across every run in this session.
 
@@ -867,11 +885,11 @@ One caveat on confidence: every finding is derived from source, and the ones mar
 
 **Next, in order:**
 
-1. **H16, H17** — Excel import discards expiry date, batch number, category and supplier, mangles numbers and can half-apply. It is how a pharmacy loads its catalogue, so it is the largest remaining hole.
-2. **H5, H13** — unlimited refunds beyond what was sold, and batch quantity rewritable with no adjustment record.
-3. **H28** — inventory valuation counts expired and depleted batches at full retail.
-4. **H18, H6** — 10k-product touch performance, and the dead graphical customer display.
-5. **H30 (rest)** — a real Google Drive OAuth flow. Blocked on a registered OAuth client; see [What I need from you](#what-i-need-from-you).
+1. **H28** — inventory valuation counts expired and depleted batches at full retail, and values at `products.cost_price` rather than the batch's own. "Total Stock Value" is currently inflated by unsaleable goods.
+2. **H18** — 10k products render at once with no pagination or virtualisation on the POS search and quick-items surfaces.
+3. **H6** — the graphical customer-facing display is dead code; the pole display works.
+4. **H30 (rest)** — a real Google Drive OAuth flow. Blocked on a registered OAuth client; see [What I need from you](#what-i-need-from-you).
+5. **H36 (rest)** — the remaining unemitted audit actions (settings changes, backup create/restore, failed PIN attempts are done; product/batch/user/category/supplier are now done too — audit the list again and close or re-scope it).
 6. Dependency bumps: `drizzle-orm` ≥0.45.2 and `jspdf` >4.2.0 both ship with published advisories. **Held at the operator's instruction** until after the current update is pushed.
 
 ### Original order (retained for reference)

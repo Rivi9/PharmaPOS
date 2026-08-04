@@ -27,7 +27,22 @@ const ACTION_BADGE_VARIANTS: Record<string, string> = {
   PRODUCT_DELETED: 'bg-red-100 text-red-800',
   SHIFT_STARTED: 'bg-teal-100 text-teal-800',
   SHIFT_ENDED: 'bg-teal-100 text-teal-800',
-  SETTINGS_UPDATED: 'bg-indigo-100 text-indigo-800'
+  SETTINGS_UPDATED: 'bg-indigo-100 text-indigo-800',
+  // Newly emitted (H13). An unlisted action still renders — the lookup falls
+  // back to grey — but a price change and a deletion should be findable by eye.
+  PRICE_CHANGED: 'bg-amber-100 text-amber-900',
+  STOCK_BATCH_CREATED: 'bg-purple-100 text-purple-800',
+  STOCK_BATCH_UPDATED: 'bg-purple-100 text-purple-800',
+  STOCK_BATCH_DELETED: 'bg-red-100 text-red-800',
+  CATEGORY_CREATED: 'bg-purple-100 text-purple-800',
+  CATEGORY_UPDATED: 'bg-purple-100 text-purple-800',
+  CATEGORY_DELETED: 'bg-red-100 text-red-800',
+  SUPPLIER_CREATED: 'bg-purple-100 text-purple-800',
+  SUPPLIER_UPDATED: 'bg-purple-100 text-purple-800',
+  SUPPLIER_DELETED: 'bg-red-100 text-red-800',
+  CUSTOMER_ERASED: 'bg-red-100 text-red-800',
+  USER_LOGIN_FAILED: 'bg-orange-100 text-orange-800',
+  USER_LOCKED_OUT: 'bg-red-100 text-red-800'
 }
 
 export function AuditLogPage(): React.JSX.Element {
