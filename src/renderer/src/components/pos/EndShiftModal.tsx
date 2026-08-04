@@ -133,15 +133,24 @@ export function EndShiftModal({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md" onInteractOutside={(e) => e.preventDefault()}>
-        <DialogHeader>
+      {/* Three regions, not one scrolling blob: header and action row are fixed,
+          only the middle scrolls. `sticky bottom-0` with negative margins was the
+          first attempt and was wrong — the row floated mid-dialog with the Notes
+          field clipped behind it and the dialog's own p-6 left a dead gap below.
+          p-0/gap-0/overflow-hidden override the base DialogContent so the padding
+          lives on the three regions instead. */}
+      <DialogContent
+        className="max-w-md flex flex-col gap-0 p-0 overflow-hidden"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-3">
           <DialogTitle className="text-xl flex items-center gap-2">
             <LogOut className="h-5 w-5" />
             End Shift
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-5">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pb-4 space-y-5">
           {/* Shift summary */}
           <div className="grid grid-cols-2 gap-3">
             <div className="border rounded-lg p-3 text-center space-y-1">
@@ -263,24 +272,26 @@ export function EndShiftModal({
               className="h-12"
             />
           </div>
+        </div>
 
-          {/* Actions — sticky so the confirm button stays reachable however tall
-              the summary grows. On a 1366×768 till this row used to sit below the
-              fold with no way to scroll to it. */}
-          <div className="sticky bottom-0 -mx-6 -mb-6 flex gap-3 border-t bg-background px-6 py-4">
-            <Button variant="outline" onClick={onClose} disabled={loading} className="flex-1 h-12">
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleEndShift}
-              disabled={loading}
-              className="flex-1 h-12 font-semibold"
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              {loading ? 'Closing…' : 'End Shift & Logout'}
-            </Button>
-          </div>
+        {/* Action row — outside the scroll region, so it is pinned to the bottom
+            edge of the dialog however tall the summary above it grows. On a
+            1366×768 till this row used to fall off the screen entirely, and with
+            outside-interaction prevented and the X clipped, the shift could not
+            be closed by touch at all. */}
+        <div className="shrink-0 flex gap-3 border-t bg-background p-4">
+          <Button variant="outline" onClick={onClose} disabled={loading} className="flex-1 h-12">
+            Cancel
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={handleEndShift}
+            disabled={loading}
+            className="flex-1 h-12 font-semibold"
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            {loading ? 'Closing…' : 'End Shift & Logout'}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

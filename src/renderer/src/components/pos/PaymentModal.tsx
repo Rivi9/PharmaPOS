@@ -259,14 +259,17 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
     <Dialog open={open} onOpenChange={onClose}>
       {/* A mis-tap on the overlay used to discard a keyed-in payment silently —
           payment is dismissed only via the explicit Cancel button. */}
-      <DialogContent className="max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
-        <DialogHeader>
+      <DialogContent
+        className="max-w-lg flex flex-col gap-0 p-0 overflow-hidden"
+        onInteractOutside={(e) => e.preventDefault()}
+      >
+        <DialogHeader className="shrink-0 px-6 pt-6 pb-3">
           <DialogTitle className="text-xl">
             Complete Sale — {formatCurrency(total, currencySymbol)}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pb-4 space-y-4">
           {/* Payment Method — large touch buttons */}
           <div className="flex justify-center items-center w-full gap-3">
             <Button
@@ -433,29 +436,29 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
           </div>
 
           {error && <p className="text-base text-destructive font-medium">{error}</p>}
+        </div>
 
-          {/* Actions — sticky. "Complete Sale" used to start ~215px below the
-              fold on every sale, and the only thing under the finger in the
-              scroll region was the numpad: a drag inside Chromium's ~8px touch
-              slop registers as a click, injecting a stray digit into the amount
-              being confirmed. */}
-          <div className="sticky bottom-0 -mx-6 -mb-6 flex gap-3 border-t bg-background px-6 py-4">
-            <Button
-              variant="outline"
-              onClick={onClose}
-              disabled={processing}
-              className="flex-1 h-14 text-base"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleComplete}
-              disabled={processing}
-              className="flex-1 h-14 text-lg font-bold"
-            >
-              {processing ? 'Processing...' : 'Complete Sale'}
-            </Button>
-          </div>
+        {/* Action row — outside the scroll region. "Complete Sale" used to start
+            ~215px below the fold on every sale, and the only thing under the
+            finger in the scroll region was the numpad: a drag inside Chromium's
+            ~8px touch slop registers as a click, injecting a stray digit into the
+            amount being confirmed. */}
+        <div className="shrink-0 flex gap-3 border-t bg-background p-4">
+          <Button
+            variant="outline"
+            onClick={onClose}
+            disabled={processing}
+            className="flex-1 h-14 text-base"
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={handleComplete}
+            disabled={processing}
+            className="flex-1 h-14 text-lg font-bold"
+          >
+            {processing ? 'Processing...' : 'Complete Sale'}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
