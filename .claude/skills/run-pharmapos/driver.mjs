@@ -178,6 +178,71 @@ const COMMANDS = {
     log('seeded', barcode, 'x' + qty, '@' + price)
   },
 
+  /**
+   * Seed a large catalogue, for measuring what a real pharmacy's 10k products
+   * actually cost. Two batches per product, so the stock aggregate has to touch
+   * both — a one-batch fixture understates it.
+   */
+  async bigseed(count = '10000') {
+    const total = Number(count)
+    const db = new DatabaseSync(dbPath)
+    try {
+      const now = new Date().toISOString()
+      const expiry = new Date(Date.now() + 300 * 864e5).toISOString().split('T')[0]
+      db.exec('BEGIN')
+      const prod = db.prepare(
+        `INSERT INTO products (id,name,barcode,sku,unit_price,cost_price,reorder_level,reorder_qty,
+                               tax_rate,is_tax_inclusive,is_active,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,10,50,0,1,1,?,?)`
+      )
+      const batch = db.prepare(
+        `INSERT INTO stock_batches (id,product_id,batch_number,quantity,cost_price,selling_price,
+                                    expiry_date,received_date,created_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`
+      )
+      for (let i = 0; i < total; i++) {
+        const id = 'bulk' + i
+        prod.run(
+          id,
+          `Medicine ${String(i).padStart(5, '0')}`,
+          'BULK' + i,
+          'SKU' + i,
+          25 + (i % 90),
+          15,
+          now,
+          now
+        )
+        batch.run('bb' + i + 'a', id, 'B1', 40, 15, 25, expiry, now, now)
+        batch.run('bb' + i + 'b', id, 'B2', 10, 16, 26, expiry, now, now)
+      }
+      db.exec('COMMIT')
+    } finally {
+      db.close()
+    }
+    log('bigseed:', total, 'products,', total * 2, 'batches')
+  },
+
+  /** Time a renderer expression, repeated. `time:3:window.electron.listProducts('x')` */
+  async time(spec) {
+    const match = spec.match(/^(\d+):([\s\S]+)$/)
+    const runs = match ? Number(match[1]) : 1
+    const expr = match ? match[2] : spec
+    const out = await page.evaluate(
+      `(async () => {
+        const times = []
+        let size = 0
+        for (let i = 0; i < ${runs}; i++) {
+          const s = performance.now()
+          const r = await (${expr})
+          times.push(Math.round(performance.now() - s))
+          try { size = JSON.stringify(r).length } catch { size = -1 }
+        }
+        return JSON.stringify({ ms: times, payloadBytes: size })
+      })()`
+    )
+    log(out)
+  },
+
   async scan(barcode = 'PARA500') {
     const box = page.getByPlaceholder(/Scan or enter barcode/i)
     await box.fill(barcode)
@@ -194,6 +259,25 @@ const COMMANDS = {
     await page.getByRole('button', { name: /^Complete Sale$/ }).click()
     await sleep(2000)
     log('paid', cash)
+  },
+
+  /**
+   * Switch a Radix tab by its label. `tab:Stock Batches`
+   *
+   * `clicktext` cannot do this: Radix's Tabs listen for real pointer events, so a
+   * DOM `.click()` reports OK and changes nothing — the most misleading kind of
+   * failure. This uses Playwright's own click, which sends real events.
+   */
+  async tab(name) {
+    await page.getByRole('tab', { name: new RegExp(name, 'i') }).click()
+    await sleep(900)
+    log('tab', JSON.stringify(name))
+  },
+
+  /** Wait, for debounced UI. `sleep:1500` */
+  async sleep(ms = '1000') {
+    await sleep(Number(ms))
+    log('slept', ms + 'ms')
   },
 
   async ss(name) {
@@ -333,7 +417,7 @@ async function run(line) {
   // colon truncated any JS object literal or SQL cast — `eval:...{name:'x'}`
   // arrived as `...{name` and failed with a bare `SyntaxError: Unexpected token`
   // that pointed nowhere near the real cause.
-  const FREEFORM = new Set(['eval', 'sql', 'clicktext', 'text', 'click'])
+  const FREEFORM = new Set(['eval', 'sql', 'clicktext', 'text', 'click', 'time', 'tab'])
   const separator = trimmed.includes(':') ? ':' : ' '
   const head = trimmed.split(/[: ]/)[0]
 

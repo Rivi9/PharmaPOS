@@ -118,6 +118,133 @@ function assertName(label: string, value: unknown): string {
   return name
 }
 
+export interface PagedQuery {
+  search?: string
+  limit?: number
+  offset?: number
+  /** Include discontinued products — the Inventory page's "Discontinued" filter. */
+  includeInactive?: boolean
+}
+
+export interface Page<T> {
+  rows: T[]
+  /** Total matching the search, so the UI can show "page 3 of 40". */
+  total: number
+}
+
+/** Cap on one page, whatever the caller asks for. */
+const MAX_PAGE = 200
+
+/**
+ * Strip LIKE wildcards. `%` in a search box would match everything and `_` any
+ * character; neither is meaningful in a product name, SKU or barcode. Escaping
+ * would need an ESCAPE clause, so they are removed.
+ */
+function likeTerm(search: string | undefined): string | null {
+  const term = (search ?? '').replace(/[%_]/g, '').trim()
+  return term ? `%${term}%` : null
+}
+
+/**
+ * One page of products, searched and counted in SQL.
+ *
+ * H18: `listProducts()` had no LIMIT — it aggregated every product against every
+ * batch and shipped the lot over IPC, and the Inventory page re-ran it (plus the
+ * batch list) on every save. Measured on a 10,000-product catalogue with 20,000
+ * batches: **4.2 MB of JSON and ~250 ms per call**, three calls per save. Search
+ * was client-side, so the full fetch could not be avoided.
+ *
+ * The stock figure stays a correlated subquery rather than a JOIN: joining
+ * products to batches multiplies the row set, which is the same fan-out that made
+ * every analytics KPI wrong (C1).
+ */
+export function listProductsPage(query: PagedQuery = {}): Page<Record<string, unknown>> {
+  const db = getDatabase()
+  const term = likeTerm(query.search)
+  const limit = Math.min(Math.max(1, query.limit ?? 50), MAX_PAGE)
+  const offset = Math.max(0, query.offset ?? 0)
+
+  const where: string[] = []
+  const params: unknown[] = []
+  if (!query.includeInactive) where.push('p.is_active = 1')
+  if (term) {
+    where.push('(p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ? OR p.generic_name LIKE ?)')
+    params.push(term, term, term, term)
+  }
+  const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+
+  const { total } = db
+    .prepare(`SELECT COUNT(*) as total FROM products p ${whereSql}`)
+    .get(...params) as { total: number }
+
+  const rows = db
+    .prepare(
+      `
+    SELECT
+      p.*,
+      COALESCE((
+        SELECT SUM(b.quantity) FROM stock_batches b
+        WHERE b.product_id = p.id AND b.quantity > 0
+          AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
+      ), 0) as total_stock,
+      c.name as category_name,
+      s.name as supplier_name
+    FROM products p
+    LEFT JOIN categories c ON p.category_id = c.id
+    LEFT JOIN suppliers s ON p.supplier_id = s.id
+    ${whereSql}
+    ORDER BY p.is_active DESC, p.name ASC
+    LIMIT ? OFFSET ?
+  `
+    )
+    .all(...params, limit, offset) as Record<string, unknown>[]
+
+  return { rows, total }
+}
+
+/** One page of stock batches, searched and counted in SQL. Same reasoning as above. */
+export function listStockBatchesPage(query: PagedQuery = {}): Page<Record<string, unknown>> {
+  const db = getDatabase()
+  const term = likeTerm(query.search)
+  const limit = Math.min(Math.max(1, query.limit ?? 50), MAX_PAGE)
+  const offset = Math.max(0, query.offset ?? 0)
+
+  const where = ['sb.quantity > 0', 'p.is_active = 1']
+  const params: unknown[] = []
+  if (term) {
+    where.push('(p.name LIKE ? OR p.sku LIKE ? OR sb.batch_number LIKE ?)')
+    params.push(term, term, term)
+  }
+  const whereSql = `WHERE ${where.join(' AND ')}`
+
+  const { total } = db
+    .prepare(
+      `SELECT COUNT(*) as total FROM stock_batches sb
+       JOIN products p ON sb.product_id = p.id ${whereSql}`
+    )
+    .get(...params) as { total: number }
+
+  const rows = db
+    .prepare(
+      `
+    SELECT
+      sb.*,
+      p.name as product_name,
+      p.sku,
+      s.name as supplier_name
+    FROM stock_batches sb
+    JOIN products p ON sb.product_id = p.id
+    LEFT JOIN suppliers s ON sb.supplier_id = s.id
+    ${whereSql}
+    ORDER BY sb.expiry_date ASC NULLS LAST, sb.received_date DESC
+    LIMIT ? OFFSET ?
+  `
+    )
+    .all(...params, limit, offset) as Record<string, unknown>[]
+
+  return { rows, total }
+}
+
 /**
  * One product row in the database's own snake_case shape.
  *

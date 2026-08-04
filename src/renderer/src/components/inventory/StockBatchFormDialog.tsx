@@ -134,21 +134,55 @@ export function StockBatchFormDialog({
   const quantityChanged =
     batch != null && Number.isFinite(watchedQuantity) && watchedQuantity !== batch.quantity
 
-  // Client-side filter — no IPC needed since products are already loaded.
-  // An empty box browses the whole catalogue, and so does re-focusing after a
-  // selection (where the box holds the chosen product's label, not a query).
-  const selectedProduct = products.find((p) => p.id === watch('product_id'))
-  const query = productSearch.trim().toLowerCase()
+  // Suggestions come from the server, not the `products` prop.
+  //
+  // The Inventory page now fetches one page of 50 (H18), so filtering that prop
+  // client-side would make 9,950 products of a large catalogue unreachable from
+  // this box — you could not receive stock against them at all. The prop is still
+  // used to label the already-chosen product when editing.
+  const [remoteProducts, setRemoteProducts] = useState<Product[]>([])
+  const [searching, setSearching] = useState(false)
+  const selectedProduct =
+    products.find((p) => p.id === watch('product_id')) ??
+    remoteProducts.find((p) => p.id === watch('product_id'))
+
+  const query = productSearch.trim()
+  // Re-focusing after a selection leaves the chosen product's label in the box;
+  // that is a browse, not a search for that exact string.
   const browsingAll =
     query.length === 0 || (selectedProduct && productSearch === productLabel(selectedProduct))
+  const effectiveQuery = browsingAll ? '' : query
 
-  const matchingProducts = browsingAll
-    ? products
-    : products.filter(
-        (p) => p.name.toLowerCase().includes(query) || (p.sku ?? '').toLowerCase().includes(query)
-      )
-  const filteredProducts = matchingProducts.slice(0, MAX_SUGGESTIONS)
-  const hiddenCount = matchingProducts.length - filteredProducts.length
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setSearching(true)
+    const timer = setTimeout(
+      () => {
+        window.electron
+          .listProductsPage('', { search: effectiveQuery || undefined, limit: MAX_SUGGESTIONS })
+          .then((result: { success: boolean; data?: { rows: Product[] } }) => {
+            if (cancelled) return
+            setRemoteProducts(result?.success && result.data ? result.data.rows : [])
+          })
+          .catch(() => {
+            if (!cancelled) setRemoteProducts([])
+          })
+          .finally(() => {
+            if (!cancelled) setSearching(false)
+          })
+      },
+      effectiveQuery ? 200 : 0
+    )
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [open, effectiveQuery])
+
+  const filteredProducts = remoteProducts
+  // The server caps at MAX_SUGGESTIONS, so a full page means "there may be more".
+  const hiddenCount = remoteProducts.length >= MAX_SUGGESTIONS ? MAX_SUGGESTIONS : 0
 
   const handleProductSelect = (product: Product) => {
     setValue('product_id', product.id, { shouldValidate: true })
@@ -193,6 +227,13 @@ export function StockBatchFormDialog({
                 placeholder="Tap to browse, or type to search by name or SKU…"
                 autoComplete="off"
               />
+              {/* Suggestions come over IPC now, so "nothing found" and "not
+                  fetched yet" are different states and must not look the same. */}
+              {showSuggestions && filteredProducts.length === 0 && (
+                <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border rounded-lg shadow-lg px-3 py-2 text-sm text-muted-foreground">
+                  {searching ? 'Searching…' : 'No products match that'}
+                </div>
+              )}
               {showSuggestions && filteredProducts.length > 0 && (
                 // Selection is on click, NOT pointerdown: pointerdown fires the
                 // instant a finger lands, so dragging to scroll would pick whichever
@@ -214,8 +255,7 @@ export function StockBatchFormDialog({
                   ))}
                   {hiddenCount > 0 && (
                     <p className="px-3 py-2 text-xs text-muted-foreground bg-muted/40">
-                      Showing first {MAX_SUGGESTIONS} of {matchingProducts.length} — keep typing to
-                      narrow.
+                      Showing the first {MAX_SUGGESTIONS} matches — keep typing to narrow.
                     </p>
                   )}
                 </div>

@@ -27,6 +27,55 @@ import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
 import { useConfirm } from '@renderer/hooks/useConfirm'
 import { ipcErrorMessage } from '@renderer/lib/ipc-error'
 
+/**
+ * Rows fetched per page. Matches the table's own page size so one page of DOM
+ * equals one round trip, rather than fetching thousands and paging in the client.
+ */
+const PAGE_SIZE = 50
+
+/**
+ * Server-side pager. The tables carry their own client-side pagination, but that
+ * can only page what has been fetched — with the fetch now capped at one page,
+ * moving between pages has to go back to the database.
+ */
+function ServerPager({
+  page,
+  total,
+  onPage
+}: {
+  page: number
+  total: number
+  onPage: (next: number) => void
+}): React.JSX.Element | null {
+  const pages = Math.ceil(total / PAGE_SIZE)
+  if (pages <= 1) return null
+  return (
+    <div className="flex items-center justify-end gap-2 pt-2">
+      <Button
+        variant="outline"
+        size="sm"
+        className="min-h-11 min-w-11"
+        disabled={page === 0}
+        onClick={() => onPage(page - 1)}
+      >
+        Previous
+      </Button>
+      <span className="text-sm text-muted-foreground tabular-nums px-2">
+        {page + 1} / {pages}
+      </span>
+      <Button
+        variant="outline"
+        size="sm"
+        className="min-h-11 min-w-11"
+        disabled={page + 1 >= pages}
+        onClick={() => onPage(page + 1)}
+      >
+        Next
+      </Button>
+    </div>
+  )
+}
+
 export function InventoryPage(): React.JSX.Element {
   const { user } = useAuthStore()
   const userId = user?.id ?? ''
@@ -57,6 +106,17 @@ export function InventoryPage(): React.JSX.Element {
   const [supplierSearch, setSupplierSearch] = useState('')
   const [batchSearch, setBatchSearch] = useState('')
 
+  // Server-side paging for the two tables that can hold thousands of rows.
+  const [productPage, setProductPage] = useState(0)
+  const [productTotal, setProductTotal] = useState(0)
+  const [batchPage, setBatchPage] = useState(0)
+  const [batchTotal, setBatchTotal] = useState(0)
+  // The count belongs to the *previous* query until the refetch lands. Rendering
+  // it as "N matching products" during that window states something untrue — on
+  // a 10k catalogue it briefly claimed all 10,001 matched a specific search.
+  const [productLoading, setProductLoading] = useState(false)
+  const [batchLoading, setBatchLoading] = useState(false)
+
   // Selected items for editing
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<Category | null>(null)
@@ -68,6 +128,27 @@ export function InventoryPage(): React.JSX.Element {
     loadAllData()
   }, [])
 
+  // Typing in the search box now hits the database, so debounce it. A new search
+  // resets to the first page — page 7 of the previous result set is meaningless.
+  useEffect(() => {
+    setProductPage(0)
+  }, [productSearch])
+  useEffect(() => {
+    setBatchPage(0)
+  }, [batchSearch])
+
+  useEffect(() => {
+    const timer = setTimeout(loadProducts, productSearch ? 250 : 0)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productSearch, productPage])
+
+  useEffect(() => {
+    const timer = setTimeout(loadStockBatches, batchSearch ? 250 : 0)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batchSearch, batchPage])
+
   const loadAllData = async () => {
     await Promise.all([
       loadProducts(),
@@ -78,10 +159,24 @@ export function InventoryPage(): React.JSX.Element {
     ])
   }
 
-  const loadProducts = async () => {
-    const result = await window.electron.listProducts(userId)
-    if (result.success) {
-      setProducts(result.data)
+  // Server-side page + search. `listProducts` (unpaged) shipped every row over
+  // IPC — measured at 4.2 MB and ~250 ms on a 10,000-product catalogue, three
+  // times per save — and the search was client-side so the full fetch could not
+  // be avoided (H18).
+  const loadProducts = async (): Promise<void> => {
+    setProductLoading(true)
+    try {
+      const result = await window.electron.listProductsPage(userId, {
+        search: productSearch || undefined,
+        limit: PAGE_SIZE,
+        offset: productPage * PAGE_SIZE
+      })
+      if (result.success) {
+        setProducts(result.data.rows)
+        setProductTotal(result.data.total)
+      }
+    } finally {
+      setProductLoading(false)
     }
   }
 
@@ -106,10 +201,20 @@ export function InventoryPage(): React.JSX.Element {
     }
   }
 
-  const loadStockBatches = async () => {
-    const result = await window.electron.listStockBatches(userId)
-    if (result.success) {
-      setStockBatches(result.data)
+  const loadStockBatches = async (): Promise<void> => {
+    setBatchLoading(true)
+    try {
+      const result = await window.electron.listStockBatchesPage(userId, {
+        search: batchSearch || undefined,
+        limit: PAGE_SIZE,
+        offset: batchPage * PAGE_SIZE
+      })
+      if (result.success) {
+        setStockBatches(result.data.rows)
+        setBatchTotal(result.data.total)
+      }
+    } finally {
+      setBatchLoading(false)
     }
   }
 
@@ -338,20 +443,9 @@ export function InventoryPage(): React.JSX.Element {
     }
   }
 
-  // Filtered data based on search
-  const filteredProducts = useMemo(() => {
-    if (!productSearch) return products
-    const query = productSearch.toLowerCase()
-    return products.filter(
-      (p) =>
-        p.name.toLowerCase().includes(query) ||
-        p.generic_name?.toLowerCase().includes(query) ||
-        p.sku?.toLowerCase().includes(query) ||
-        p.barcode?.toLowerCase().includes(query) ||
-        p.category_name?.toLowerCase().includes(query) ||
-        p.supplier_name?.toLowerCase().includes(query)
-    )
-  }, [products, productSearch])
+  // Products and batches arrive already searched and paged from SQL. Categories
+  // and suppliers stay client-side: a pharmacy has tens of those, not thousands.
+  const filteredProducts = products
 
   const filteredCategories = useMemo(() => {
     if (!categorySearch) return categories
@@ -376,17 +470,7 @@ export function InventoryPage(): React.JSX.Element {
     )
   }, [suppliers, supplierSearch])
 
-  const filteredBatches = useMemo(() => {
-    if (!batchSearch) return stockBatches
-    const query = batchSearch.toLowerCase()
-    return stockBatches.filter(
-      (b) =>
-        b.batch_number?.toLowerCase().includes(query) ||
-        b.product_name?.toLowerCase().includes(query) ||
-        b.sku?.toLowerCase().includes(query) ||
-        b.supplier_name?.toLowerCase().includes(query)
-    )
-  }, [stockBatches, batchSearch])
+  const filteredBatches = stockBatches
 
   return (
     <div className="h-full flex flex-col p-6 bg-background">
@@ -418,7 +502,13 @@ export function InventoryPage(): React.JSX.Element {
                 />
               </div>
               <div className="text-sm text-muted-foreground whitespace-nowrap">
-                {filteredProducts.length} of {products.length} products
+                {productLoading
+                  ? 'Searching…'
+                  : productTotal === 0
+                    ? productSearch
+                      ? 'No products match that'
+                      : 'No products yet'
+                    : `Showing ${productPage * PAGE_SIZE + 1}–${Math.min((productPage + 1) * PAGE_SIZE, productTotal)} of ${productTotal}${productSearch ? ' matching' : ''} products`}
               </div>
             </div>
             <div className="flex gap-2">
@@ -449,6 +539,7 @@ export function InventoryPage(): React.JSX.Element {
               onDelete={handleProductDelete}
               onReactivate={handleProductReactivate}
             />
+            <ServerPager page={productPage} total={productTotal} onPage={setProductPage} />
           </div>
         </TabsContent>
 
@@ -537,7 +628,13 @@ export function InventoryPage(): React.JSX.Element {
                 />
               </div>
               <div className="text-sm text-muted-foreground whitespace-nowrap">
-                {filteredBatches.length} of {stockBatches.length} batches
+                {batchLoading
+                  ? 'Searching…'
+                  : batchTotal === 0
+                    ? batchSearch
+                      ? 'No batches match that'
+                      : 'No stock batches yet'
+                    : `Showing ${batchPage * PAGE_SIZE + 1}–${Math.min((batchPage + 1) * PAGE_SIZE, batchTotal)} of ${batchTotal}${batchSearch ? ' matching' : ''} batches`}
               </div>
             </div>
             <Button
@@ -558,6 +655,7 @@ export function InventoryPage(): React.JSX.Element {
               onDelete={handleBatchDelete}
               onViewHistory={setHistoryBatch}
             />
+            <ServerPager page={batchPage} total={batchTotal} onPage={setBatchPage} />
           </div>
         </TabsContent>
       </Tabs>

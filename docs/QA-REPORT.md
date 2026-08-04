@@ -14,10 +14,10 @@
 | Severity | Raised | Fixed | Open |
 |----------|-------:|------:|-----:|
 | 🔴 Critical | 25 | **25** | 0 |
-| 🟠 High | 40 | **37** | 3 |
+| 🟠 High | 40 | **38** | 2 |
 | 🟡 Medium | 32 | **11** | 21 |
 | ⚪ Low | 16 | **4** | 12 |
-| **Total** | **113** | **77** | **36** |
+| **Total** | **113** | **78** | **35** |
 | 📋 Operator requirements | 5 | **5** | 0 |
 
 **Every Critical and every operator requirement is now closed.** The remaining work is High and below — see [Suggested order of work](#suggested-order-of-work).
@@ -37,7 +37,7 @@ Fixed across twelve rounds — see [Fixed in this session](#-fixed-in-this-sessi
 | 9 | `3631510`, `1377df2` | H40, M17 + batch history UI, disabled-Delete explanation |
 | 10 | `5a5a184`, `b93b886` | H22, H30 (rest), H34, H38, H39, L11 (second half) + native `confirm()`/`alert()` removed, customer erasure, single-instance lock |
 | 11 | `f8d6b85`, `ae16266` | H12, H14, H23, H25 + admin password rule, E2E suite, CI, `/run-pharmapos` skill |
-| 12 | this round | H13, H16, H17, H28 + atomic Excel import, inventory audit trail, honest stock valuation |
+| 12 | this round | H13, H16, H17, H18, H28 + atomic Excel import, inventory audit trail, honest stock valuation, server-side paging |
 
 **Two passes.** Pass 1 (C1–C15, H1–H25) covered the POS, payments, printing, auth/RBAC, inventory and the schema. Pass 2 (C16–C25, H26–H40) covered the areas pass 1 listed as gaps — the full money/analytics verification, report generation, backup/restore, scheduling, logging, auto-update, the audit log, customers, and the admin-screen touch review. **Coverage is now complete**; there is no remaining unreviewed area.
 
@@ -482,7 +482,7 @@ Only ten columns are read; `createStockBatch` is called with just product, quant
 `parseFloat('1,234.50')` returns **1** — the product is created at Rs. 1.00 and counted as imported with no error. `|| 0` on `tax_rate` and `|| 5` on `reorder_level` silently rewrite legitimate values. The transaction is **per row**, so a failure at row 4,000 leaves 3,999 committed with no rollback. A missing `name` column produces one error per row, all rendered as `<li>` — 10k DOM nodes in a modal. The whole loop is synchronous on the main process with no progress indicator.
 **Fix:** Reject non-numeric cells outright (or read the native cell type), validate the header row up front, wrap the whole import in one transaction after a dry-run pass, and cap displayed errors at ~50.
 
-### H18 — 10k products will lock up the touchscreen
+### H18 ✅ FIXED (round 12) — 10k products will lock up the touchscreen
 **File:** `src/main/services/inventory.ts:29,483`, `src/renderer/src/components/inventory/ProductsTable.tsx:145`
 `listProducts()` has no `LIMIT` and no pagination — it aggregates every product against every batch, sorts by an **unindexed** `products.name`, ships ~10k rows over IPC, and the table renders them all (8 columns ≈ 80k DOM nodes, no virtualisation). Every save re-runs all of it three times over. Search is client-side, so the full fetch is unavoidable.
 **Fix:** Server-side pagination and search pushed into SQL, `CREATE INDEX idx_products_name`, and virtualise the two large tables.
@@ -615,9 +615,12 @@ Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can d
 | **H17** — numbers mangled, import half-applied, app frozen | `parseFloat('1,234.50')` returns **1**, so the product was created at Rs. 1.00 and counted as imported with no error. Numbers are now parsed whole or rejected: real numeric cells are used as-is, strings must be *entirely* numeric, and both comma thousands separators and the European decimal comma are understood. `|| 0` on `tax_rate` and `|| 5` on `reorder_level` conflated "absent" with "present but unreadable" and silently rewrote real values — absent now takes a documented default, unreadable is an error naming the row. The transaction was **per row**, so a failure at row 4,000 left 3,999 committed with nothing to roll back to; 10,000 separate transactions is also what actually froze the main process. |
 | **The import is now atomic** | Every row is parsed and validated first, and nothing is written unless the whole sheet is clean. A half-imported medicine catalogue is worse than a refused one: nobody can tell which half is missing, and the stock figures are wrong in a way no report reveals. The dialog says so explicitly instead of reporting a partial success. Duplicate barcodes *within the sheet* are caught before the database, naming both rows — left to the `UNIQUE` constraint they failed mid-transaction and rolled back the whole file with an error naming neither. A missing `Name` column is reported once rather than once per row (10,000 `<li>` nodes in a modal), and displayed errors are capped at 50 with a count of the rest. |
 | **H28** — inventory valuation counted expired and depleted stock at full retail | It summed **every** `stock_batches` row — expired batches and batches already sold down to zero included — and valued all of it at `products.cost_price` / `products.unit_price` rather than each batch's own figures. Only sellable stock now counts toward the totals (quantity remaining, not past expiry, `''` treated as no expiry per H8), priced from the batch with the product as a fallback. Expired stock is reported **separately** rather than dropped, so the operator can see and write off what is sitting there. Per-product cost and price became weighted averages across the batches actually on the shelf, because with several batches at different costs a single "cost per unit" is only meaningful as an average. Verified on a seeded fixture matching the report's own example: `expired_value` comes out at exactly **Rs. 42,500** (500 units of an expired antibiotic at Rs. 85) and Total Stock Value reads **10,250** instead of **52,750**. |
+| **H18** — 10k products shipped over IPC on every load | `listProducts()` had no `LIMIT`: it aggregated every product against every batch and shipped the lot, and the Inventory page re-ran it plus the batch list on every save. Search was client-side, so the full fetch could not be avoided. Measured on a seeded 10,000-product / 20,000-batch catalogue: **`listProducts` 200–330 ms and 4.2 MB of JSON, `listStockBatches` 250 ms and 6.2 MB** — roughly 10 MB per page load, three calls per save. Search and pagination are now pushed into SQL (`listProductsPage` / `listStockBatchesPage`, counted in the same query so the UI can say "1–50 of 10,001"). Re-measured on the same fixture: **products 3–7 ms / 21 KB, a search 7–8 ms / 21 KB, batches 20–23 ms / 15 KB** — about 40× faster on ~200× less data. The DOM half was already fixed in round 9 by the 50-row table pagination; the unpaged channel is kept for the CSV export, which genuinely does want every row. |
 | **H13** — batch quantity rewritable with no record, and no inventory mutation audited at all | The Edit pencil issued an absolute `UPDATE … SET quantity = ?` — 5 to 500 or back — with no `inventory_adjustments` row and no audit entry, so **shrinkage could not be attributed to anyone**. Across the whole inventory handler file `logAudit` appeared twice. A quantity change now routes through `adjustStockBatch`, which records the delta, the reason and who did it, and the delta is derived from the stored row rather than trusted from the renderer. `updateStockBatch` **refuses** a bare quantity write outright, so no future caller can bypass the record. The form asks why before it lets the change through, and shows what is about to be recorded. Every create, update and delete of a product, category, supplier and batch now writes an audit entry with before/after values; a price move additionally emits `PRICE_CHANGED`, because that is what a tax audit reads and it should not have to sift unrelated edits to find it. An edit that changes nothing writes nothing. |
 
 `inventory-import.ts` was extracted so the parsing and validation are testable at the seam that matters — arrays in, decisions out. **26 unit assertions** cover it with no new dependencies: esbuild (already present via Vite) bundles the module with the database and inventory layers stubbed, so it runs on plain Node with no native modules. `npm run test:import`, wired into CI.
+
+Two things surfaced only from driving the running app at 10,000 products. The **Receive Stock combobox** filtered the `products` prop client-side — with the fetch now capped at one page that would have made 9,950 products unreachable, so you could not receive stock against them at all; it now searches server-side with its own debounce. And the row-count label read *"10,001 matching products"* for the ~250 ms the debounced refetch was in flight, asserting a total that belonged to the previous query; it now shows "Searching…" and distinguishes "no products yet" from "nothing matches that".
 
 Ten new E2E specs cover the audit trail and the valuation, including that an edit which changes nothing writes nothing, that a batch quantity edit produces an `inventory_adjustments` row with the delta and the reason, and that every entry names the real actor rather than "system". **37 E2E specs, all passing.**
 
@@ -886,8 +889,7 @@ One caveat on confidence: every finding is derived from source, and the ones mar
 
 **Next, in order:**
 
-1. **H18** — 10k products render at once with no pagination or virtualisation on the POS search and quick-items surfaces.
-2. **H6** — the graphical customer-facing display is dead code; the pole display works.
+1. **H6** — the graphical customer-facing display is dead code; the pole display works. Needs a second `BrowserWindow` on the secondary screen, and both display handlers forwarding to it as well as the serial port.
 4. **H30 (rest)** — a real Google Drive OAuth flow. Blocked on a registered OAuth client; see [What I need from you](#what-i-need-from-you).
 5. **H36 (rest)** — the remaining unemitted audit actions (settings changes, backup create/restore, failed PIN attempts are done; product/batch/user/category/supplier are now done too — audit the list again and close or re-scope it).
 6. Dependency bumps: `drizzle-orm` ≥0.45.2 and `jspdf` >4.2.0 both ship with published advisories. **Held at the operator's instruction** until after the current update is pushed.

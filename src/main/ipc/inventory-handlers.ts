@@ -66,6 +66,14 @@ export function registerInventoryHandlers(): void {
     return wrap(() => withPermission(_event, 'inventory:view', () => inventory.listProducts()))
   })
 
+  // Paged and searched in SQL. The unpaged channel above is kept for the CSV
+  // export, which genuinely does want every row (H18).
+  ipcMain.handle(IPC_CHANNELS.PRODUCT_LIST_PAGE, async (_event, query) => {
+    return wrap(() =>
+      withPermission(_event, 'inventory:view', () => inventory.listProductsPage(query ?? {}))
+    )
+  })
+
   ipcMain.handle(IPC_CHANNELS.PRODUCT_CREATE, async (_event, { ...data }) => {
     return wrap(() =>
       withPermission(_event, 'inventory:create', () => {
@@ -272,6 +280,12 @@ export function registerInventoryHandlers(): void {
 
   ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_LIST, async (_event) => {
     return wrap(() => withPermission(_event, 'inventory:view', () => inventory.listStockBatches()))
+  })
+
+  ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_LIST_PAGE, async (_event, query) => {
+    return wrap(() =>
+      withPermission(_event, 'inventory:view', () => inventory.listStockBatchesPage(query ?? {}))
+    )
   })
 
   ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_CREATE, async (_event, { ...data }) => {

@@ -36,6 +36,7 @@ export const IPC_CHANNELS = {
 
   // Inventory - Products
   PRODUCT_LIST: 'product:list',
+  PRODUCT_LIST_PAGE: 'product:listPage',
   PRODUCT_CREATE: 'product:create',
   PRODUCT_UPDATE: 'product:update',
   PRODUCT_DELETE: 'product:delete',
@@ -56,6 +57,7 @@ export const IPC_CHANNELS = {
 
   // Inventory - Stock Batches
   STOCK_BATCH_LIST: 'stock:batchList',
+  STOCK_BATCH_LIST_PAGE: 'stock:batchListPage',
   STOCK_BATCH_CREATE: 'stock:batchCreate',
   STOCK_BATCH_UPDATE: 'stock:batchUpdate',
   STOCK_BATCH_DELETE: 'stock:batchDelete',

@@ -78,11 +78,15 @@ SHOT_DIR=/tmp/shots node .claude/skills/run-pharmapos/driver.mjs boot ss:home qu
 | `login` | sign in as the wizard admin |
 | `shift[:float]` | key the opening float on the numpad and open the shift |
 | `seed[:barcode:price:qty]` | insert a sellable product **and a stock batch** |
+| `bigseed[:count]` | seed a large catalogue (default 10,000 products, 2 batches each) for perf work |
 | `scan:<barcode>` | type a barcode into Product Entry and press Enter |
 | `pay:<cash>` | Pay Now → fill cash → Complete Sale |
 | `ss[:name]` | screenshot |
 | `click:<css>` | DOM `.click()` on a selector |
 | `clicktext:<text>` | click a button by its visible text — most of this UI has no stable ids |
+| `tab:<label>` | switch a Radix tab (`clicktext` cannot — see Gotchas) |
+| `sleep:<ms>` | wait, for debounced UI |
+| `time:<runs>:<expr>` | time a renderer expression and report the payload size |
 | `text[:css]` | print `innerText` |
 | `eval:<expr>` | evaluate in the renderer — this is how you reach IPC |
 | `sql:<query>` | read-only SQL against this run's database |
@@ -106,6 +110,23 @@ Quote the argument — the text contains a space. Same for the payment modal:
 ```bash
 SHOT_DIR=/tmp/shots node .claude/skills/run-pharmapos/driver.mjs boot scan:PARA500 "clicktext:Pay Now" ss:payment quit
 ```
+
+### Measuring performance
+
+`bigseed` plus `time` is how the H18 paging work was measured — and the only
+reason the 4.2 MB payload was noticed at all:
+
+```bash
+node .claude/skills/run-pharmapos/driver.mjs launch setup login bigseed:10000 \
+  "time:3:window.electron.listProductsPage('x', { limit: 50, offset: 0 })" quit
+```
+
+```json
+{"ms":[7,3,3],"payloadBytes":20918}
+```
+
+`time` reports both duration and serialised payload size, because over IPC the
+second matters as much as the first.
 
 ### Reaching IPC and the database
 
@@ -180,6 +201,10 @@ Opens a real window against the **live** database. Only for hands-on use on a ma
 - **Two IPC error conventions are both in use.** The shift, customer and setup channels *reject* (so the message arrives wrapped in Electron's `Error invoking remote method …`), while the inventory channels *return* `{ success: false, error }`. Asserting with `String(result)` on the second kind silently yields `"[object Object]"`, which matches no pattern and reads like the validation never fired. `tests/e2e/helpers/app.ts` exports `ipcError()` for this.
 
 - **`npm install` rewrites `package-lock.json`** — 666 insertions / 681 deletions here with no dependency change, because npm 11 reformats it. Dependency versions are deliberately pinned (see `docs/QA-REPORT.md`), so use `npm ci`, or `git checkout -- package-lock.json` afterwards.
+
+- **Radix tabs ignore a DOM `.click()`.** `clicktext:Stock Batches` reports `OK` and nothing happens — Radix's Tabs listen for real pointer events. That is the most misleading kind of failure, so there is a separate `tab:` command that uses Playwright's own click.
+
+- **Debounced search needs `sleep`.** The Inventory search box debounces ~250 ms before hitting the database. A screenshot taken immediately after typing shows the *previous* result set, which looks like a filtering bug and is not one.
 
 - **`npx vite build` does not work.** The forge Vite plugin supplies the entry; standalone it fails with `Could not resolve entry module "index.html"`.
 

@@ -62,6 +62,17 @@ const electronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.STOCK_DEDUCT, { productId, quantity }),
 
   // Inventory - Products
+  // `_userId` is vestigial on these two: the handler resolves the acting user
+  // from the main-process session. It is kept so the call shape matches every
+  // other inventory bridge rather than being the one odd one out.
+  listProductsPage: (
+    _userId: string,
+    query?: { search?: string; limit?: number; offset?: number; includeInactive?: boolean }
+  ) => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_LIST_PAGE, query ?? {}),
+  listStockBatchesPage: (
+    _userId: string,
+    query?: { search?: string; limit?: number; offset?: number }
+  ) => ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_LIST_PAGE, query ?? {}),
   listProducts: (userId: string) => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_LIST, { userId }),
   createProduct: (userId: string, data: unknown) =>
     ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_CREATE, { userId, ...(data as object) }),
