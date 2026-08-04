@@ -1,4 +1,5 @@
 import { getDatabase } from '../database'
+import { round2 } from '../../../shared/money'
 
 export interface SalesReportData {
   start_date: string
@@ -29,9 +30,15 @@ export interface SalesReportData {
 }
 
 export interface InventoryValuationData {
+  /** Sellable stock only, at the batch's own selling price. */
   total_value: number
+  /** Sellable stock at the price each batch was actually bought for. */
   total_cost: number
   total_items: number
+  /** Expired stock, reported separately — it is a write-off, not an asset. */
+  expired_value: number
+  expired_cost: number
+  expired_units: number
   by_category: Array<{
     category_name: string
     item_count: number
@@ -192,25 +199,68 @@ export function generateSalesReport(startDate: string, endDate: string): SalesRe
 /**
  * Generate inventory valuation report (current stock value)
  */
+/**
+ * What the stock on the shelves is worth.
+ *
+ * H28. The previous version counted **every** batch row — including expired
+ * stock and batches already sold down to zero — and valued all of it at
+ * `products.cost_price` and `products.unit_price` rather than the batch's own
+ * figures. 500 units of an expired antibiotic at Rs. 85 inflated "Total Stock
+ * Value" by Rs. 42,500 of goods that cannot legally be sold, and a product whose
+ * price had changed since purchase was valued at today's price against stock
+ * bought at last year's cost.
+ *
+ * Now: only sellable stock counts toward the totals — quantity above zero and
+ * not past its expiry — priced from `stock_batches` with the product as a
+ * fallback for batches that carry no price of their own. Expired stock is
+ * reported separately rather than dropped, because the operator has to be able
+ * to see and write off what is sitting there.
+ */
 export function generateInventoryValuation(): InventoryValuationData {
   const db = getDatabase()
 
-  // Overall summary
+  // Sellable: has stock left, and either no expiry or an expiry not yet reached.
+  // `expiry_date = ''` is treated as "no expiry" — an empty string was stored by
+  // an earlier version and sorts below every date comparison (H8).
+  const SELLABLE = `sb.quantity > 0
+      AND (sb.expiry_date IS NULL OR sb.expiry_date = '' OR sb.expiry_date >= date('now','localtime'))`
+  const EXPIRED = `sb.quantity > 0
+      AND sb.expiry_date IS NOT NULL AND sb.expiry_date <> ''
+      AND sb.expiry_date < date('now','localtime')`
+
+  // Batch price first, product price as the fallback: a batch bought at a
+  // different cost must be valued at what it actually cost.
+  const UNIT_COST = 'COALESCE(sb.cost_price, p.cost_price, 0)'
+  const UNIT_VALUE = 'COALESCE(sb.selling_price, p.unit_price, 0)'
+
   const summary = db
     .prepare(
       `
     SELECT
       COUNT(DISTINCT p.id) as total_items,
-      COALESCE(SUM(sb.quantity * p.cost_price), 0) as total_cost,
-      COALESCE(SUM(sb.quantity * p.unit_price), 0) as total_value
+      COALESCE(SUM(sb.quantity * ${UNIT_COST}), 0) as total_cost,
+      COALESCE(SUM(sb.quantity * ${UNIT_VALUE}), 0) as total_value
     FROM products p
-    LEFT JOIN stock_batches sb ON p.id = sb.product_id
+    JOIN stock_batches sb ON p.id = sb.product_id AND ${SELLABLE}
     WHERE p.is_active = 1
   `
     )
-    .get() as any
+    .get() as { total_items: number; total_cost: number; total_value: number }
 
-  // By category
+  const expired = db
+    .prepare(
+      `
+    SELECT
+      COALESCE(SUM(sb.quantity), 0) as expired_units,
+      COALESCE(SUM(sb.quantity * ${UNIT_COST}), 0) as expired_cost,
+      COALESCE(SUM(sb.quantity * ${UNIT_VALUE}), 0) as expired_value
+    FROM products p
+    JOIN stock_batches sb ON p.id = sb.product_id AND ${EXPIRED}
+    WHERE p.is_active = 1
+  `
+    )
+    .get() as { expired_units: number; expired_cost: number; expired_value: number }
+
   const byCategory = db
     .prepare(
       `
@@ -218,43 +268,47 @@ export function generateInventoryValuation(): InventoryValuationData {
       COALESCE(c.name, 'Uncategorized') as category_name,
       COUNT(DISTINCT p.id) as item_count,
       COALESCE(SUM(sb.quantity), 0) as total_quantity,
-      COALESCE(SUM(sb.quantity * p.cost_price), 0) as total_cost,
-      COALESCE(SUM(sb.quantity * p.unit_price), 0) as total_value
+      COALESCE(SUM(sb.quantity * ${UNIT_COST}), 0) as total_cost,
+      COALESCE(SUM(sb.quantity * ${UNIT_VALUE}), 0) as total_value
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
-    LEFT JOIN stock_batches sb ON p.id = sb.product_id
+    JOIN stock_batches sb ON p.id = sb.product_id AND ${SELLABLE}
     WHERE p.is_active = 1
     GROUP BY c.id, c.name
     ORDER BY total_value DESC
   `
     )
-    .all() as any[]
+    .all() as InventoryValuationData['by_category']
 
-  // By product (with stock)
+  // Weighted unit figures, not the product's current price: with several batches
+  // at different costs a single "cost per unit" is only meaningful as an average
+  // of what is actually on the shelf.
   const byProduct = db
     .prepare(
       `
     SELECT
       p.name as product_name,
-      COALESCE(SUM(sb.quantity), 0) as quantity,
-      p.cost_price as cost_per_unit,
-      p.unit_price as unit_price,
-      COALESCE(SUM(sb.quantity), 0) * p.cost_price as total_cost,
-      COALESCE(SUM(sb.quantity), 0) * p.unit_price as total_value
+      SUM(sb.quantity) as quantity,
+      ROUND(SUM(sb.quantity * ${UNIT_COST}) / SUM(sb.quantity), 2) as cost_per_unit,
+      ROUND(SUM(sb.quantity * ${UNIT_VALUE}) / SUM(sb.quantity), 2) as unit_price,
+      ROUND(SUM(sb.quantity * ${UNIT_COST}), 2) as total_cost,
+      ROUND(SUM(sb.quantity * ${UNIT_VALUE}), 2) as total_value
     FROM products p
-    LEFT JOIN stock_batches sb ON p.id = sb.product_id
+    JOIN stock_batches sb ON p.id = sb.product_id AND ${SELLABLE}
     WHERE p.is_active = 1
     GROUP BY p.id
-    HAVING quantity > 0
     ORDER BY total_value DESC
   `
     )
-    .all() as any[]
+    .all() as InventoryValuationData['by_product']
 
   return {
-    total_value: summary.total_value,
-    total_cost: summary.total_cost,
+    total_value: round2(summary.total_value),
+    total_cost: round2(summary.total_cost),
     total_items: summary.total_items,
+    expired_value: round2(expired.expired_value),
+    expired_cost: round2(expired.expired_cost),
+    expired_units: expired.expired_units,
     by_category: byCategory,
     by_product: byProduct
   }

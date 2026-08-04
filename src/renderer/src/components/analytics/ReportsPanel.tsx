@@ -34,6 +34,9 @@ interface InventoryValuationData {
   total_value: number
   total_cost: number
   total_items: number
+  expired_value: number
+  expired_cost: number
+  expired_units: number
   by_category: {
     category_name: string
     item_count: number
@@ -280,7 +283,29 @@ function buildInventoryPdf(data: InventoryValuationData, businessName: string, s
     14,
     y
   )
-  y += 8
+  y += 5
+  // Sellable stock only. The figures above used to include expired batches and
+  // batches already sold to zero, valued at the product's current price rather
+  // than what each batch cost — so "Total Stock Value" counted goods that cannot
+  // legally be sold as an asset (H28).
+  doc.text(
+    'Figures cover sellable stock only: quantity remaining, not past its expiry, priced per batch.',
+    14,
+    y
+  )
+  y += 5
+  if (data.expired_units > 0) {
+    doc.setTextColor(180, 30, 30)
+    doc.text(
+      `Excluded as expired: ${data.expired_units} unit${data.expired_units === 1 ? '' : 's'} — ` +
+        `${fmt(data.expired_cost, sym)} at cost, ${fmt(data.expired_value, sym)} at retail. Write these off.`,
+      14,
+      y
+    )
+    doc.setTextColor(...MUTED)
+    y += 5
+  }
+  y += 3
 
   // By category
   y = sectionTitle(doc, 'By Category', y)
