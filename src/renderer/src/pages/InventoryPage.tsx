@@ -302,9 +302,13 @@ export function InventoryPage(): React.JSX.Element {
   }
 
   // Excel Import
-  const [importResult, setImportResult] = useState<{ imported: number; errors: string[] } | null>(
-    null
-  )
+  const [importResult, setImportResult] = useState<{
+    imported: number
+    batchesCreated?: number
+    errors: string[]
+    errorsTruncated?: number
+    totalRows?: number
+  } | null>(null)
 
   const handleImportExcel = async () => {
     try {
@@ -618,27 +622,50 @@ export function InventoryPage(): React.JSX.Element {
           </DialogHeader>
           {importResult && (
             <div className="space-y-3">
-              {importResult.imported === 0 ? (
-                <p className="text-sm text-destructive font-medium">
-                  No products were imported.
-                </p>
-              ) : (
+              {importResult.imported > 0 ? (
                 <p className="text-sm text-green-700 font-medium">
                   {importResult.imported} product{importResult.imported !== 1 ? 's' : ''} imported
-                  successfully.
+                  {importResult.batchesCreated
+                    ? `, ${importResult.batchesCreated} with opening stock`
+                    : ''}
+                  .
                 </p>
+              ) : (
+                <>
+                  <p className="text-sm text-destructive font-medium">
+                    Nothing was imported — the file was not changed.
+                  </p>
+                  {/* The import is deliberately all-or-nothing. A half-imported
+                      medicine catalogue is worse than a refused one: nobody can
+                      tell which half is missing, and the stock figures are wrong
+                      in a way no report reveals. */}
+                  <p className="text-xs text-muted-foreground">
+                    Every row has to be valid before anything is written. Fix the rows below and
+                    import the sheet again.
+                  </p>
+                </>
               )}
               {importResult.errors.length > 0 && (
                 <div>
                   <p className="text-sm font-medium text-destructive mb-1">
-                    {importResult.errors.length} row{importResult.errors.length !== 1 ? 's' : ''}{' '}
-                    skipped:
+                    {importResult.errors.length + (importResult.errorsTruncated ?? 0)} problem
+                    {importResult.errors.length + (importResult.errorsTruncated ?? 0) !== 1
+                      ? 's'
+                      : ''}
+                    {importResult.totalRows ? ` in ${importResult.totalRows} rows` : ''}:
                   </p>
-                  <ul className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-y-auto">
+                  <ul className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-y-auto overscroll-contain">
                     {importResult.errors.map((e, i) => (
                       <li key={i}>{e}</li>
                     ))}
                   </ul>
+                  {/* Capped: 10,000 bad rows previously rendered 10,000 <li>
+                      nodes into this modal. */}
+                  {(importResult.errorsTruncated ?? 0) > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1 font-medium">
+                      …and {importResult.errorsTruncated} more not shown.
+                    </p>
+                  )}
                 </div>
               )}
               <Button className="w-full" onClick={() => setImportResult(null)}>

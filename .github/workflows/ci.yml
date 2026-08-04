@@ -29,6 +29,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Unit tests
+        run: npm run test:import
+
       - name: End-to-end tests
         # `pretest:e2e` builds first. Without it Playwright silently drives
         # whatever bundle happens to be in .vite/build — i.e. the previous commit.

@@ -4,7 +4,7 @@ import { withPermission, actingUserId } from './middleware'
 import * as inventory from '../services/inventory'
 import { getBatchLedger } from '../services/sales'
 import { logAudit } from '../services/audit'
-import { getDatabase } from '../services/database'
+import { importProductRows } from '../services/inventory-import'
 
 /** Wraps a handler in a { success, data } / { success, error } envelope. */
 async function wrap<T>(
@@ -195,12 +195,6 @@ export function registerInventoryHandlers(): void {
         return { canceled: true, imported: 0, errors: [] }
       }
 
-      const normalizeHeader = (value: unknown): string =>
-        String(value ?? '')
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9]/g, '')
-
       let sheetRows: unknown[][]
       try {
         // Preferred parser.
@@ -228,98 +222,22 @@ export function registerInventoryHandlers(): void {
           throw error
         }
       }
-      if (sheetRows.length < 1) {
-        return { canceled: false, imported: 0, errors: ['Excel file is empty'] }
-      }
-
-      const [headerRow, ...dataRows] = sheetRows
-      const headerIndexes = new Map<string, number>()
-      ;(headerRow ?? []).forEach((cell, index) => {
-        const key = normalizeHeader(cell)
-        if (key && !headerIndexes.has(key)) {
-          headerIndexes.set(key, index)
-        }
-      })
-
-      const getCell = (row: unknown[], aliases: string[]): unknown => {
-        for (const alias of aliases) {
-          const idx = headerIndexes.get(normalizeHeader(alias))
-          if (idx !== undefined) {
-            return row[idx]
-          }
-        }
-        return undefined
-      }
-
-      const errors: string[] = []
-      let imported = 0
-
-      for (let i = 0; i < dataRows.length; i++) {
-        const row = dataRows[i] ?? []
-        const rowNum = i + 2 // 1-indexed + header row
-
-        const name = String(getCell(row, ['name']) ?? '').trim()
-        if (!name) {
-          errors.push(`Row ${rowNum}: missing "name"`)
-          continue
-        }
-
-        const costPrice = parseFloat(String(getCell(row, ['cost_price', 'Cost Price']) ?? '0'))
-        const unitPrice = parseFloat(
-          String(getCell(row, ['unit_price', 'Unit Price', 'Selling Price']) ?? '0')
-        )
-        const rawCurrentStock =
-          getCell(row, ['current_stock', 'Current Stock', 'current stock', 'stock', 'Stock']) ?? ''
-        const currentStockText = String(rawCurrentStock).trim()
-        const currentStock = currentStockText === '' ? 0 : parseFloat(currentStockText)
-
-        if (isNaN(costPrice) || isNaN(unitPrice)) {
-          errors.push(`Row ${rowNum}: invalid cost_price or unit_price for "${name}"`)
-          continue
-        }
-        if (isNaN(currentStock) || currentStock < 0) {
-          errors.push(`Row ${rowNum}: invalid current_stock for "${name}"`)
-          continue
-        }
-
-        try {
-          const db = getDatabase()
-          db.transaction(() => {
-            const created = inventory.createProduct({
-              name,
-              generic_name:
-                String(getCell(row, ['generic_name', 'Generic Name']) ?? '').trim() || undefined,
-              barcode: String(getCell(row, ['barcode', 'Barcode']) ?? '').trim() || undefined,
-              sku: String(getCell(row, ['sku', 'SKU']) ?? '').trim() || undefined,
-              cost_price: costPrice,
-              unit_price: unitPrice,
-              tax_rate: parseFloat(String(getCell(row, ['tax_rate', 'Tax Rate']) ?? '0')) || 0,
-              reorder_level:
-                parseInt(String(getCell(row, ['reorder_level', 'Reorder Level']) ?? '5')) || 5,
-              unit: String(getCell(row, ['unit', 'Unit']) ?? 'pcs').trim() || 'pcs'
-            })
-            if (currentStock > 0) {
-              inventory.createStockBatch({
-                product_id: created.id,
-                quantity: currentStock,
-                cost_price: costPrice
-              })
-            }
-          })()
-          imported++
-        } catch (err: any) {
-          errors.push(`Row ${rowNum} "${name}": ${err.message}`)
-        }
-      }
+      const outcome = importProductRows(sheetRows)
 
       logAudit({
         userId: actingUserId(_event),
         action: 'PRODUCTS_IMPORTED_EXCEL',
         entityType: 'product',
-        details: { file: filePaths[0], imported, errors: errors.length }
+        details: {
+          file: filePaths[0],
+          rows: outcome.totalRows,
+          imported: outcome.imported,
+          batches: outcome.batchesCreated,
+          errors: outcome.errors.length + outcome.errorsTruncated
+        }
       })
 
-      return { canceled: false, imported, errors }
+      return { canceled: false, ...outcome }
     })
   })
 }
