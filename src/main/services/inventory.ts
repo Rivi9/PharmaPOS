@@ -3,6 +3,7 @@ import { getDb } from '../db/index'
 import { getDatabase, generateId } from './database'
 import { categories, suppliers, stockBatches, products, inventoryAdjustments } from '../db/schema'
 import type { Category, Supplier, StockBatch } from '../db/schema'
+import { round2 } from '../../shared/money'
 
 // =====================
 // PRODUCTS
@@ -52,10 +53,83 @@ export function listProducts(): any[] {
   return productList
 }
 
+/**
+ * Money and quantity validation, in the main process.
+ *
+ * H14: nothing validated on this side and the schema has no CHECK constraints,
+ * so a negative price or negative stock was storable through a direct IPC call —
+ * and a negative unit price makes every total, VAT figure and shift
+ * reconciliation downstream of it wrong.
+ */
+function assertMoney(label: string, value: unknown, { required = true } = {}): number | null {
+  if (value === undefined || value === null || value === '') {
+    if (required) throw new Error(`${label} is required`)
+    return null
+  }
+  const amount = Number(value)
+  if (!Number.isFinite(amount)) throw new Error(`${label} must be a number`)
+  if (amount < 0) throw new Error(`${label} cannot be negative`)
+  // Beyond this the REAL column starts losing cents, and it is far past any real
+  // pharmacy price — so it is a typo, not a transaction.
+  if (amount > 100_000_000) throw new Error(`${label} is implausibly large`)
+  return round2(amount)
+}
+
+function assertQuantity(label: string, value: unknown): number {
+  const qty = Number(value)
+  if (!Number.isFinite(qty)) throw new Error(`${label} must be a number`)
+  if (qty < 0) throw new Error(`${label} cannot be negative`)
+  if (!Number.isInteger(qty)) throw new Error(`${label} must be a whole number`)
+  if (qty > 1_000_000) throw new Error(`${label} is implausibly large`)
+  return qty
+}
+
+/**
+ * H12: expiry was never validated anywhere. A typo of `2025` for `2035` silently
+ * makes a full batch unsellable (FEFO excludes expired stock); `20265` sorts as a
+ * far-future date and defeats every expiry alert the pharmacy relies on.
+ *
+ * An expiry already in the past is allowed on purpose — stock does expire while
+ * it is on the shelf, and the operator has to be able to record what is really
+ * there. What is rejected is a date that cannot be true.
+ */
+function assertExpiryDate(value: string | null | undefined): string | null {
+  if (value === undefined || value === null || value.trim() === '') return null
+  const text = value.trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    throw new Error('Expiry date must be in YYYY-MM-DD form')
+  }
+  const parsed = new Date(text + 'T00:00:00')
+  if (Number.isNaN(parsed.getTime()) || !text.startsWith(String(parsed.getFullYear()))) {
+    throw new Error(`"${text}" is not a real date`)
+  }
+  const year = parsed.getFullYear()
+  const thisYear = new Date().getFullYear()
+  if (year < thisYear - 20) throw new Error('Expiry date is too far in the past to be real')
+  if (year > thisYear + 30) throw new Error('Expiry date is too far in the future to be real')
+  return text
+}
+
+/** Names are the operator's only handle on a row; a blank one is unusable. */
+function assertName(label: string, value: unknown): string {
+  const name = String(value ?? '').trim()
+  if (!name) throw new Error(`${label} is required`)
+  if (name.length > 200) throw new Error(`${label} is too long`)
+  return name
+}
+
 export function createProduct(data: ProductData): { id: string } {
   const db = getDatabase()
   const id = generateId()
   const now = new Date().toISOString()
+
+  const name = assertName('Product name', data.name)
+  const costPrice = assertMoney('Cost price', data.cost_price) ?? 0
+  const unitPrice = assertMoney('Selling price', data.unit_price) ?? 0
+  const taxRate = assertMoney('Tax rate', data.tax_rate ?? 0) ?? 0
+  if (taxRate > 100) throw new Error('Tax rate cannot exceed 100%')
+  const reorderLevel = assertQuantity('Reorder level', data.reorder_level ?? 10)
+  const reorderQty = assertQuantity('Reorder quantity', data.reorder_qty ?? 50)
 
   db.prepare(
     `
@@ -69,18 +143,18 @@ export function createProduct(data: ProductData): { id: string } {
   `
   ).run(
     id,
-    data.name,
-    data.generic_name || null,
-    data.barcode || null,
-    data.sku || null,
+    name,
+    data.generic_name?.trim() || null,
+    data.barcode?.trim() || null,
+    data.sku?.trim() || null,
     data.category_id || null,
     data.supplier_id || null,
-    data.cost_price,
-    data.unit_price,
-    data.tax_rate ?? 0,
+    costPrice,
+    unitPrice,
+    taxRate,
     data.is_tax_inclusive ?? 1,
-    data.reorder_level ?? 10,
-    data.reorder_qty ?? 50,
+    reorderLevel,
+    reorderQty,
     data.unit || 'piece',
     data.track_expiry ?? 1,
     data.is_active ?? 1,
@@ -98,13 +172,15 @@ export function updateProduct(id: string, data: Partial<ProductData>): void {
   const fields: string[] = []
   const values: any[] = []
 
+  // Same rules as createProduct: an edit is just as capable of storing a negative
+  // price as a create, and only the create path was guarded.
   if (data.name !== undefined) {
     fields.push('name = ?')
-    values.push(data.name)
+    values.push(assertName('Product name', data.name))
   }
   if (data.generic_name !== undefined) {
     fields.push('generic_name = ?')
-    values.push(data.generic_name || null)
+    values.push(data.generic_name?.trim() || null)
   }
   if (data.barcode !== undefined) {
     fields.push('barcode = ?')
@@ -124,15 +200,17 @@ export function updateProduct(id: string, data: Partial<ProductData>): void {
   }
   if (data.cost_price !== undefined) {
     fields.push('cost_price = ?')
-    values.push(data.cost_price)
+    values.push(assertMoney('Cost price', data.cost_price))
   }
   if (data.unit_price !== undefined) {
     fields.push('unit_price = ?')
-    values.push(data.unit_price)
+    values.push(assertMoney('Selling price', data.unit_price))
   }
   if (data.tax_rate !== undefined) {
+    const taxRate = assertMoney('Tax rate', data.tax_rate) ?? 0
+    if (taxRate > 100) throw new Error('Tax rate cannot exceed 100%')
     fields.push('tax_rate = ?')
-    values.push(data.tax_rate)
+    values.push(taxRate)
   }
   if (data.is_tax_inclusive !== undefined) {
     fields.push('is_tax_inclusive = ?')
@@ -140,11 +218,11 @@ export function updateProduct(id: string, data: Partial<ProductData>): void {
   }
   if (data.reorder_level !== undefined) {
     fields.push('reorder_level = ?')
-    values.push(data.reorder_level)
+    values.push(assertQuantity('Reorder level', data.reorder_level))
   }
   if (data.reorder_qty !== undefined) {
     fields.push('reorder_qty = ?')
-    values.push(data.reorder_qty)
+    values.push(assertQuantity('Reorder quantity', data.reorder_qty))
   }
   if (data.unit !== undefined) {
     fields.push('unit = ?')
@@ -465,16 +543,21 @@ export function createStockBatch(data: StockBatchData): { id: string } {
   const now = new Date().toISOString()
   const receivedDate = data.received_date || new Date().toISOString().split('T')[0]
 
+  const quantity = assertQuantity('Quantity', data.quantity)
+  const costPrice = assertMoney('Cost price', data.cost_price) ?? 0
+  const sellingPrice = assertMoney('Selling price', data.selling_price, { required: false })
+  const expiryDate = assertExpiryDate(data.expiry_date)
+
   drizzleDb
     .insert(stockBatches)
     .values({
       id,
       productId: data.product_id,
-      batchNumber: data.batch_number ?? null,
-      quantity: data.quantity,
-      costPrice: data.cost_price,
-      sellingPrice: data.selling_price ?? null,
-      expiryDate: data.expiry_date ?? null,
+      batchNumber: data.batch_number?.trim() || null,
+      quantity,
+      costPrice,
+      sellingPrice,
+      expiryDate,
       receivedDate,
       supplierId: data.supplier_id ?? null,
       createdAt: now
@@ -517,28 +600,34 @@ export function updateStockBatch(id: string, data: Partial<StockBatchData>): voi
 
   if (data.batch_number !== undefined) {
     fields.push('batch_number = ?')
-    values.push(data.batch_number || null)
+    values.push(data.batch_number?.trim() || null)
   }
   if (data.quantity !== undefined) {
     fields.push('quantity = ?')
-    values.push(data.quantity)
+    values.push(assertQuantity('Quantity', data.quantity))
   }
   if (data.cost_price !== undefined) {
     fields.push('cost_price = ?')
-    values.push(data.cost_price)
+    values.push(assertMoney('Cost price', data.cost_price))
   }
   if (data.selling_price !== undefined) {
     fields.push('selling_price = ?')
-    values.push(data.selling_price === null ? null : data.selling_price)
+    values.push(assertMoney('Selling price', data.selling_price, { required: false }))
   }
   if (data.expiry_date !== undefined) {
     fields.push('expiry_date = ?')
-    values.push(data.expiry_date || null)
+    // NULL, never '': an empty string sorts below every date comparison, which
+    // silently suppressed every expiry warning for that batch (H8).
+    values.push(assertExpiryDate(data.expiry_date))
   }
   if (data.supplier_id !== undefined) {
     fields.push('supplier_id = ?')
     values.push(data.supplier_id || null)
   }
+
+  // An UPDATE with no SET clause is a syntax error, so an all-undefined payload
+  // used to throw raw SQL at the operator.
+  if (fields.length === 0) return
 
   values.push(id)
 
@@ -661,9 +750,7 @@ export function exportProductsToCSV(): string {
   ])
 
   // Combine headers and rows
-  const csvContent = [headers, ...rows]
-    .map((row) => row.map(csvCell).join(','))
-    .join('\n')
+  const csvContent = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\n')
 
   return csvContent
 }

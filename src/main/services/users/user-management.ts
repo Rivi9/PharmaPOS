@@ -29,8 +29,12 @@ const MIN_PASSWORD_LENGTH = 8
  * Enforced in the service so every entry point inherits it. The change-password
  * dialog only rejected whitespace, and the setup wizard's "at least 8 characters"
  * copy was never actually checked — a one-character admin password was accepted.
+ *
+ * Exported because the first-run wizard creates the pharmacy's only admin
+ * through its own INSERT (no authenticated user exists yet to pass RBAC), so it
+ * cannot go through `createUser` and has to call this directly.
  */
-function assertPasswordStrength(password: string, username?: string): void {
+export function assertPasswordStrength(password: string, username?: string): void {
   if (!password || password.length < MIN_PASSWORD_LENGTH) {
     throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`)
   }

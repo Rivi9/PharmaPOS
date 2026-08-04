@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    # Windows, not ubuntu: the target is a Windows 10 POS machine, better-sqlite3
+    # and usb are native, and the Squirrel install hooks are Windows-only. A green
+    # Linux run would not tell us the shipped artefact works.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Must be >= 22.5 for `node:sqlite`, which the E2E fixtures use instead
+          # of better-sqlite3 (that copy is built against Electron's ABI and
+          # cannot be required from the test process).
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: End-to-end tests
+        # `pretest:e2e` builds first. Without it Playwright silently drives
+        # whatever bundle happens to be in .vite/build — i.e. the previous commit.
+        run: npm run test:e2e
+        env:
+          CI: 'true'
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14

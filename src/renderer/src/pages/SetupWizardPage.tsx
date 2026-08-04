@@ -26,6 +26,25 @@ export function SetupWizardPage(): React.JSX.Element {
     adminFullName: ''
   })
 
+  // Mirrors assertPasswordStrength() in the main process. The server is still the
+  // authority — this only saves the operator a round-trip on the very first screen
+  // they ever see.
+  const pw = formData.adminPassword
+  const passwordProblem =
+    pw.length === 0
+      ? null
+      : pw.length < 8
+        ? 'Password must be at least 8 characters'
+        : pw.toLowerCase() === formData.adminUsername.trim().toLowerCase()
+          ? 'Password must not be the same as the username'
+          : null
+
+  const adminStepIncomplete =
+    !formData.adminUsername.trim() ||
+    !formData.adminFullName.trim() ||
+    pw.length < 8 ||
+    passwordProblem !== null
+
   const handleNext = () => {
     if (currentStep < 3) {
       setCurrentStep(currentStep + 1)
@@ -171,8 +190,16 @@ export function SetupWizardPage(): React.JSX.Element {
                   placeholder="Enter a strong password"
                   required
                 />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Choose a strong password with at least 8 characters
+                {/* This line used to be copy only — nothing checked it, here or
+                    in the main process. It now reflects the real rule. */}
+                <p
+                  className={
+                    passwordProblem
+                      ? 'text-xs text-destructive font-medium mt-1'
+                      : 'text-xs text-muted-foreground mt-1'
+                  }
+                >
+                  {passwordProblem ?? 'At least 8 characters, and not the same as the username'}
                 </p>
               </div>
             </div>
@@ -230,11 +257,7 @@ export function SetupWizardPage(): React.JSX.Element {
             {currentStep < 3 ? (
               <Button
                 onClick={handleNext}
-                disabled={
-                  currentStep === 1
-                    ? !formData.businessName
-                    : !formData.adminUsername || !formData.adminPassword || !formData.adminFullName
-                }
+                disabled={currentStep === 1 ? !formData.businessName : adminStepIncomplete}
                 className="ml-auto"
               >
                 Next

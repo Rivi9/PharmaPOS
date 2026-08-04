@@ -259,10 +259,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
     <Dialog open={open} onOpenChange={onClose}>
       {/* A mis-tap on the overlay used to discard a keyed-in payment silently —
           payment is dismissed only via the explicit Cancel button. */}
-      <DialogContent
-        className="max-w-lg max-h-[90vh] overflow-y-auto"
-        onInteractOutside={(e) => e.preventDefault()}
-      >
+      <DialogContent className="max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="text-xl">
             Complete Sale — {formatCurrency(total, currencySymbol)}
@@ -437,8 +434,12 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
 
           {error && <p className="text-base text-destructive font-medium">{error}</p>}
 
-          {/* Actions */}
-          <div className="flex gap-3 pt-1">
+          {/* Actions — sticky. "Complete Sale" used to start ~215px below the
+              fold on every sale, and the only thing under the finger in the
+              scroll region was the numpad: a drag inside Chromium's ~8px touch
+              slop registers as a click, injecting a stray digit into the amount
+              being confirmed. */}
+          <div className="sticky bottom-0 -mx-6 -mb-6 flex gap-3 border-t bg-background px-6 py-4">
             <Button
               variant="outline"
               onClick={onClose}

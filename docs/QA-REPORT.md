@@ -14,15 +14,15 @@
 | Severity | Raised | Fixed | Open |
 |----------|-------:|------:|-----:|
 | 🔴 Critical | 25 | **25** | 0 |
-| 🟠 High | 40 | **29** | 11 |
+| 🟠 High | 40 | **33** | 7 |
 | 🟡 Medium | 32 | **11** | 21 |
 | ⚪ Low | 16 | **4** | 12 |
-| **Total** | **113** | **69** | **44** |
+| **Total** | **113** | **73** | **40** |
 | 📋 Operator requirements | 5 | **5** | 0 |
 
 **Every Critical and every operator requirement is now closed.** The remaining work is High and below — see [Suggested order of work](#suggested-order-of-work).
 
-Fixed across ten rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
+Fixed across eleven rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
 
 | Round | Commit | Closed |
 |---|---|---|
@@ -36,6 +36,7 @@ Fixed across ten rounds — see [Fixed in this session](#-fixed-in-this-session)
 | 8 | `f488d65`, `0d1b1a1` | **R1, R2**, R4, H4, M16 |
 | 9 | `3631510`, `1377df2` | H40, M17 + batch history UI, disabled-Delete explanation |
 | 10 | `5a5a184`, `b93b886` | H22, H30 (rest), H34, H38, H39, L11 (second half) + native `confirm()`/`alert()` removed, customer erasure, single-instance lock |
+| 11 | this round | H12, H14, H23, H25 + admin password rule, 27-test E2E suite, CI |
 
 **Two passes.** Pass 1 (C1–C15, H1–H25) covered the POS, payments, printing, auth/RBAC, inventory and the schema. Pass 2 (C16–C25, H26–H40) covered the areas pass 1 listed as gaps — the full money/analytics verification, report generation, backup/restore, scheduling, logging, auto-update, the audit log, customers, and the admin-screen touch review. **Coverage is now complete**; there is no remaining unreviewed area.
 
@@ -450,7 +451,7 @@ The handler passes the whole data object where a string is expected (`updateCate
 All four submit handlers are `if (result.success) { …close… }` with no `else`, while the dialog **always** calls `reset()`. A duplicate barcode therefore blanks the entire form (create) or silently reverts the edits (update) with no message shown. A cashier — who holds `inventory:view` and can reach the page — gets this on every save attempt.
 **Fix:** Add `else { setFormError(result.error) }` to all four, surface it in the dialog, and only `reset()` on success.
 
-### H12 — Expiry dates are never validated
+### H12 ✅ FIXED (round 11) — Expiry dates are never validated
 **File:** `src/renderer/src/components/inventory/StockBatchFormDialog.tsx:29`, `src/main/services/inventory.ts:459`
 `z.string().optional()` with no date parse and no bounds; main copies the string straight into TEXT. `2020-01-01`, `2026-13-45` and locale-formatted `20/08/2026` all save cleanly, and a batch may expire before it was received. Given expiry is legally critical here, entry is the last place to catch a typo.
 **Fix:** Validate the format and parseability, reject past dates (with an explicit opt-in for receiving stock destined for return), enforce `expiry_date > received_date`, and mirror all of it in the main process.
@@ -460,7 +461,7 @@ All four submit handlers are `if (result.success) { …close… }` with no `else
 The Edit pencil issues an absolute `UPDATE … SET quantity = ?` — 5 to 500 or back — with no `inventory_adjustments` row and no `logAudit`. Across the whole inventory handler file `logAudit` appears **twice** (`STOCK_ADJUSTED` on the broken channel of M14, and the Excel import). Creating, updating or deleting products, categories, suppliers and batches leaves **no trace whatsoever**, so shrinkage cannot be attributed and price history cannot be reconstructed for tax.
 **Fix:** Route quantity changes through `adjustStockBatch` (delta + reason + user, which already writes adjustments) and drop `quantity` from `updateStockBatch`. Add `logAudit` with before/after values to every mutating handler.
 
-### H14 — No main-process validation and no CHECK constraints: negative prices and negative stock are storable
+### H14 ✅ FIXED (round 11) — No main-process validation and no CHECK constraints: negative prices and negative stock are storable
 **File:** `src/main/services/inventory.ts:53`, `src/main/db/migrations/0000_chilly_alice.sql:64-85`
 The UI zod schemas are the only gate and the Excel importer bypasses them entirely, so `unit_price = -50` imports fine. `adjustStockBatch` applies `quantity + ?` with no floor, so `-999` leaves `quantity = -900`, which then *subtracts* from `SUM(sb.quantity)` and understates that product's stock. The migration has zero `CHECK` clauses.
 **Fix:** One shared zod schema used by the IPC handler **and** the importer; add `CHECK (quantity >= 0)`, `CHECK (unit_price >= 0)`, `CHECK (cost_price >= 0)`; clamp adjustments at 0.
@@ -505,7 +506,7 @@ No attempt counter, no delay, no lockout, and `logAudit` fires only on success �
 `SHIFT_START/END/GET_ACTIVE/COMPUTE_EXPECTED_CASH` and `SALE_CREATE` perform no permission check and no ownership validation. Consequently: `endShift({shiftId: <someone else's>, closingCash: 0})` closes another cashier's shift and rewrites their cash figure; with no status check an already-closed shift can be re-closed repeatedly, overwriting `closing_cash`/`ended_at` and duplicating audit rows; `SHIFT_END` returns `{success:true}` when `shiftId` matches nothing (0 rows updated, no audit row) — a pure silent failure; and `SALE_CREATE` takes `user_id`/`shift_id` from the payload, so a sale can be booked against a **closed, already-reconciled** shift and never appear in any cash count.
 **Fix:** Resolve the actor from the main-process session, require the permission, add `AND status='active' AND user_id=?` to the End Shift update and throw if `changes === 0`, and look up the caller's own active shift server-side in `createSale`.
 
-### H23 — PaymentModal and EndShiftModal are taller than the screen; the confirm button is unreachable by touch
+### H23 ✅ FIXED (round 11) — PaymentModal and EndShiftModal are taller than the screen; the confirm button is unreachable by touch
 **File:** `src/renderer/src/components/pos/EndShiftModal.tsx:108`, `src/renderer/src/components/ui/dialog.tsx:39`, `src/renderer/src/components/pos/PaymentModal.tsx:228`
 Measured against the available ~696px on a maximised 1366×768 POS:
 - **EndShiftModal ≈ 842px** with `max-w-md` only — the base `DialogContent` sets **no `max-h` and no overflow**, so ~73px is clipped off the bottom and the entire 48px action row sits inside it. `onInteractOutside` is prevented and the X is clipped off the top, so **the shift cannot be closed by touch at all** — only a physical Escape key escapes.
@@ -521,7 +522,7 @@ The failure is then invisible or misleading, depending on the screen: the Invent
 
 **Fix:** Don't fabricate an id. Type the value as `string | undefined`, skip the load entirely while it is undefined (`if (!userId) return`), and render a distinct "not signed in" state rather than an empty list. Once C11's main-process session lands, the renderer stops passing an id at all and this class of bug disappears — so treat this as the interim guard.
 
-### H25 — The E2E suite cannot pass and is never run
+### H25 — The E2E suite cannot pass and is never run ✅ FIXED (round 11)
 **File:** `tests/e2e/pos-workflow.spec.ts`, `.github/workflows/release.yml:26`
 The specs target `input[name="username"]`, `input[name="password"]`, `input[name="cashReceived"]` and the strings `Point of Sale` / `Sale Completed` — **none exist**: login is user tiles plus a PIN pad, the password input has no `name`, the cash field is `id="cash-received"`, and the page says "POS Terminal". `beforeEach` is an empty comment stub ("This would insert test products"). CI runs only `npm run publish`, so nothing executes them. The project therefore believes it has regression cover for the POS workflow and has none — which is how the C1–C14 class of defect reached production.
 **Fix:** Either repair the selectors and seed fixtures and add a CI job, or delete the suite so it stops implying coverage. Given the money defects above, the first sale-to-receipt test is worth more than any other single change in this report.
@@ -604,6 +605,35 @@ Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can d
 ---
 
 ## ✅ Fixed in this session
+
+### Round 11 — a working E2E suite, and the admin password rule
+
+**Reported from the shop floor during a live run of the app:** *"admin account creation still have no password 8+ check."* Correct, and my round-7 note claiming the rule was "enforced in the service so every entry point inherits it" was wrong about this path.
+
+| Item | Change |
+|---|---|
+| **Setup wizard created the pharmacy's only admin with no account rules at all** | `initializeDatabase` writes the first admin through its own `INSERT` — it has to, because no authenticated user exists yet to pass RBAC — and so inherited none of the checks `createUser` enforces. The "at least 8 characters" line under the field was **copy, never a check**: a one-character password on the account that owns the whole till was accepted, by the wizard *and* by the main process. `assertPasswordStrength` is now exported and called there, alongside username shape (3–32 chars) and non-empty business name and full name. The wizard also validates live, disables **Next** until the password is acceptable, and turns the hint red with the actual reason — so the operator finds out on the field, not after submitting. |
+| `INSERT OR IGNORE` swallowed a username collision | The wizard reported success and then nobody could sign in with the credentials they had just chosen. It now checks `changes === 0` and names the taken username. |
+| **H25** — the E2E suite could not pass and never ran | It was worse than not existing: it *implied* regression cover for the POS while every selector was fiction. `input[name="username"]`, `input[name="password"]`, `input[name="cashReceived"]`, `text=Point of Sale` — none of those exist. `beforeEach` was an empty comment ("This would insert test products"), the fixture read `src/main/db/schema.sql` which is not a file in this repo, and the launcher pointed at `out/main/index.js` from a build layout the project no longer uses. Deleted and rebuilt: 19 specs across setup, shift guards, customers and a full cash sale. |
+
+| **H23** — the End Shift dialog could not be closed by touch | `max-h` and `overflow` belonged on the base `DialogContent` and were on neither. `EndShiftModal` came to ~842px against the ~696px available on a maximised 1366×768 till, so the whole 48px action row fell off the bottom — and with `onInteractOutside` prevented and the X clipped off the top too, **the shift could not be closed by touch at all**; only a physical Escape key got out. The base now carries `max-h-[90vh] overflow-y-auto`, and both action rows are `sticky bottom-0` so the confirm button stays under the finger however tall the summary grows. That also fixes PaymentModal, where "Complete Sale" started ~215px below the fold and the only thing under the finger in the scroll region was the numpad — a drag inside Chromium's ~8px touch slop registers as a click and injected a stray digit into the amount being confirmed. |
+| **H14** — negative prices and negative stock were storable | Nothing validated on the main-process side and the schema carries no CHECK constraints, so a direct IPC call could store a negative unit price — and every total, VAT figure and shift reconciliation downstream of it is then wrong. Money, quantities and names are now validated in `inventory.ts` on **both** the create and update paths (only creates would have been half a fix — an edit stores a negative price just as easily), amounts are rounded to cents on the way in, and implausible magnitudes are rejected as typos. |
+| **H12** — expiry dates were never validated | A typo of `2025` for `2035` silently makes a full batch unsellable, because FEFO excludes expired stock; `20265` sorts as a far-future date and defeats every expiry alert the pharmacy relies on. Shape, real-date and plausible-range checks now apply. A **past** expiry is still accepted on purpose — stock does expire on the shelf and the operator has to be able to record what is really there; what is rejected is a date that cannot be true. A blank expiry stores as `NULL`, never `''` (H8). |
+
+**The sale-to-receipt test now exists** — the one the report called worth more than any other single change. It seeds a product and a batch, scans the barcode, tenders cash, then asserts against the database what the UI cannot show: receipt number shape, `total` 25 / tendered 100 / change 75, every stored amount exactly 2dp (C4), stock down by one *in the batch that was dispensed* (H4), `sale_items.cost_price` equal to the batch cost rather than zero or retail (C5), `shift_id` and `user_id` present from the session rather than the payload (H22), and expected drawer cash of 5025 from a 5000 float — cash retained, not cash tendered (C2). Two more cover the guards that have no UI: a sale with no open shift, and an expired-only batch being refused.
+
+**Three things had to be discovered to make Playwright work here**, all now encoded in the harness rather than in someone's memory:
+
+- **The packaged exe cannot be driven.** electron-forge ships with the `EnableNodeCliInspectArguments` fuse disabled, so `_electron.launch()` fails with a bare `Process failed to launch!`. The harness launches the dev Electron binary against the same `.vite/build` output.
+- **`ELECTRON_RUN_AS_NODE` is tested for presence, not value.** Passing `''` still boots Electron as plain Node — no window, same opaque launch failure. The key has to be deleted from the child environment. Easy to leave exported after using `electron` to run a one-off script, which is exactly how I hit it.
+- **`better-sqlite3` cannot be required from the test process.** It is compiled against Electron's ABI. Fixtures use `node:sqlite`, which ships with the runtime and needs no rebuild.
+- **Stale `.vite/build` silently tests the previous commit.** This bit twice — once reporting 5/19 against code I had already fixed. `pretest:e2e` now runs the build, so `npm run test:e2e` cannot test yesterday's bundle.
+
+A fifth thing surfaced only once the specs were green: **`app.close()` never resolves.** The End-Shift close guard answers any quit request with `preventDefault()` and re-shows the window — by design, so Alt+F4 cannot skip the cash count — so Playwright reported a 120-second worker-teardown timeout on runs where every assertion had already passed. Teardown now releases the guard through the same `app:confirm-close` channel the app itself uses when End Shift completes, then closes gracefully. That took the suite from ~13 minutes with three phantom failures to **47 seconds, all green**. Worth knowing outside the tests too: nothing can quit this app programmatically without releasing that guard first, which is exactly why the updater had to (H34).
+
+**Result: 27 specs, all passing, ~1.2 minutes** — setup wizard (5), shift guards (6), customers (5), inventory validation (8), cash sale (3). A new `.github/workflows/ci.yml` runs typecheck and the suite on every push and pull request, on `windows-latest` — a green Linux run would not tell us the shipped artefact works, given native modules and Windows-only Squirrel hooks.
+
+Isolation: every test gets its own `--user-data-dir` *and* its own `TEST_DB_PATH`, so a run can never touch the operator's real database. Verified — the live file's mtime is unchanged across every run in this session.
 
 ### Round 10 — customers and the last of the native dialogs (`5a5a184` onward)
 
@@ -834,14 +864,12 @@ One caveat on confidence: every finding is derived from source, and the ones mar
 
 **Next, in order:**
 
-1. **H25** — a sale-to-receipt E2E test. Nothing above can be protected from regression until one exists, and the suite currently *implies* coverage it does not have.
-2. **H23** — `EndShiftModal` is ~842px against ~696px of screen with no `max-h` on the base `DialogContent`, so the confirm row is clipped and the shift cannot be closed by touch at all. This is the last defect that can strand an operator mid-task.
-3. **H16, H17** — Excel import discards expiry date, batch number, category and supplier, mangles numbers and can half-apply. It is how a pharmacy loads its catalogue.
-4. **H5, H12, H13, H14** — the remaining input-validation gaps: unlimited refunds, unvalidated expiry dates, unaudited batch rewrites, and storable negative prices/stock.
-5. **H28** — inventory valuation counts expired and depleted batches at full retail.
-6. **H18, H6** — 10k-product touch performance, and the dead graphical customer display.
-7. **H30 (rest)** — a real Google Drive OAuth flow. Blocked on a registered OAuth client; see [What I need from you](#what-i-need-from-you).
-8. Dependency bumps: `drizzle-orm` ≥0.45.2 and `jspdf` >4.2.0 both ship with published advisories. **Held at the operator's instruction** until after the current update is pushed — see the note in [Build, CI, dependencies](#-build-ci-dependencies).
+1. **H16, H17** — Excel import discards expiry date, batch number, category and supplier, mangles numbers and can half-apply. It is how a pharmacy loads its catalogue, so it is the largest remaining hole.
+2. **H5, H13** — unlimited refunds beyond what was sold, and batch quantity rewritable with no adjustment record.
+3. **H28** — inventory valuation counts expired and depleted batches at full retail.
+4. **H18, H6** — 10k-product touch performance, and the dead graphical customer display.
+5. **H30 (rest)** — a real Google Drive OAuth flow. Blocked on a registered OAuth client; see [What I need from you](#what-i-need-from-you).
+6. Dependency bumps: `drizzle-orm` ≥0.45.2 and `jspdf` >4.2.0 both ship with published advisories. **Held at the operator's instruction** until after the current update is pushed.
 
 ### Original order (retained for reference)
 
