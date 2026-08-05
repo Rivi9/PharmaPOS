@@ -52,6 +52,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   const clearCart = usePOSStore((state) => state.clearCart)
   const currentShift = useShiftStore((state) => state.currentShift)
   const addToTodaySales = useShiftStore((state) => state.addToTodaySales)
+  const refreshTodaySales = useShiftStore((state) => state.refreshTodaySales)
   const currencySymbol = useSettingsStore((state) => state.settings.currency_symbol)
   const cardEnabled = useSettingsStore((state) => state.settings.card_payment_enabled !== '0')
 
@@ -222,6 +223,9 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
       }
 
       addToTodaySales(total)
+      // Then reconcile against the database, so the header cannot drift from what
+      // the shift actually took (L4).
+      void refreshTodaySales(currentShift.id)
 
       // Drawer is kicked independently of printing. It used to ride inside the
       // receipt byte stream, so a cashier who pressed Close instead of Print — or

@@ -3,6 +3,8 @@ import { Search, Package } from 'lucide-react'
 import { Input } from '@renderer/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
 import type { Product } from '@renderer/lib/types'
+import { useSettingsStore } from '@renderer/stores/settingsStore'
+import { formatCurrency } from '@renderer/lib/calculations'
 
 interface SearchModalProps {
   open: boolean
@@ -17,6 +19,7 @@ export function SearchModal({
   onSelect,
   initialQuery
 }: SearchModalProps): React.JSX.Element {
+  const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Product[]>([])
   const [loading, setLoading] = useState(false)
@@ -134,7 +137,9 @@ export function SearchModal({
                         </p>
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="font-bold text-base">Rs. {product.unit_price.toFixed(2)}</p>
+                        <p className="font-bold text-base">
+                          {formatCurrency(product.unit_price, currencySymbol)}
+                        </p>
                         <p
                           className={`text-sm font-medium mt-0.5 ${getStockColor(product.total_stock)}`}
                         >

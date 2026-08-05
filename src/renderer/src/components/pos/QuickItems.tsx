@@ -3,12 +3,15 @@ import { Package } from 'lucide-react'
 import { useProductStore } from '@renderer/stores/productStore'
 import { usePOSStore } from '@renderer/stores/posStore'
 import { Button } from '@renderer/components/ui/button'
+import { useSettingsStore } from '@renderer/stores/settingsStore'
+import { formatCurrency } from '@renderer/lib/calculations'
 
 interface QuickItemsProps {
   refreshTrigger?: number
 }
 
 export function QuickItems({ refreshTrigger }: QuickItemsProps = {}): React.JSX.Element {
+  const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
   const quickItems = useProductStore((state) => state.quickItems)
   const setQuickItems = useProductStore((state) => state.setQuickItems)
   const addItem = usePOSStore((state) => state.addItem)
@@ -80,7 +83,7 @@ export function QuickItems({ refreshTrigger }: QuickItemsProps = {}): React.JSX.
 
           {/* Price */}
           <div className="w-full flex items-end justify-between mt-auto">
-            <span className="font-bold">Rs. {product.unit_price.toFixed(2)}</span>
+            <span className="font-bold">{formatCurrency(product.unit_price, currencySymbol)}</span>
             <span className="text-xs text-muted-foreground">{product.total_stock || 0}</span>
           </div>
         </Button>

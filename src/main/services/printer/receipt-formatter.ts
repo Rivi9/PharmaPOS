@@ -114,13 +114,42 @@ export async function printShiftReport(
     opening_cash: number
     closing_cash: number
     expected_cash?: number
-    total_sales: number
-    cash_sales: number
-    card_sales: number
-    transaction_count: number
   }
 ): Promise<void> {
   const db = getDatabase()
+
+  /**
+   * The sales figures are computed HERE, from the shift's own rows.
+   *
+   * They used to be parameters. The only caller had no honest source for the
+   * transaction count or the card split, so wiring this up (L6) would have meant
+   * printing zeros on a report the cashier hands over with the drawer — worse
+   * than not printing it. Voided and refunded sales are excluded, so the report
+   * agrees with the drawer reconciliation by construction.
+   */
+  const totals = db
+    .prepare(
+      `SELECT
+         COUNT(*) as transaction_count,
+         COALESCE(SUM(total), 0) as total_sales,
+         COALESCE(SUM(cash_received - COALESCE(change_given, 0)), 0) as cash_sales,
+         COALESCE(SUM(card_received), 0) as card_sales
+       FROM sales
+       WHERE shift_id = ? AND status = 'completed'`
+    )
+    .get(shiftData.shift_id) as {
+    transaction_count: number
+    total_sales: number
+    cash_sales: number
+    card_sales: number
+  }
+
+  const refunded = db
+    .prepare(
+      `SELECT COALESCE(SUM(total_refunded), 0) as refunded
+       FROM sale_refunds WHERE shift_id = ?`
+    )
+    .get(shiftData.shift_id) as { refunded: number }
   const currency =
     (
       db.prepare('SELECT value FROM settings WHERE key = ?').get('currency_symbol') as
@@ -161,18 +190,16 @@ export async function printShiftReport(
     .text(row('Actual Cash:', `${currency}${shiftData.closing_cash.toFixed(2)}`))
     .bold(true)
     .text(
-      row(
-        'Difference:',
-        `${currency}${Math.abs(diff).toFixed(2)} ${diff >= 0 ? 'OVER' : 'SHORT'}`
-      )
+      row('Difference:', `${currency}${Math.abs(diff).toFixed(2)} ${diff >= 0 ? 'OVER' : 'SHORT'}`)
     )
     .bold(false)
     .text(line + '\n')
     .text('SALES SUMMARY\n')
-    .text(row('Transactions:', shiftData.transaction_count.toString()))
-    .text(row('Total Sales:', `${currency}${shiftData.total_sales.toFixed(2)}`))
-    .text(row('Cash Sales:', `${currency}${shiftData.cash_sales.toFixed(2)}`))
-    .text(row('Card Sales:', `${currency}${shiftData.card_sales.toFixed(2)}`))
+    .text(row('Transactions:', totals.transaction_count.toString()))
+    .text(row('Total Sales:', `${currency}${totals.total_sales.toFixed(2)}`))
+    .text(row('Cash Taken:', `${currency}${totals.cash_sales.toFixed(2)}`))
+    .text(row('Card Sales:', `${currency}${totals.card_sales.toFixed(2)}`))
+    .text(row('Refunds Paid Out:', `${currency}${refunded.refunded.toFixed(2)}`))
     .text(line + '\n')
     .align('CT')
     .text('End of Shift Report\n')

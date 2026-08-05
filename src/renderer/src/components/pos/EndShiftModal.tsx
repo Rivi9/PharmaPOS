@@ -57,6 +57,7 @@ export function EndShiftModal({
   const setCurrentShift = useShiftStore((s) => s.setCurrentShift)
   const todaySalesTotal = useShiftStore((s) => s.todaySalesTotal)
   const logout = useAuthStore((s) => s.logout)
+  const currentUser = useAuthStore((s) => s.user)
   const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
 
   const openingCash = (currentShift as any)?.opening_cash ?? 0
@@ -116,6 +117,39 @@ export function EndShiftModal({
         closingCash: closingCashNum,
         notes: notes.trim() || undefined
       })
+      // L6: `printShiftReport` was implemented and exposed over IPC but nothing
+      // ever called it, so the report handed over with the drawer was never
+      // produced. Printed before signing out, while the figures are still in
+      // scope. A printer fault must not trap the cashier in a closed shift, so
+      // the failure is reported and the sign-out continues.
+      try {
+        const printed = await window.electron.printer.printShiftReport({
+          shift_id: currentShift.id,
+          user_name: currentUser?.full_name ?? 'Cashier',
+          started_at: currentShift.started_at,
+          ended_at: new Date().toISOString(),
+          opening_cash: openingCash,
+          closing_cash: closingCashNum,
+          expected_cash: expectedCash,
+          total_sales: todaySalesTotal,
+          // Cash actually taken: the expected drawer less the opening float and
+          // the mid-shift movements. Same basis as the Cash Sales tile.
+          cash_sales: Math.max(
+            0,
+            expectedCash - openingCash - cashMovements.cashIn + cashMovements.cashOut
+          ),
+          card_sales: 0,
+          transaction_count: 0
+        })
+        if (printed && (printed as { success?: boolean }).success === false) {
+          setCountError(
+            `Shift closed, but the report did not print: ${(printed as { error?: string }).error ?? 'printer did not respond'}`
+          )
+        }
+      } catch {
+        setCountError('Shift closed, but the report did not print.')
+      }
+
       setCurrentShift(null)
       logout()
       onShiftEnded?.()

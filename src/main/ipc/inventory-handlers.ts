@@ -401,26 +401,57 @@ export function registerInventoryHandlers(): void {
     return wrap(() => withPermission(_event, 'inventory:view', () => getBatchLedger(batchId)))
   })
 
+  /**
+   * M14: the preload never sent `productId`, and `inventory_adjustments.product_id`
+   * is NOT NULL — so the insert failed and rolled back the quantity change with it.
+   * The only *audited* stock-adjustment path in the app therefore did nothing at
+   * all. It is derived from the batch here rather than accepted from the renderer,
+   * which also makes it impossible to file an adjustment against the wrong product.
+   */
   ipcMain.handle(IPC_CHANNELS.STOCK_BATCH_ADJUST, async (_event, { ...params }) => {
-    return withPermission(_event, 'inventory:update', () => {
-      const { batchId, productId, adjustmentType, quantityChange, reason } = params
-      inventory.adjustStockBatch({
-        batchId,
-        productId,
-        adjustmentType: adjustmentType ?? 'correction',
-        quantityChange,
-        reason,
-        userId: actingUserId(_event)
+    return wrap(() =>
+      withPermission(_event, 'inventory:update', () => {
+        const { batchId, adjustmentType, quantityChange, reason } = params
+
+        const batch = inventory.getStockBatchById(batchId)
+        if (!batch) throw new Error('Stock batch not found')
+
+        const change = Number(quantityChange)
+        if (!Number.isFinite(change) || !Number.isInteger(change) || change === 0) {
+          throw new Error('Adjustment must be a whole number of units, and not zero')
+        }
+        if (batch.quantity + change < 0) {
+          throw new Error(
+            `Cannot remove ${Math.abs(change)} — the batch only holds ${batch.quantity}`
+          )
+        }
+        const why = String(reason ?? '').trim()
+        if (!why) throw new Error('Say why the stock is being adjusted')
+
+        inventory.adjustStockBatch({
+          batchId,
+          productId: batch.productId,
+          adjustmentType: adjustmentType ?? 'correction',
+          quantityChange: change,
+          reason: why,
+          userId: actingUserId(_event)
+        })
+        logAudit({
+          userId: actingUserId(_event),
+          action: 'STOCK_ADJUSTED',
+          entityType: 'stock_batch',
+          entityId: batchId,
+          details: {
+            product_id: batch.productId,
+            from: batch.quantity,
+            to: batch.quantity + change,
+            quantity_change: change,
+            reason: why
+          }
+        })
+        return { success: true }
       })
-      logAudit({
-        userId: actingUserId(_event),
-        action: 'STOCK_ADJUSTED',
-        entityType: 'stock_batch',
-        entityId: batchId,
-        details: { quantity_change: quantityChange, reason }
-      })
-      return { success: true }
-    })
+    )
   })
 
   // =====================

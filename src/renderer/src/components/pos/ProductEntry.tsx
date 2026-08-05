@@ -6,6 +6,8 @@ import { usePOSStore } from '@renderer/stores/posStore'
 import { SearchModal } from './SearchModal'
 import type { Product } from '@renderer/lib/types'
 import { daysUntil } from '../../../../shared/dates'
+import { useSettingsStore } from '@renderer/stores/settingsStore'
+import { formatCurrency } from '@renderer/lib/calculations'
 
 interface ProductEntryProps {
   searchOpen?: boolean
@@ -16,6 +18,7 @@ export function ProductEntry({
   searchOpen: externalSearchOpen,
   onSearchOpenChange
 }: ProductEntryProps = {}): React.JSX.Element {
+  const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
   const [barcode, setBarcode] = useState('')
   const [internalSearchOpen, setInternalSearchOpen] = useState(false)
   const [modalQuery, setModalQuery] = useState('')
@@ -199,7 +202,9 @@ export function ProductEntry({
                         )}
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-sm font-semibold">Rs. {product.unit_price.toFixed(2)}</p>
+                        <p className="text-sm font-semibold">
+                          {formatCurrency(product.unit_price, currencySymbol)}
+                        </p>
                         <p
                           className={`text-xs ${outOfStock ? 'text-destructive' : product.total_stock! < 10 ? 'text-amber-600' : 'text-green-600'}`}
                         >

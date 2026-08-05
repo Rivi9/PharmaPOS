@@ -114,12 +114,21 @@ const electronAPI = {
     ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_DELETE, { userId, id }),
   batchLedger: (userId: string, batchId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_LEDGER, { userId, batchId }),
-  adjustStockBatch: (userId: string, batchId: string, quantityChange: number, reason: string) =>
+  // `productId` is deliberately absent: the main process reads it off the batch,
+  // so an adjustment cannot be filed against the wrong product (M14).
+  adjustStockBatch: (
+    userId: string,
+    batchId: string,
+    quantityChange: number,
+    reason: string,
+    adjustmentType?: 'add' | 'remove' | 'correction'
+  ) =>
     ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_ADJUST, {
       userId,
       batchId,
       quantityChange,
-      reason
+      reason,
+      adjustmentType
     }),
 
   // Inventory - CSV Export

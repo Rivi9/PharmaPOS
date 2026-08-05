@@ -82,12 +82,24 @@ export async function listPorts(): Promise<{ path: string; manufacturer?: string
 }
 
 export async function openDisplay(portPath: string, baudRate = DEFAULT_BAUD): Promise<void> {
-  if (activePort?.isOpen) await closeDisplay()
+  // L5: the guard was `activePort?.isOpen`, so a port that had closed itself — the
+  // USB-serial adapter pulled out, the driver reloaded — left a stale non-null
+  // handle that every later write silently went nowhere through. Reset on any
+  // non-open port, not just an open one.
+  if (activePort) await closeDisplay()
 
   return new Promise((resolve, reject) => {
     const port = new SerialPort({ path: portPath, baudRate }, (err) => {
       if (err) {
         logError('Pole display connection failed', { port: portPath, error: err.message })
+        // The SerialPort object survives a failed open and holds an OS handle, so
+        // dropping the reference without destroying it leaked one per retry — and
+        // the Settings screen retries on every attempt.
+        try {
+          port.destroy()
+        } catch {
+          /* already gone */
+        }
         reject(err)
         return
       }
@@ -98,11 +110,35 @@ export async function openDisplay(portPath: string, baudRate = DEFAULT_BAUD): Pr
       showWelcome()
       resolve()
     })
+
+    // A port that drops later must not be left as a live-looking handle.
+    port.on('close', () => {
+      if (activePort === port) {
+        activePort = null
+        _currentPort = ''
+        clearTimers()
+        holdCartUpdatesUntil = 0
+        logInfo('Pole display closed')
+      }
+    })
+    port.on('error', (err: Error) => {
+      logError('Pole display port error', err)
+      if (activePort === port) {
+        activePort = null
+        _currentPort = ''
+      }
+    })
   })
 }
 
 export async function closeDisplay(): Promise<void> {
   if (!activePort?.isOpen) {
+    // Destroy rather than just forget: a non-open port can still hold a handle.
+    try {
+      activePort?.destroy()
+    } catch {
+      /* already gone */
+    }
     activePort = null
     return
   }
