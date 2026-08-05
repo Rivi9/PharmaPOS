@@ -10,7 +10,27 @@ jobs:
     # Windows, not ubuntu: the target is a Windows 10 POS machine, better-sqlite3
     # and usb are native, and the Squirrel install hooks are Windows-only. A green
     # Linux run would not tell us the shipped artefact works.
-    runs-on: windows-latest
+    #
+    # Pinned, NOT `windows-latest`.
+    #
+    # GitHub's `windows-latest` image now ships Visual Studio 18, and the
+    # `@electron/node-gyp` bundled with `@electron/rebuild` 3.7.2 has no entry for
+    # it in its version-to-year table:
+    #
+    #   - version match = ["18.8.12023.21","18","8"]
+    #   - unsupported version: 18
+    #   - invalid versionYear: undefined
+    #   → could not find a version of Visual Studio 2017 or newer to use
+    #
+    # The toolchain is right there — VC.Tools.x86.x64 and the Win11 SDK are both
+    # detected — but node-gyp discards the installation, so @serialport/bindings-cpp
+    # has no compiler and the native rebuild fails. windows-2022 carries VS 2022,
+    # which node-gyp 10.x understands.
+    #
+    # This is a pin, not a fix: windows-2022 will be retired. The durable fix is a
+    # newer @electron/rebuild (which pulls a node-gyp that knows VS 18) — held for
+    # now because dependency versions are frozen until the current update ships.
+    runs-on: windows-2022
 
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +58,8 @@ jobs:
         run: npm run test:e2e
         env:
           CI: 'true'
+          # `pretest:e2e` packages the app, which rebuilds the native modules.
+          npm_config_msvs_version: '2022'
 
       - name: Upload Playwright report
         if: always()

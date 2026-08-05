@@ -7,7 +7,26 @@ on:
 
 jobs:
   release:
-    runs-on: windows-latest
+    # Pinned, NOT `windows-latest`.
+    #
+    # GitHub's `windows-latest` image now ships Visual Studio 18, and the
+    # `@electron/node-gyp` bundled with `@electron/rebuild` 3.7.2 has no entry for
+    # it in its version-to-year table:
+    #
+    #   - version match = ["18.8.12023.21","18","8"]
+    #   - unsupported version: 18
+    #   - invalid versionYear: undefined
+    #   → could not find a version of Visual Studio 2017 or newer to use
+    #
+    # The toolchain is right there — VC.Tools.x86.x64 and the Win11 SDK are both
+    # detected — but node-gyp discards the installation, so @serialport/bindings-cpp
+    # has no compiler and the native rebuild fails. windows-2022 carries VS 2022,
+    # which node-gyp 10.x understands.
+    #
+    # This is a pin, not a fix: windows-2022 will be retired. The durable fix is a
+    # newer @electron/rebuild (which pulls a node-gyp that knows VS 18) — held for
+    # now because dependency versions are frozen until the current update ships.
+    runs-on: windows-2022
 
     steps:
       - name: Checkout code
@@ -16,7 +35,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # Same as CI, so a green CI run actually predicts a green release. This
+          # was 20 while CI used 22 — two different toolchains validating the same
+          # commit.
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -25,6 +47,11 @@ jobs:
       - name: Publish to GitHub Releases
         run: npm run publish
         env:
+          # Name the toolchain rather than letting node-gyp scan for one. On the
+          # pinned windows-2022 image this is VS 2022, and being explicit means a
+          # future image change fails loudly instead of silently picking something
+          # node-gyp then rejects.
+          npm_config_msvs_version: '2022'
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
