@@ -55,19 +55,8 @@ export function registerPOSHandlers(): void {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any)
 
-      const sale = saleData as { total: number; payment_method: string }
-      logAudit({
-        userId,
-        action: 'SALE_CREATED',
-        entityType: 'sale',
-        entityId: result.sale_id,
-        details: {
-          receipt_number: result.receipt_number,
-          shift_id: shift.id,
-          total: sale.total,
-          payment_method: sale.payment_method
-        }
-      })
+      // The SALE_CREATED audit entry is written inside createSale's transaction,
+      // so it cannot be lost between the commit and this point (M13).
       return result
     })
   })

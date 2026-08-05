@@ -339,6 +339,25 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
     // FIX 4: REMOVED — do NOT update shifts.expected_cash here
     // expected_cash is computed at shift-end from actual sales
 
+    // M13: this entry used to be written by the IPC handler AFTER the
+    // transaction committed, so a crash, a full disk or a locked database in
+    // between produced a committed, money-taken sale with no audit record and no
+    // way to notice. Inside the transaction it shares the sale's fate — the same
+    // connection, so it enlists automatically.
+    logAudit({
+      userId: saleData.user_id,
+      action: 'SALE_CREATED',
+      entityType: 'sale',
+      entityId: saleId,
+      details: {
+        receipt_number: receiptNumber,
+        shift_id: saleData.shift_id,
+        total: saleData.total,
+        payment_method: saleData.payment_method,
+        items: saleData.items.length
+      }
+    })
+
     return { sale_id: saleId, receipt_number: receiptNumber }
   })()
 }

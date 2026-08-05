@@ -9,15 +9,91 @@ const CP437: Record<number, number> = {
   0x2502: 0xb3 //  │  BOX DRAWINGS LIGHT VERTICAL
 }
 
+/**
+ * Characters this encoder had to give up on, most recently.
+ *
+ * M11: anything non-ASCII became `0x3f`, so a product, business or footer name
+ * in Sinhala or Tamil printed as `????????` — on a dispensing record. Silently.
+ *
+ * True Sinhala/Tamil printing needs the receipt rendered to a bitmap and sent in
+ * graphics mode, which needs a bundled font and cannot be verified without the
+ * printer in hand — see the QA report. What is fixed here is the *silence*:
+ * Latin text with diacritics now degrades to readable ASCII instead of question
+ * marks, and anything genuinely unrepresentable is recorded so the caller can
+ * warn the operator before it reaches a customer.
+ */
+let lastUnsupported = new Set<string>()
+
+export function unsupportedCharacters(): string[] {
+  return [...lastUnsupported]
+}
+
+export function resetUnsupportedCharacters(): void {
+  lastUnsupported = new Set<string>()
+}
+
+/**
+ * Latin letters with diacritics, folded to their base letter.
+ *
+ * `Ā` printing as `?` loses the whole word; printing as `A` loses an accent. On a
+ * medicine label the second is plainly better.
+ */
+function foldToAscii(char: string): string | null {
+  const decomposed = char.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  if (decomposed !== char && /^[\x20-\x7e]+$/.test(decomposed)) return decomposed
+  const SPECIALS: Record<string, string> = {
+    Æ: 'AE',
+    æ: 'ae',
+    Œ: 'OE',
+    œ: 'oe',
+    ß: 'ss',
+    Ø: 'O',
+    ø: 'o',
+    Ð: 'D',
+    ð: 'd',
+    Þ: 'Th',
+    þ: 'th',
+    Ł: 'L',
+    ł: 'l',
+    '–': '-',
+    '—': '-',
+    '‑': '-',
+    '‘': "'",
+    '’': "'",
+    '“': '"',
+    '”': '"',
+    '…': '...',
+    '\u00a0': ' ',
+    '€': 'EUR',
+    '£': 'GBP',
+    '×': 'x',
+    '·': '.'
+  }
+  return SPECIALS[char] ?? null
+}
+
 function encodeText(t: string): number[] {
   const bytes: number[] = []
   for (const char of t) {
-    const code = char.charCodeAt(0)
+    const code = char.codePointAt(0) ?? 0
     if (code < 0x80) {
       bytes.push(code)
-    } else {
-      bytes.push(CP437[code] ?? 0x3f) // '?' for unmapped chars
+      continue
     }
+    const mapped = CP437[code]
+    if (mapped !== undefined) {
+      bytes.push(mapped)
+      continue
+    }
+    const folded = foldToAscii(char)
+    if (folded !== null) {
+      for (const c of folded) bytes.push(c.charCodeAt(0))
+      continue
+    }
+    // Genuinely unrepresentable on a CP437 printer. Record it so the operator can
+    // be told, rather than discovering it on a customer's receipt.
+    lastUnsupported.add(char)
+    bytes.push(0x3f)
   }
   return bytes
 }

@@ -46,6 +46,7 @@ export function ReceiptPreview({
   const [loading, setLoading] = useState(true)
   const [printing, setPrinting] = useState(false)
   const [printError, setPrintError] = useState('')
+  const [printWarning, setPrintWarning] = useState('')
   const [hasPrinted, setHasPrinted] = useState(false)
   const settings = useSettingsStore((state) => state.settings)
 
@@ -105,6 +106,7 @@ export function ReceiptPreview({
     if (!receipt) return
     setPrinting(true)
     setPrintError('')
+    setPrintWarning('')
     try {
       // The handler resolves { success:false } rather than rejecting, so a catch
       // block alone never fired and a failed print looked identical to a good one.
@@ -121,6 +123,11 @@ export function ReceiptPreview({
         return
       }
       setHasPrinted(true)
+      // Printed, but not faithfully: characters the printer cannot represent came
+      // out as "?" (M11). Shown as a warning rather than an error — the receipt is
+      // in the customer's hand either way, and the operator needs to know why.
+      const warning = (result as { warning?: string })?.warning
+      setPrintWarning(warning ?? '')
     } catch (err: any) {
       setPrintError(err?.message || 'Printer did not respond. Check power and cable.')
     } finally {
@@ -144,11 +151,16 @@ export function ReceiptPreview({
               <pre className="font-mono text-xs whitespace-pre">{formatReceiptText()}</pre>
             </div>
 
+            {printWarning && (
+              <div className="flex-shrink-0 rounded-lg border border-amber-400/50 bg-amber-50 p-3">
+                <p className="text-sm font-medium text-amber-900">Printed, but not exactly</p>
+                <p className="text-xs text-amber-800 mt-1">{printWarning}</p>
+              </div>
+            )}
+
             {printError && (
               <div className="flex-shrink-0 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
-                <p className="text-sm font-medium text-destructive">
-                  Not printed: {printError}
-                </p>
+                <p className="text-sm font-medium text-destructive">Not printed: {printError}</p>
                 <p className="text-xs text-muted-foreground mt-1">
                   The sale is saved. Fix the printer and tap Print again.
                 </p>
