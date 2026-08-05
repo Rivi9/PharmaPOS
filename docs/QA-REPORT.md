@@ -15,14 +15,17 @@
 |----------|-------:|------:|-----:|
 | 🔴 Critical | 25 | **25** | 0 |
 | 🟠 High | 40 | **39** | 1 |
-| 🟡 Medium | 32 | **25** | 7 |
-| ⚪ Low | 16 | **5** | 11 |
-| **Total** | **113** | **94** | **19** |
+| 🟡 Medium | 32 | **31** | 1 |
+| ⚪ Low | 16 | **16** | 0 |
+| **Total** | **113** | **111** | **2** |
 | 📋 Operator requirements | 5 | **5** | 0 |
 
-**Every Critical and every operator requirement is now closed.** The remaining work is High and below — see [Suggested order of work](#suggested-order-of-work).
+**Every Critical, every Low and every operator requirement is now closed.** Two findings remain, both by decision rather than for lack of work:
 
-Fixed across thirteen rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
+- **H30** — a real Google Drive OAuth flow. Blocked on a registered Google Cloud OAuth client; the credential is at least no longer stored in plaintext or shipped inside every backup, and an expired sign-in now says so.
+- **M20** — money stored as SQLite `REAL`. Every write goes through `round2`, so nothing sub-cent is stored; converting to integer cents would touch every read, write and report for no behaviour the rounding does not already give.
+
+Fixed across fourteen rounds — see [Fixed in this session](#-fixed-in-this-session) for the detail of each.
 
 | Round | Commit | Closed |
 |---|---|---|
@@ -37,7 +40,8 @@ Fixed across thirteen rounds — see [Fixed in this session](#-fixed-in-this-ses
 | 9 | `3631510`, `1377df2` | H40, M17 + batch history UI, disabled-Delete explanation |
 | 10 | `5a5a184`, `b93b886` | H22, H30 (rest), H34, H38, H39, L11 (second half) + native `confirm()`/`alert()` removed, customer erasure, single-instance lock |
 | 11 | `f8d6b85`, `ae16266` | H12, H14, H23, H25 + admin password rule, E2E suite, CI, `/run-pharmapos` skill |
-| 13 | this round | M1–M7, M9, M11, M13, M15, M18, M19, M21, L9 + local dates, honest receipt encoding |
+| 14 | this round | M14, L3–L8, L10 + reload recovery, shift report, session recovery |
+| 13 | `476fcd4`, `af78f6d`, `6ab1d99`, `8f01c5c` | M1–M7, M9, M11, M13, M15, M18, M19, M21, L9 + local dates, honest receipt encoding |
 | 12 | `9acb724`, `8a27bbc`, `e7599ca`, `b286cb0`, `c016e1b` | H13, H16, H17, H18, H28, H6 + atomic Excel import, inventory audit trail, honest stock valuation, server-side paging, pole display actually working |
 
 **Two passes.** Pass 1 (C1–C15, H1–H25) covered the POS, payments, printing, auth/RBAC, inventory and the schema. Pass 2 (C16–C25, H26–H40) covered the areas pass 1 listed as gaps — the full money/analytics verification, report generation, backup/restore, scheduling, logging, auto-update, the audit log, customers, and the admin-screen touch review. **Coverage is now complete**; there is no remaining unreviewed area.
@@ -564,21 +568,21 @@ The specs target `input[name="username"]`, `input[name="password"]`, `input[name
 | M5 ✅ | `posStore.ts:62` | Scanning an item already at its stock limit is a completely silent no-op — no error, no beep. The cashier rescans or assumes it was added. |
 | M6 ✅ | `pole-display.ts:116-122` | `showSaleComplete` writes the total, then `clearCart()`'s subscription overwrites it with `0.00` milliseconds later; 3s later the change is written and **stays on the VFD indefinitely**, showing the previous customer's change to the next one. |
 | M7 ✅ | `pole-display.ts:19` vs `index.ts:138,181` | `DEFAULT_BAUD = 2400` (the documented device default) is dead code; auto-connect and the seeded setting both use **9600** (confirmed in live DB), so the VFD shows garbage out of the box — indistinguishable from "no display fitted". |
-| M8 | `settingsStore.ts:30-37` | `loadSettings` has no `catch` and is fired unawaited. A failed read leaves `isLoading` true forever and the **hardcoded fallbacks in force — `vat_rate: '0'`** — so the POS trades all day charging no VAT with no visible error. |
+| M8 ✅ | `settingsStore.ts:30-37` | `loadSettings` has no `catch` and is fired unawaited. A failed read leaves `isLoading` true forever and the **hardcoded fallbacks in force — `vat_rate: '0'`** — so the POS trades all day charging no VAT with no visible error. |
 | M9 ✅ | `sales.ts:203-218,295-304` | Product names are not snapshotted onto `sale_items`; `getReceipt` recovers them by join, so renaming a product **retroactively rewrites every past receipt**, and deleting one yields a `null` name. |
-| M10 | `receipt-formatter.ts:108` | Item names hard-truncated to 16 chars, not wrapped. "Paracetamol 500mg Tablet" and "…Syrup" both print as `Paracetamol 500m` — indistinguishable on a dispensing record. |
+| M10 ✅ | `receipt-formatter.ts:108` | Item names hard-truncated to 16 chars, not wrapped. "Paracetamol 500mg Tablet" and "…Syrup" both print as `Paracetamol 500m` — indistinguishable on a dispensing record. |
 | M11 ✅ | `escpos-builder.ts:19` | Non-ASCII maps to `0x3f`, so Sinhala/Tamil product, business or footer text prints as `????????`. |
-| M12 | `ReceiptPreview.tsx:190-204` | Reprints are unlimited and unmarked — two byte-identical documents that each look like the original invoice, and each one re-kicks the drawer. |
+| M12 ✅ | `ReceiptPreview.tsx:190-204` | Reprints are unlimited and unmarked — two byte-identical documents that each look like the original invoice, and each one re-kicks the drawer. |
 | M13 ✅ | `pos-handlers.ts:39-49`, `audit.ts:75-77` | The `SALE_CREATED` audit insert sits **outside** the sale transaction and is wrapped in a bare `catch {}`, so a disk-full or locked DB yields a committed sale with no audit record and no signal. |
-| M14 | `preload/index.ts:101`, `inventory-handlers.ts:129` | `stock:batchAdjust` never sends `productId`, which is `NOT NULL` — the insert fails and rolls back the quantity change. The **only audited stock-adjustment path in the app is unreachable**, and this handler alone isn't wrapped in `wrap()`. |
+| M14 ✅ | `preload/index.ts:101`, `inventory-handlers.ts:129` | `stock:batchAdjust` never sends `productId`, which is `NOT NULL` — the insert fails and rolls back the quantity change. The **only audited stock-adjustment path in the app is unreachable**, and this handler alone isn't wrapped in `wrap()`. |
 | M15 ✅ | `PaymentModal.tsx:145-151` | The pre-payment recheck looks products up by **name** against a `LIMIT 20` search, so a product named "Zinc" (sorting after "Calcium + Zinc" etc.) is reported out of stock when it is not, with no way to proceed. Also one IPC round-trip per cart line. |
-| M16 | `inventory.ts:186`, `queries.ts:166` | Low-stock alerts include every product that has **never** been stocked (`0 <= reorder_level`), so after a partial import the banner reads "8,000+" and real reorder signals are lost. |
-| M17 | `inventory.ts:173,483,343` | Soft-deleted products keep live batches visible and can even **receive new stock**; deactivated suppliers stay selectable with no marker; and a soft-deleted product can never be reactivated from the UI. |
+| M16 ✅ | `inventory.ts:186`, `queries.ts:166` | Low-stock alerts include every product that has **never** been stocked (`0 <= reorder_level`), so after a partial import the banner reads "8,000+" and real reorder signals are lost. |
+| M17 ✅ | `inventory.ts:173,483,343` | Soft-deleted products keep live batches visible and can even **receive new stock**; deactivated suppliers stay selectable with no marker; and a soft-deleted product can never be reactivated from the UI. |
 | M18 ✅ | `inventory.ts:506` | `updateStockBatch` silently drops `received_date` and `product_id` — correcting a mis-keyed received date appears to succeed and changes nothing. Empty `fields` would also produce invalid SQL. |
 | M19 ✅ | `InventoryPage.tsx:76-109` | Every loader is `if (success)` with no else, so a failed read renders "No products found — create your first product" to a pharmacy with 10,000 products. |
-| M20 | `schema.ts:53-55` | All money is SQLite `REAL`. Combined with C4 this is how `2701.905` got stored. Day totals drift from the sum of printed receipts. |
+| M20 ⚠️ | `schema.ts:53-55` | All money is SQLite `REAL`. Combined with C4 this is how `2701.905` got stored. Day totals drift from the sum of printed receipts. |
 | M21 ✅ | `inventory.ts:463`, `StockBatchesTable.tsx:52` | Dates use `toISOString()` (UTC) while the shop is UTC+5:30 — stock received at 02:00 local is dated the previous day, and from 05:30 local on the expiry day a batch renders "(Expired)" a day early. |
-| M22 | `AlertsPanel.tsx:12`, `AnalyticsPage.tsx:80` | Low-stock and expiry alerts are pure props with no refresh of their own — the only way to update them is the page-level Refresh, which re-runs the whole dashboard. Alerts therefore go stale as soon as stock moves, and there is no auto-refresh. See [R4](#-operator-requirements). |
+| M22 ✅ | `AlertsPanel.tsx:12`, `AnalyticsPage.tsx:80` | Low-stock and expiry alerts are pure props with no refresh of their own — the only way to update them is the page-level Refresh, which re-runs the whole dashboard. Alerts therefore go stale as soon as stock moves, and there is no auto-refresh. See [R4](#-operator-requirements). |
 
 **Second pass (M23–M32).** `KPICards.tsx:53` computes `total_profit / total_sales` with **no divide-by-zero guard**, so a day with no sales renders "**NaN% margin**" (the neighbouring card guards correctly with `|| 1`). Every date-bounded report uses the **UTC day**, shifting the Asia/Colombo reporting boundary by 5h30m — a monthly VAT return excludes 00:00–05:29 on the first and includes it on the following month's first. `getBackupStatus()` returns `{enabled,lastBackup,nextBackup}` but the renderer casts it to `{running,nextRun}`, so the scheduler dot is permanently grey, "Stop" is unreachable, and repeated clicks silently stack jobs. Retention (`cleanupOldBackups`) can delete the last good archive — manual backups count toward the quota and zero-byte failures are counted as survivors — and Drive-side retention is never called at all. Drive download resolves on the *source* stream's `end` rather than the destination's `finish`, so a restore immediately afterwards can read a truncated file, and there is no upload verification or retry. Nothing validates a backup before overwriting live data: no SQLite header check, no `integrity_check`, no size comparison, and an `.encrypted` archive restored with an empty password fails with an opaque error. The update UI has a dead progress branch, renders "Version **undefined** is ready to install", and forwards update errors to a blocking `alert()` on an hourly poll — a modal freezing the till mid-sale, with no defer option. The audit log has **no indexes at all** and paginates on `ORDER BY timestamp DESC` with no tiebreaker, so rows can be skipped or duplicated between pages; its date/user/entity filters are unreachable from the UI and would not work anyway given H35. Customer purchase history is N+1 with no index on `sale_items(sale_id)` or `sales(customer_id)`, counts fully-refunded sales at full value, and presents a page-limited sum as a lifetime total. Phone and email cannot be cleared once set (`|| undefined` means "leave alone"), and there is no server-side validation of customer input at all.
 
@@ -590,23 +594,40 @@ Also Medium, from the auth review: logout does not clear the cart or held sale (
 
 | # | File | Issue |
 |---|------|-------|
-| L1 | `receipt-formatter.ts:124-128` | Totals rows are 41 of 42 chars, so every amount sits one column short of the rules above and below. |
-| L2 | `receipt-formatter.ts:197-203` | Card receipts print no amount at all; mixed derives the card figure instead of reading `card_received`. |
-| L3 | `ReceiptPreview.tsx:74,155` | Reprints label VAT with **today's** rate against the historical amount; a zero-VAT receipt omits the VAT line entirely, and no VAT registration number is ever printed. |
-| L4 | `shiftStore.ts:31-35` | `todaySalesTotal` is an optimistic renderer counter never decremented on void/refund and only re-synced at login, so the header drifts upward all shift. |
-| L5 | `pole-display.ts:41-58` | A failed serial open leaks the `SerialPort` object; the reuse guard misses a port that closed itself. |
-| L6 | `receipt-formatter.ts:223` | `printShiftReport` is implemented and exposed but never called — the X-report handed over with the drawer is never produced. |
-| L7 | `posStore.ts:43-48` | Cart and held sale are memory-only; `Ctrl+R` (the default menu is still installed) or a power blip discards both. |
-| L8 | `ProductEntry.tsx:197`, `QuickItems.tsx:83`, `SearchModal.tsx:131` | Currency hardcoded `Rs.` in the three product-picking surfaces while the cart honours the setting — two currencies on one screen. |
+| L1 ✅ | `receipt-formatter.ts:124-128` | Totals rows are 41 of 42 chars, so every amount sits one column short of the rules above and below. |
+| L2 ✅ | `receipt-formatter.ts:197-203` | Card receipts print no amount at all; mixed derives the card figure instead of reading `card_received`. |
+| L3 ✅ | `ReceiptPreview.tsx:74,155` | Reprints label VAT with **today's** rate against the historical amount; a zero-VAT receipt omits the VAT line entirely, and no VAT registration number is ever printed. |
+| L4 ✅ | `shiftStore.ts:31-35` | `todaySalesTotal` is an optimistic renderer counter never decremented on void/refund and only re-synced at login, so the header drifts upward all shift. |
+| L5 ✅ | `pole-display.ts:41-58` | A failed serial open leaks the `SerialPort` object; the reuse guard misses a port that closed itself. |
+| L6 ✅ | `receipt-formatter.ts:223` | `printShiftReport` is implemented and exposed but never called — the X-report handed over with the drawer is never produced. |
+| L7 ✅ | `posStore.ts:43-48` | Cart and held sale are memory-only; `Ctrl+R` (the default menu is still installed) or a power blip discards both. |
+| L8 ✅ | `ProductEntry.tsx:197`, `QuickItems.tsx:83`, `SearchModal.tsx:131` | Currency hardcoded `Rs.` in the three product-picking surfaces while the cart honours the setting — two currencies on one screen. |
 | L9 ✅ | `CartItem.tsx:9-14` (+3 copies) | Days-to-expiry compares a UTC-parsed date against local midnight, so every countdown is a day optimistic and "expires today" never appears. |
-| L10 | `schema.ts:106` vs `:156` | Batch quantity is `REAL` but sale quantity is `INTEGER`: fractional units can be received and never sold, and float residue keeps a batch matching `quantity > 0` forever. |
-| L11 | `StockBatchFormDialog.tsx:109` | `setProductSearch(\`${product.name} (${product.sku})\`)` is unguarded, so a product with no SKU shows literally **`Panadol 500mg (null)`** in the Receive Stock field. `LowStockAlert.tsx:25` guards the same expression correctly — copy that. Related: eight `alert(error.message)` call sites print **`undefined`** when a non-`Error` is thrown. |
+| L10 ✅ | `schema.ts:106` vs `:156` | Batch quantity is `REAL` but sale quantity is `INTEGER`: fractional units can be received and never sold, and float residue keeps a batch matching `quantity > 0` forever. |
+| L11 ✅ | `StockBatchFormDialog.tsx:109` | `setProductSearch(\`${product.name} (${product.sku})\`)` is unguarded, so a product with no SKU shows literally **`Panadol 500mg (null)`** in the Receive Stock field. `LowStockAlert.tsx:25` guards the same expression correctly — copy that. Related: eight `alert(error.message)` call sites print **`undefined`** when a non-`Error` is thrown. |
 
 Also Low: `reactivateUser` validates nothing and silently no-ops; an admin can deactivate their own account; `user:stats` and `shift:compute-expected-cash` are ungated; the discount engine is wired into store and schema but has **no UI** and its amount is unclamped (a percentage over 100 would produce a negative total); `Product.sku` is typed non-nullable so `(null)` is rendered to users; dialog close buttons are 16×16px with hover-only feedback; `title` is the only label on the header Settings button.
 
 ---
 
 ## ✅ Fixed in this session
+
+### Round 14 — the Low pass, and two things it turned up
+
+| Item | Change |
+|---|---|
+| **M14** — the only *audited* stock-adjustment channel did nothing at all | The preload never sent `productId`, and `inventory_adjustments.product_id` is `NOT NULL`, so the insert failed and rolled back the quantity change with it. The product is now derived from the batch server-side — which also makes it impossible to file an adjustment against the wrong product — and the handler validates the delta, refuses one that would drive the batch negative, and requires a reason. |
+| **L6** — the shift report was never produced | `printShiftReport` was implemented and exposed over IPC, and nothing called it, so the report handed over with the drawer did not exist. Now printed as part of ending a shift, with a printer fault reported rather than trapping the cashier in a closed shift. **Wiring it up exposed a second problem**: the sales figures were parameters, and the caller had no honest source for the transaction count or the card split — so connecting it as written would have printed **zeros** on a document the cashier hands over. They are computed in the main process now, from the shift's own rows, excluding voided and refunded sales, so the report agrees with the drawer reconciliation by construction. Refunds paid out get their own line. |
+| **L7** — a reload discarded a part-rung basket | Cart and held sale lived only in memory, and `Ctrl+R` works because the default Electron menu is still installed. Persisted to `sessionStorage`, capped at four hours so a stale basket cannot greet a new customer, written from a store subscription so no future action can forget to. **Driving it revealed the worse half:** a reload also signed the cashier out entirely. The main-process session survives — it is keyed to the webContents, which a reload does not destroy — so a new `auth:currentUser` channel lets the renderer ask who it is, re-reading from the database so a deactivation since login is honoured. The user, the open shift and the takings all come back. Verified by screenshot. |
+| **L3** — a reprint stated a VAT rate that never applied | The percentage came from the *current* setting, so reprinting an older receipt labelled its historical VAT amount with today's rate. Derived from the sale's own figures now — VAT is extracted from the gross, so `rate = tax / (gross − tax)` — with the setting only as a fallback. |
+| **L4** — the header total drifted upward all shift | `todaySalesTotal` was an optimistic counter, only ever added to and only re-synced at login, so anything reducing takings left it reading high. It reconciles against the database after each sale. |
+| **L5** — a leaked serial port per retry | A failed open left the `SerialPort` object holding an OS handle, and the Settings screen retries on every attempt. It is destroyed now. The reuse guard also only checked `isOpen`, so a port that had closed itself — adapter unplugged, driver reloaded — left a stale non-null handle that every later write silently went nowhere through. |
+| **L8** — two currencies on one screen | The three product-picking surfaces hardcoded `Rs.` while the cart honours the setting. |
+| **L10** — fractional stock that could never be sold | Batch quantity is `REAL` but sale quantity is `INTEGER`, so a fractional quantity could be received and never sold — and float residue like `0.0000001` keeps a batch matching `quantity > 0` forever: it stays in the FEFO queue, counts as sellable and can never be deleted. Validation rejects fractional quantities on every write; migration 8 repairs what is stored. Verified against a copy of the operator's database. |
+
+**Verified already closed by earlier rounds**, and now marked in the tables: M8, M10, M12, M16, M17, M22, L1, L2, L11. M10 in particular — the shared receipt builder wraps a long name onto its own line and the old formatter delegates to it, so the 16-character truncation that produced `Azithromycin- 50` on a real bill is gone.
+
+**M20 — money as SQLite `REAL` — is left deliberately.** Every write now goes through `round2`, so nothing sub-cent reaches the database. Converting the columns to integer cents would touch every read, write, report and migration in the app for no behaviour the rounding does not already provide.
 
 ### Round 13 — the Medium pass
 
