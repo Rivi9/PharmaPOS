@@ -129,6 +129,23 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
       SET value = '2400', updated_at = datetime('now')
       WHERE key = 'display_baud_rate' AND value = '9600';
     `
+  },
+  {
+    version: 7,
+    sql: `
+      -- M9: the product name as dispensed. getReceipt recovered it by joining
+      -- products, so renaming a product retroactively rewrote every past
+      -- receipt, and deleting one blanked the name on its history. A receipt is
+      -- the dispensing record; it has to say what was handed over.
+      ALTER TABLE sale_items ADD COLUMN product_name text;
+
+      -- Backfill from the current names. Imperfect for anything renamed before
+      -- now — that history is simply gone — but it is the best available, and it
+      -- stops the rewriting from here on.
+      UPDATE sale_items
+      SET product_name = (SELECT p.name FROM products p WHERE p.id = sale_items.product_id)
+      WHERE product_name IS NULL;
+    `
   }
 ]
 

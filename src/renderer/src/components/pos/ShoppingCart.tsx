@@ -10,19 +10,24 @@ interface ShoppingCartProps {
   /** Lets the F8 shortcut open the same clear-confirmation dialog as the Clear button. */
   clearConfirmOpen?: boolean
   onClearConfirmOpenChange?: (open: boolean) => void
+  /**
+   * Owned by POSPage so the button and the F4 shortcut share one confirmation:
+   * there is a single hold slot, and holding used to overwrite it silently (M1).
+   */
+  onHold: () => void
 }
 
 export function ShoppingCart({
   onPayment,
   clearConfirmOpen,
-  onClearConfirmOpenChange
+  onClearConfirmOpenChange,
+  onHold
 }: ShoppingCartProps): React.JSX.Element {
   const items = usePOSStore((state) => state.items)
   const heldSale = usePOSStore((state) => state.heldSale)
   const updateQuantity = usePOSStore((state) => state.updateQuantity)
   const removeItem = usePOSStore((state) => state.removeItem)
   const clearCart = usePOSStore((state) => state.clearCart)
-  const holdCurrentSale = usePOSStore((state) => state.holdCurrentSale)
   const recallHeldSale = usePOSStore((state) => state.recallHeldSale)
 
   // Computed totals
@@ -77,7 +82,7 @@ export function ShoppingCart({
         <CartActions
           hasItems={hasItems}
           hasHeldSale={hasHeldSale}
-          onHold={holdCurrentSale}
+          onHold={onHold}
           onRecall={recallHeldSale}
           onClear={clearCart}
           onPayment={onPayment}

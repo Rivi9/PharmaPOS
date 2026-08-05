@@ -769,6 +769,16 @@ export function updateStockBatch(id: string, data: Partial<StockBatchData>): voi
     fields.push('supplier_id = ?')
     values.push(data.supplier_id || null)
   }
+  // M18: `received_date` was silently dropped, so correcting a mis-keyed receipt
+  // date appeared to succeed and changed nothing. `product_id` is deliberately
+  // still not updatable — moving a batch to a different product would rewrite the
+  // stock history of both, and re-receiving it is the honest correction.
+  if (data.received_date !== undefined) {
+    const received = assertExpiryDate(data.received_date)
+    if (!received) throw new Error('Received date is required')
+    fields.push('received_date = ?')
+    values.push(received)
+  }
 
   // An UPDATE with no SET clause is a syntax error, so an all-undefined payload
   // used to throw raw SQL at the operator.

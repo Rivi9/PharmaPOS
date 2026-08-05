@@ -116,6 +116,13 @@ export function InventoryPage(): React.JSX.Element {
   // a 10k catalogue it briefly claimed all 10,001 matched a specific search.
   const [productLoading, setProductLoading] = useState(false)
   const [batchLoading, setBatchLoading] = useState(false)
+  /**
+   * M19: every loader was `if (success)` with no else, so a failed read left the
+   * previous (often empty) list on screen — a pharmacy with 10,000 products was
+   * shown "No products found — create your first product". An empty catalogue and
+   * a database that would not answer must not look the same.
+   */
+  const [loadError, setLoadError] = useState('')
 
   // Selected items for editing
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
@@ -174,30 +181,44 @@ export function InventoryPage(): React.JSX.Element {
       if (result.success) {
         setProducts(result.data.rows)
         setProductTotal(result.data.total)
+        setLoadError('')
+      } else {
+        setLoadError(result.error || 'Could not read the product list')
       }
+    } catch (error) {
+      setLoadError(ipcErrorMessage(error, 'Could not read the product list'))
     } finally {
       setProductLoading(false)
     }
   }
 
-  const loadLowStockProducts = async () => {
-    const result = await window.electron.getLowStockProducts(userId)
-    if (result.success) {
-      setLowStockProducts(result.data)
+  const loadLowStockProducts = async (): Promise<void> => {
+    try {
+      const result = await window.electron.getLowStockProducts(userId)
+      if (result.success) setLowStockProducts(result.data)
+      else setLoadError(result.error || 'Could not read the low-stock list')
+    } catch (error) {
+      setLoadError(ipcErrorMessage(error, 'Could not read the low-stock list'))
     }
   }
 
-  const loadCategories = async () => {
-    const result = await window.electron.listCategories(userId)
-    if (result.success) {
-      setCategories(result.data)
+  const loadCategories = async (): Promise<void> => {
+    try {
+      const result = await window.electron.listCategories(userId)
+      if (result.success) setCategories(result.data)
+      else setLoadError(result.error || 'Could not read the categories')
+    } catch (error) {
+      setLoadError(ipcErrorMessage(error, 'Could not read the categories'))
     }
   }
 
-  const loadSuppliers = async () => {
-    const result = await window.electron.listSuppliers(userId)
-    if (result.success) {
-      setSuppliers(result.data)
+  const loadSuppliers = async (): Promise<void> => {
+    try {
+      const result = await window.electron.listSuppliers(userId)
+      if (result.success) setSuppliers(result.data)
+      else setLoadError(result.error || 'Could not read the suppliers')
+    } catch (error) {
+      setLoadError(ipcErrorMessage(error, 'Could not read the suppliers'))
     }
   }
 
@@ -212,7 +233,12 @@ export function InventoryPage(): React.JSX.Element {
       if (result.success) {
         setStockBatches(result.data.rows)
         setBatchTotal(result.data.total)
+        setLoadError('')
+      } else {
+        setLoadError(result.error || 'Could not read the stock batches')
       }
+    } catch (error) {
+      setLoadError(ipcErrorMessage(error, 'Could not read the stock batches'))
     } finally {
       setBatchLoading(false)
     }
@@ -480,6 +506,12 @@ export function InventoryPage(): React.JSX.Element {
       </div>
 
       <LowStockAlert lowStockProducts={lowStockProducts} />
+
+      {loadError && (
+        <p className="mb-4 rounded-md bg-destructive/10 p-3 text-sm font-medium text-destructive">
+          {loadError} — the list below may be incomplete or out of date.
+        </p>
+      )}
 
       <Tabs defaultValue="products" className="flex-1 min-h-0 flex flex-col">
         <TabsList className="grid w-full grid-cols-4 max-w-2xl">

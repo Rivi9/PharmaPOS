@@ -73,6 +73,14 @@ function generateReceiptNumber(): string {
   return `R-${currentYear}-${nextNumber.toString().padStart(6, '0')}`
 }
 
+/** The catalogue's name for a product right now, for snapshotting onto a sale. */
+function productNameAtSale(productId: string): string | null {
+  const row = getDatabase().prepare('SELECT name FROM products WHERE id = ?').get(productId) as
+    | { name: string }
+    | undefined
+  return row?.name ?? null
+}
+
 /**
  * Deduct stock using FEFO (First Expiry First Out) strategy.
  * Called inside a transaction so raw SQL is intentional.
@@ -262,6 +270,10 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
           saleId,
           productId: item.product_id,
           batchId: batches[0].batch_id,
+          // Snapshot the name as dispensed (M9). Read from `products` rather than
+          // trusting the renderer's copy, so it is what the catalogue actually
+          // said at the moment of sale.
+          productName: productNameAtSale(item.product_id) ?? item.product_name,
           quantity: item.quantity,
           unitPrice: item.unit_price,
           costPrice,
@@ -616,7 +628,11 @@ export function getReceipt(saleId: string) {
   const items = db
     .prepare(
       `
-    SELECT si.*, p.name as product_name
+    -- The snapshot first, the current catalogue only as a fallback for rows
+    -- written before the column existed. Joining unconditionally meant renaming
+    -- a product retroactively rewrote every past receipt, and deleting one
+    -- blanked the name on its history (M9).
+    SELECT si.*, COALESCE(si.product_name, p.name, '(deleted product)') as product_name
     FROM sale_items si
     LEFT JOIN products p ON si.product_id = p.id
     WHERE si.sale_id = ?

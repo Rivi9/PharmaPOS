@@ -40,6 +40,37 @@ let activePort: SerialPort | null = null
 // Tracked so closing the port cannot leave a pending write to a dead handle, and
 // so a second sale's total is not overwritten by the previous sale's change.
 let changeTimer: NodeJS.Timeout | null = null
+let idleTimer: NodeJS.Timeout | null = null
+
+/**
+ * Until this moment passes, cart updates are ignored (M6).
+ *
+ * Completing a sale writes the total, and the renderer calls `clearCart()`
+ * immediately afterwards — whose store subscription pushes a cart total of 0, so
+ * the customer saw the amount they owed for a few milliseconds and then `0.00`.
+ * The change then arrived 3 s later and stayed on the panel indefinitely, so the
+ * next customer's first scanned item appeared under a stale "CHANGE" label.
+ *
+ * The post-sale sequence therefore owns the display: total → change → idle, and
+ * a cart update only takes over once that has finished or a new item is scanned
+ * after it.
+ */
+let holdCartUpdatesUntil = 0
+
+/** How long the total and then the change stay visible after a sale. */
+const TOTAL_DWELL_MS = 3000
+const CHANGE_DWELL_MS = 8000
+
+function clearTimers(): void {
+  if (changeTimer) {
+    clearTimeout(changeTimer)
+    changeTimer = null
+  }
+  if (idleTimer) {
+    clearTimeout(idleTimer)
+    idleTimer = null
+  }
+}
 let _currentPort = ''
 let _currentBaudRate = DEFAULT_BAUD
 
@@ -75,10 +106,8 @@ export async function closeDisplay(): Promise<void> {
     activePort = null
     return
   }
-  if (changeTimer) {
-    clearTimeout(changeTimer)
-    changeTimer = null
-  }
+  clearTimers()
+  holdCartUpdatesUntil = 0
   return new Promise((resolve) => {
     activePort!.close(() => {
       activePort = null
@@ -160,17 +189,42 @@ export function showWelcome(): void {
  * so the running total is the only thing it can truthfully show.
  */
 export function showCartUpdate(_lastItemName: string, total: number, _currency: string): void {
+  // An empty cart during the post-sale window is the `clearCart()` that follows
+  // every sale, not the customer's business — see `holdCartUpdatesUntil`.
+  if (total === 0 && Date.now() < holdCartUpdatesUntil) return
+
+  // A real scan ends the post-sale sequence early: the next customer's first
+  // item matters more than the previous one's change.
+  if (total > 0) {
+    clearTimers()
+    holdCartUpdatesUntil = 0
+  }
   showValue(formatForDisplay(total), LABEL.TOTAL)
 }
 
+/**
+ * Post-sale sequence: the amount due, then the change, then back to idle.
+ *
+ * The change used to stay on the panel until something else overwrote it, so the
+ * next customer began their transaction looking at the previous one's change.
+ */
 export function showSaleComplete(total: number, change: number, _currency: string): void {
+  clearTimers()
+  holdCartUpdatesUntil = Date.now() + TOTAL_DWELL_MS + CHANGE_DWELL_MS
+
   showValue(formatForDisplay(total), LABEL.TOTAL)
-  // Then the change, which is what the customer is actually waiting to see.
-  if (changeTimer) clearTimeout(changeTimer)
+
   changeTimer = setTimeout(() => {
     changeTimer = null
-    if (isConnected()) showValue(formatForDisplay(change), LABEL.CHANGE)
-  }, 3000)
+    if (!isConnected()) return
+    showValue(formatForDisplay(change), LABEL.CHANGE)
+
+    idleTimer = setTimeout(() => {
+      idleTimer = null
+      holdCartUpdatesUntil = 0
+      if (isConnected()) showWelcome()
+    }, CHANGE_DWELL_MS)
+  }, TOTAL_DWELL_MS)
 }
 
 export function sendTestMessage(): void {

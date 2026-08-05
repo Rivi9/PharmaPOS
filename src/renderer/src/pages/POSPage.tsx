@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ProductEntry } from '@renderer/components/pos/ProductEntry'
 import { QuickItems } from '@renderer/components/pos/QuickItems'
 import { ShoppingCart } from '@renderer/components/pos/ShoppingCart'
@@ -13,6 +13,8 @@ import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { useKeyboardShortcuts } from '@renderer/hooks/useKeyboardShortcuts'
 import { useCustomerDisplay } from '@renderer/hooks/useCustomerDisplay'
 import { formatCurrency } from '@renderer/lib/calculations'
+import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
+import { useConfirm } from '@renderer/hooks/useConfirm'
 
 export function POSPage(): React.JSX.Element {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
@@ -24,6 +26,7 @@ export function POSPage(): React.JSX.Element {
   const [searchModalOpen, setSearchModalOpen] = useState(false)
   const [quickItemsRefreshKey, setQuickItemsRefreshKey] = useState(0)
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
+  const { confirm, confirmProps } = useConfirm()
   const [cashMovementOpen, setCashMovementOpen] = useState(false)
 
   // Sync cart state to customer display window
@@ -31,8 +34,11 @@ export function POSPage(): React.JSX.Element {
 
   const items = usePOSStore((state) => state.items)
   const holdCurrentSale = usePOSStore((state) => state.holdCurrentSale)
+  const holdWouldOverwrite = usePOSStore((state) => state.holdWouldOverwrite)
   const recallHeldSale = usePOSStore((state) => state.recallHeldSale)
   const heldSale = usePOSStore((state) => state.heldSale)
+  const lastRejection = usePOSStore((state) => state.lastRejection)
+  const clearRejection = usePOSStore((state) => state.clearRejection)
   const todaySalesTotal = useShiftStore((s) => s.todaySalesTotal)
   const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
 
@@ -54,10 +60,40 @@ export function POSPage(): React.JSX.Element {
     }
   }
 
+  /**
+   * M5: a rejected scan was a silent no-op, so the cashier rescanned or assumed
+   * the item went in. The message clears itself — it is a transient notice, not a
+   * state the cashier has to dismiss mid-queue.
+   */
+  useEffect(() => {
+    if (!lastRejection) return
+    const timer = setTimeout(clearRejection, 4000)
+    return () => clearTimeout(timer)
+  }, [lastRejection, clearRejection])
+
+  /**
+   * M1: one hold slot, overwritten unconditionally — holding a second sale
+   * destroyed the first with no warning, while Recall did confirm.
+   */
+  const handleHold = async (): Promise<void> => {
+    if (items.length === 0) return
+    if (holdWouldOverwrite()) {
+      const ok = await confirm({
+        title: 'Replace the sale already on hold?',
+        description:
+          'There is only one hold slot. The basket currently held will be discarded and cannot be recovered.',
+        confirmLabel: 'Replace it',
+        destructive: true
+      })
+      if (!ok) return
+    }
+    holdCurrentSale()
+  }
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
     onF2: () => setSearchModalOpen(true),
-    onF4: () => items.length > 0 && holdCurrentSale(),
+    onF4: () => void handleHold(),
     onF5: () => heldSale !== null && recallHeldSale(),
     // F8 goes through the same confirmation dialog as the Clear button
     onF8: () => items.length > 0 && setClearConfirmOpen(true),
@@ -117,8 +153,18 @@ export function POSPage(): React.JSX.Element {
         {/* Right Side - Shopping Cart */}
         <div className="flex-1 flex flex-col p-4 min-h-0">
           <h2 className="text-sm font-semibold mb-2">Shopping Cart</h2>
+          {/* A rejected scan used to be a silent no-op (M5). */}
+          {lastRejection && (
+            <p
+              role="status"
+              className="mb-2 rounded-md bg-amber-100 px-3 py-2 text-sm font-medium text-amber-900"
+            >
+              {lastRejection}
+            </p>
+          )}
           <ShoppingCart
             onPayment={() => setPaymentModalOpen(true)}
+            onHold={() => void handleHold()}
             clearConfirmOpen={clearConfirmOpen}
             onClearConfirmOpenChange={setClearConfirmOpen}
           />
@@ -132,10 +178,7 @@ export function POSPage(): React.JSX.Element {
         onComplete={handlePaymentComplete}
       />
 
-      <CashMovementDialog
-        open={cashMovementOpen}
-        onClose={() => setCashMovementOpen(false)}
-      />
+      <CashMovementDialog open={cashMovementOpen} onClose={() => setCashMovementOpen(false)} />
 
       {/* Receipt Preview */}
       {completedSale && (
@@ -146,6 +189,8 @@ export function POSPage(): React.JSX.Element {
           receiptNumber={completedSale.receiptNumber}
         />
       )}
+
+      <ConfirmDialog {...confirmProps} />
     </div>
   )
 }

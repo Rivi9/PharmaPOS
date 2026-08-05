@@ -174,6 +174,16 @@ export const saleItems = sqliteTable('sale_items', {
     .notNull()
     .references(() => products.id),
   batchId: text('batch_id').references(() => stockBatches.id),
+  /**
+   * The product name AS DISPENSED (M9).
+   *
+   * `getReceipt` recovered names by joining `products`, so renaming a product
+   * retroactively rewrote every past receipt — and a receipt is the dispensing
+   * record. Nullable because rows written before this column existed have it
+   * backfilled by migration 7 but new code must still tolerate NULL from an
+   * older backup being restored.
+   */
+  productName: text('product_name'),
   quantity: integer('quantity').notNull(),
   unitPrice: real('unit_price').notNull(),
   costPrice: real('cost_price').notNull(),

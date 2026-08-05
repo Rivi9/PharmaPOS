@@ -33,8 +33,20 @@ interface POSStore extends CartState {
 
   // Hold/Recall
   heldSale: CartState | null
+  /** True when holding would overwrite an existing held sale (M1). */
+  holdWouldOverwrite: () => boolean
   holdCurrentSale: () => void
   recallHeldSale: () => void
+
+  /**
+   * Why the last cart action did nothing (M5).
+   *
+   * Scanning an item already at its stock limit was a completely silent no-op —
+   * no message, no beep — so the cashier rescanned, or assumed it went in and
+   * charged for a quantity the cart never held.
+   */
+  lastRejection: string | null
+  clearRejection: () => void
 
   // Status
   saleInProgress: () => boolean
@@ -45,6 +57,9 @@ export const usePOSStore = create<POSStore>((set, get) => ({
   items: [],
   saleDiscount: null,
   heldSale: null,
+  lastRejection: null,
+
+  clearRejection: () => set({ lastRejection: null }),
 
   // Add item to cart — stacks quantity if product already present
   addItem: (product, quantity) => {
@@ -59,17 +74,23 @@ export const usePOSStore = create<POSStore>((set, get) => ({
         const items = [...state.items]
         const existing = items[existingIndex]
         const newQty = Math.min(existing.quantity + safeQty, maxStock)
-        if (newQty === existing.quantity) return state
+        if (newQty === existing.quantity) {
+          return {
+            lastRejection: `Only ${maxStock} of ${product.name} in stock — all of it is already in the cart`
+          }
+        }
         items[existingIndex] = {
           ...existing,
           quantity: newQty,
           line_total: calculateLineTotal(existing.unit_price, newQty)
         }
-        return { items }
+        return { items, lastRejection: null }
       }
       const unitPrice = product.unit_price
       const initialQty = Math.min(safeQty, maxStock)
-      if (initialQty < 1) return state
+      if (initialQty < 1) {
+        return { lastRejection: `${product.name} is out of sellable stock` }
+      }
       return {
         items: [
           ...state.items,
@@ -79,7 +100,8 @@ export const usePOSStore = create<POSStore>((set, get) => ({
             unit_price: unitPrice,
             line_total: calculateLineTotal(unitPrice, initialQty)
           }
-        ]
+        ],
+        lastRejection: null
       }
     })
   },
@@ -169,6 +191,13 @@ export const usePOSStore = create<POSStore>((set, get) => ({
   },
 
   // Hold current sale
+  holdWouldOverwrite: () => {
+    const { items, heldSale } = get()
+    return items.length > 0 && heldSale !== null
+  },
+
+  // One hold slot. Holding a second sale used to destroy the first with no
+  // warning, while the Recall path did confirm — the callers now ask first (M1).
   holdCurrentSale: () => {
     const { items, saleDiscount } = get()
     if (items.length === 0) return
@@ -176,7 +205,8 @@ export const usePOSStore = create<POSStore>((set, get) => ({
     set({
       heldSale: { items, saleDiscount },
       items: [],
-      saleDiscount: null
+      saleDiscount: null,
+      lastRejection: null
     })
   },
 
