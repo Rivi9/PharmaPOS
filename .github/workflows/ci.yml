@@ -30,7 +30,7 @@ jobs:
         run: npm run typecheck
 
       - name: Unit tests
-        run: npm run test:import
+        run: npm run test:unit
 
       - name: End-to-end tests
         # `pretest:e2e` builds first. Without it Playwright silently drives

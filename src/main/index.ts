@@ -237,7 +237,10 @@ app.whenReady().then(() => {
       .prepare("SELECT value FROM settings WHERE key = 'display_baud_rate'")
       .get() as { value: string } | undefined
     const savedPort = portRow?.value
-    const savedBaud = parseInt(baudRow?.value ?? '9600', 10)
+    // 2400 is the OCPD-LED8's factory rate. It was 9600 here, in the settings
+    // seed and in the save handler — and the port opens fine at the wrong rate,
+    // so nothing detected it and the pole simply stayed blank.
+    const savedBaud = parseInt(baudRow?.value ?? '2400', 10)
     if (savedPort) {
       poleDisplay.openDisplay(savedPort, savedBaud).catch((err: Error) => {
         logError('Could not auto-connect pole display', { port: savedPort, error: err.message })
@@ -251,25 +254,27 @@ app.whenReady().then(() => {
 
   // ── Pole display IPC handlers ──────────────────────────────────────────────
 
-  // Cart updated — write last item + running total to pole display
+  // Both handlers returned `{ success: true }` even with nothing connected, and
+  // the renderer's `.catch(() => {})` meant a dead display was indistinguishable
+  // from a working one. `success` now means the pole actually received it (H6).
+
+  // Cart updated — running total to the pole display.
   ipcMain.handle(IPC_CHANNELS.DISPLAY_UPDATE, (_event, cartData: CartData) => {
-    if (poleDisplay.isConnected()) {
-      const lastItem = cartData?.items?.at(-1)
-      const itemName = lastItem?.name ?? ''
-      poleDisplay.showCartUpdate(itemName, cartData?.total ?? 0, cartData?.currency ?? 'Rs.')
-    }
+    if (!poleDisplay.isConnected()) return { success: false, reason: 'not connected' }
+    const lastItem = cartData?.items?.at(-1)
+    const itemName = lastItem?.name ?? ''
+    poleDisplay.showCartUpdate(itemName, cartData?.total ?? 0, cartData?.currency ?? 'Rs.')
     return { success: true }
   })
 
-  // Sale complete — show total + change
+  // Sale complete — total, then change.
   ipcMain.handle(IPC_CHANNELS.DISPLAY_SALE_COMPLETE, (_event, saleData: SaleData) => {
-    if (poleDisplay.isConnected()) {
-      poleDisplay.showSaleComplete(
-        saleData?.total ?? 0,
-        saleData?.change_given ?? 0,
-        saleData?.currency ?? 'Rs.'
-      )
-    }
+    if (!poleDisplay.isConnected()) return { success: false, reason: 'not connected' }
+    poleDisplay.showSaleComplete(
+      saleData?.total ?? 0,
+      saleData?.change_given ?? 0,
+      saleData?.currency ?? 'Rs.'
+    )
     return { success: true }
   })
 
@@ -280,7 +285,7 @@ app.whenReady().then(() => {
 
   // Connect to a COM port
   ipcMain.handle(IPC_CHANNELS.DISPLAY_CONNECT, async (_event, { port, baudRate }) => {
-    await poleDisplay.openDisplay(port, baudRate ?? 9600)
+    await poleDisplay.openDisplay(port, baudRate ?? 2400)
     // Persist to settings
     const db = getDatabase()
     db.prepare(
@@ -288,7 +293,7 @@ app.whenReady().then(() => {
     ).run(port)
     db.prepare(
       "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('display_baud_rate', ?, datetime('now'))"
-    ).run(String(baudRate ?? 9600))
+    ).run(String(baudRate ?? 2400))
     return { success: true }
   })
 

@@ -114,6 +114,21 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
       CREATE INDEX IF NOT EXISTS idx_sib_sale ON sale_item_batches(sale_id);
       CREATE INDEX IF NOT EXISTS idx_sib_product ON sale_item_batches(product_id);
     `
+  },
+  {
+    version: 6,
+    sql: `
+      -- The OCPD-LED8 pole display runs at 2400 baud from the factory, but the
+      -- settings seed shipped 9600. A serial port opens happily at the wrong
+      -- rate, so nothing ever detected it: the app reported the display
+      -- connected, every update returned success, and the pole stayed blank.
+      --
+      -- Only rows still holding the wrong default are touched. An operator who
+      -- deliberately set 1200 or 19200 for different hardware keeps their value.
+      UPDATE settings
+      SET value = '2400', updated_at = datetime('now')
+      WHERE key = 'display_baud_rate' AND value = '9600';
+    `
   }
 ]
 

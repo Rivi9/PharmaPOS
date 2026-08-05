@@ -111,6 +111,23 @@ Quote the argument — the text contains a space. Same for the payment modal:
 SHOT_DIR=/tmp/shots node .claude/skills/run-pharmapos/driver.mjs boot scan:PARA500 "clicktext:Pay Now" ss:payment quit
 ```
 
+### Reproducing a bug against real data
+
+`PHARMA_SEED_DB` starts from a **copy** of an existing database — how to
+reproduce an operator-reported problem, or watch a migration run against real
+rows. The source file is copied, never opened, so it cannot be modified:
+
+```bash
+cp "$APPDATA/pharma-pos/pharmapos.db" /tmp/live-copy.db
+PHARMA_SEED_DB=/tmp/live-copy.db node .claude/skills/run-pharmapos/driver.mjs   launch "sql:PRAGMA user_version" "sql:SELECT COUNT(*) AS products FROM products" quit
+```
+
+```
+seeded from /tmp/live-copy.db
+[ { "user_version": 6 } ]
+[ { "products": 257 } ]
+```
+
 ### Measuring performance
 
 `bigseed` plus `time` is how the H18 paging work was measured — and the only

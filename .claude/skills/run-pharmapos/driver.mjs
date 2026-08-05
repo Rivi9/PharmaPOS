@@ -72,6 +72,14 @@ const COMMANDS = {
     userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pharmapos-drv-'))
     dbPath = path.join(userDataDir, 'driver.db')
 
+    // PHARMA_SEED_DB=<file> starts from a COPY of an existing database — the way
+    // to reproduce an operator-reported bug, or to watch migrations run against
+    // real data. It is copied, never opened in place, so the source is untouched.
+    if (process.env.PHARMA_SEED_DB) {
+      fs.copyFileSync(process.env.PHARMA_SEED_DB, dbPath)
+      log('seeded from', process.env.PHARMA_SEED_DB)
+    }
+
     app = await electron.launch({
       executablePath: electronBinary(),
       args: [PROJECT_ROOT, `--user-data-dir=${userDataDir}`],

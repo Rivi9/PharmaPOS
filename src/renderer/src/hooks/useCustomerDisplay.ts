@@ -3,8 +3,12 @@ import { usePOSStore } from '../stores/posStore'
 import { useSettingsStore } from '../stores/settingsStore'
 
 /**
- * Syncs cart state to the customer-facing display window via IPC.
- * Subscribe to POS store changes and push updates whenever the cart or totals change.
+ * Pushes the running total to the customer-facing pole display.
+ *
+ * The only customer-facing hardware is an 8-digit LED pole display, so the item
+ * names and per-line figures assembled here are ignored by the main process —
+ * they are kept because the payload shape is the one the IPC channel documents,
+ * and narrowing it would be a breaking change for no gain.
  */
 export function useCustomerDisplay(): void {
   const settings = useSettingsStore((state) => state.settings)
