@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { localDateString, localDateOffset } from '../../../../shared/dates'
 import {
   Card,
   CardContent,
@@ -263,7 +264,7 @@ function buildInventoryPdf(data: InventoryValuationData, businessName: string, s
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
   const W = doc.internal.pageSize.getWidth()
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = localDateString()
   let y = drawHeader(doc, 'Inventory Valuation Report', `As of ${today}`, businessName)
 
   // KPI row
@@ -502,10 +503,8 @@ export function ReportsPanel(): React.JSX.Element {
   const businessName = settings.business_name || 'PharmaPOS'
   const sym = settings.currency_symbol || 'Rs.'
 
-  const [startDate, setStartDate] = useState(
-    new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  )
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
+  const [startDate, setStartDate] = useState(localDateOffset(-30))
+  const [endDate, setEndDate] = useState(localDateString())
   const [loadingReport, setLoadingReport] = useState<'sales' | 'inventory' | 'pl' | null>(null)
   const [error, setError] = useState<string | null>(null)
 

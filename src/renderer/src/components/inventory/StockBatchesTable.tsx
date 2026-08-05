@@ -8,6 +8,7 @@ import {
 import { Button } from '@renderer/components/ui/button'
 import { Edit, Trash2, History } from 'lucide-react'
 import type { StockBatch } from '@renderer/stores/inventoryStore'
+import { daysUntil } from '../../../../shared/dates'
 
 const columnHelper = createColumnHelper<StockBatch>()
 
@@ -55,11 +56,13 @@ export function StockBatchesTable({
           const expiryDate = info.getValue()
           if (!expiryDate) return '-'
 
-          const date = new Date(expiryDate)
-          const today = new Date()
-          const daysUntilExpiry = Math.floor(
-            (date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-          )
+          // Local calendar days: comparing a UTC-parsed date against `new Date()`
+          // marked a batch expired from 05:30 local on its expiry day (L9/M21).
+          const daysUntilExpiry = daysUntil(expiryDate) ?? 0
+          // Rendered from the stored YYYY-MM-DD parts, not `new Date(expiryDate)`,
+          // which parses as UTC midnight and prints the previous day locally.
+          const [y, m, d] = expiryDate.slice(0, 10).split('-').map(Number)
+          const displayDate = new Date(y, (m || 1) - 1, d || 1)
 
           const isExpired = daysUntilExpiry < 0
           const isExpiringSoon = daysUntilExpiry >= 0 && daysUntilExpiry <= 30
@@ -74,7 +77,7 @@ export function StockBatchesTable({
                     : ''
               }
             >
-              {date.toLocaleDateString()}
+              {displayDate.toLocaleDateString()}
               {isExpiringSoon && !isExpired && ` (${daysUntilExpiry}d)`}
               {isExpired && ' (Expired)'}
             </span>

@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { usePOSStore } from './posStore'
 
 interface User {
   id: string
@@ -24,6 +25,14 @@ export const useAuthStore = create<AuthState>((set) => ({
     window.electron.logout().catch(() => {
       /* already gone */
     })
+
+    // Signing out has to empty the till. The cart and the held sale survived a
+    // logout, so cashier B arriving at the same machine could complete cashier
+    // A's basket — against B's shift, and under B's name on the receipt and in
+    // the audit log.
+    usePOSStore.getState().clearCart()
+    usePOSStore.getState().discardHeldSale()
+
     set({ user: null, isAuthenticated: false })
   }
 }))

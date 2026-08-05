@@ -37,6 +37,8 @@ interface POSStore extends CartState {
   holdWouldOverwrite: () => boolean
   holdCurrentSale: () => void
   recallHeldSale: () => void
+  /** Drop the held sale without recalling it — used when signing out. */
+  discardHeldSale: () => void
 
   /**
    * Why the last cart action did nothing (M5).
@@ -206,6 +208,8 @@ export const usePOSStore = create<POSStore>((set, get) => ({
   },
 
   // Hold current sale
+  discardHeldSale: () => set({ heldSale: null }),
+
   holdWouldOverwrite: () => {
     const { items, heldSale } = get()
     return items.length > 0 && heldSale !== null

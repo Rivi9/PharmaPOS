@@ -5,6 +5,7 @@ import { Button } from '@renderer/components/ui/button'
 import { usePOSStore } from '@renderer/stores/posStore'
 import { SearchModal } from './SearchModal'
 import type { Product } from '@renderer/lib/types'
+import { daysUntil } from '../../../../shared/dates'
 
 interface ProductEntryProps {
   searchOpen?: boolean
@@ -77,10 +78,8 @@ export function ProductEntry({
     }
 
     if (product.nearest_expiry) {
-      const expiry = new Date(product.nearest_expiry)
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const days = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+      // Local calendar days, so "expires today" is reachable (L9).
+      const days = daysUntil(product.nearest_expiry) ?? 0
       if (days <= 0) {
         setExpiryWarning(`⚠ ${product.name} is EXPIRED (${product.nearest_expiry})`)
       } else if (days <= 30) {
@@ -140,10 +139,7 @@ export function ProductEntry({
 
       // Check near-expiry
       if (product.nearest_expiry) {
-        const expiry = new Date(product.nearest_expiry)
-        const today = new Date()
-        today.setHours(0, 0, 0, 0)
-        const days = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+        const days = daysUntil(product.nearest_expiry) ?? 0
         if (days <= 0) {
           setExpiryWarning(`⚠ ${product.name} is EXPIRED (${product.nearest_expiry})`)
         } else if (days <= 30) {
@@ -256,10 +252,7 @@ export function ProductEntry({
 
           // Check near-expiry when selecting via search
           if (product.nearest_expiry) {
-            const expiry = new Date(product.nearest_expiry)
-            const today = new Date()
-            today.setHours(0, 0, 0, 0)
-            const days = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+            const days = daysUntil(product.nearest_expiry) ?? 0
             if (days <= 0) {
               setExpiryWarning(`⚠ ${product.name} is EXPIRED (${product.nearest_expiry})`)
             } else if (days <= 30) {

@@ -4,6 +4,7 @@ import { getDatabase, generateId } from './database'
 import { categories, suppliers, stockBatches, products, inventoryAdjustments } from '../db/schema'
 import type { Category, Supplier, StockBatch } from '../db/schema'
 import { round2 } from '../../shared/money'
+import { localDateString } from '../../shared/dates'
 
 // =====================
 // PRODUCTS
@@ -681,7 +682,9 @@ export function createStockBatch(data: StockBatchData): { id: string } {
   const drizzleDb = getDb()
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
-  const receivedDate = data.received_date || new Date().toISOString().split('T')[0]
+  // Local calendar date: UTC dated stock received before 05:30 local to the
+  // previous day (M21).
+  const receivedDate = data.received_date || localDateString()
 
   const quantity = assertQuantity('Quantity', data.quantity)
   const costPrice = assertMoney('Cost price', data.cost_price) ?? 0

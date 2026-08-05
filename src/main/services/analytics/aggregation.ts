@@ -1,4 +1,5 @@
 import { getDatabase } from '../database'
+import { localDateString, localDateOffset } from '../../../shared/dates'
 
 /**
  * Aggregates sales data for a specific date into product_sales_daily table.
@@ -6,7 +7,7 @@ import { getDatabase } from '../database'
  */
 export function aggregateDailySales(date?: string): { processed: number } {
   const db = getDatabase()
-  const targetDate = date || new Date().toISOString().split('T')[0]
+  const targetDate = date || localDateString()
 
   // Delete existing aggregations for the date (idempotent)
   db.prepare('DELETE FROM product_sales_daily WHERE date = ?').run(targetDate)
@@ -43,7 +44,7 @@ export function aggregateDateRange(startDate: string, endDate: string): { daysPr
   let daysProcessed = 0
 
   for (let d = start; d <= end; d.setDate(d.getDate() + 1)) {
-    const dateStr = d.toISOString().split('T')[0]
+    const dateStr = localDateString(d)
     aggregateDailySales(dateStr)
     daysProcessed++
   }
@@ -68,11 +69,11 @@ export function getLastAggregatedDate(): string | null {
  */
 export function runIncrementalAggregation(): { daysProcessed: number } {
   const lastDate = getLastAggregatedDate()
-  const today = new Date().toISOString().split('T')[0]
+  const today = localDateString()
 
   if (!lastDate) {
     // No previous aggregations, run for last 30 days
-    const startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+    const startDate = localDateOffset(-30)
     return aggregateDateRange(startDate, today)
   }
 
@@ -80,7 +81,7 @@ export function runIncrementalAggregation(): { daysProcessed: number } {
   // date rather than the day after it. Starting at +1 meant that once any sale
   // happened today, startDate > today and the function returned immediately —
   // so a voided or corrected sale could never be reflected in the rollup.
-  const windowStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+  const windowStart = localDateOffset(-7)
   const startDate = lastDate < windowStart ? lastDate : windowStart
 
   return aggregateDateRange(startDate, today)

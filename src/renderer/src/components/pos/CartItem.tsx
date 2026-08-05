@@ -5,12 +5,16 @@ import { Input } from '@renderer/components/ui/input'
 import type { CartItem as CartItemType } from '@renderer/lib/types'
 import { formatCurrency } from '@renderer/lib/calculations'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
+import { daysUntil } from '../../../../shared/dates'
 
+/**
+ * L9: `new Date('2026-03-15')` parses as UTC midnight, which compared against
+ * local midnight made every countdown a day optimistic — so "expires today"
+ * never appeared, on the one day it matters most. `daysUntil` compares local
+ * calendar dates.
+ */
 function getDaysUntilExpiry(expiryDate: string): number {
-  const expiry = new Date(expiryDate)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+  return daysUntil(expiryDate) ?? 0
 }
 
 interface CartItemProps {
@@ -80,9 +84,7 @@ export function CartItem({
             }
             return null
           })()}
-        {limitNotice && (
-          <p className="text-sm text-amber-600 mt-0.5 font-medium">{limitNotice}</p>
-        )}
+        {limitNotice && <p className="text-sm text-amber-600 mt-0.5 font-medium">{limitNotice}</p>}
       </div>
 
       {/* Quantity Controls */}
@@ -116,7 +118,9 @@ export function CartItem({
 
       {/* Price */}
       <div className="text-right w-20 shrink-0">
-        <p className="text-xs text-muted-foreground">@ {formatCurrency(item.unit_price, currencySymbol)}</p>
+        <p className="text-xs text-muted-foreground">
+          @ {formatCurrency(item.unit_price, currencySymbol)}
+        </p>
         <p className="text-sm font-semibold">{formatCurrency(item.line_total, currencySymbol)}</p>
       </div>
 
