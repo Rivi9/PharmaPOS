@@ -315,8 +315,12 @@ export function checkStockAvailability(productId: string): {
     SELECT id, quantity, expiry_date
     FROM stock_batches
     WHERE product_id = ? AND quantity > 0
+      -- The same definition of "sellable" that deductStockFEFO uses. Counting
+      -- expired batches here meant the pre-payment check passed and the commit
+      -- then failed on the same stock, which reads as a random refusal.
+      AND (expiry_date IS NULL OR expiry_date = '' OR expiry_date >= date('now','localtime'))
     ORDER BY
-      CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END,
+      CASE WHEN expiry_date IS NULL OR expiry_date = '' THEN 1 ELSE 0 END,
       expiry_date ASC,
       received_date ASC
   `

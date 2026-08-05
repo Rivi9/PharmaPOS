@@ -163,11 +163,16 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
     try {
       // H7: Pre-payment stock recheck — verify every cart item still has enough
       // stock before committing the sale. Catches concurrent inventory adjustments.
+      // M15: this used to search by NAME against a LIMIT 20 result set and look
+      // for the id in it, so a product whose name sorts late among its matches —
+      // "Zinc", behind a dozen "… + Zinc" combinations — simply was not in the
+      // page, `fresh` was undefined, and a perfectly stocked item was reported
+      // out of stock, blocking the sale with no way for the cashier to proceed.
+      // Look it up by id.
       const outOfStockNames: string[] = []
       for (const item of items) {
-        const results = await window.electron.searchProducts(item.product.name)
-        const fresh = results.find((p) => p.id === item.product.id)
-        if (!fresh || (fresh.total_stock ?? 0) < item.quantity) {
+        const stock = await window.electron.checkStockAvailability(item.product.id)
+        if ((stock?.available ?? 0) < item.quantity) {
           outOfStockNames.push(item.product.name)
         }
       }
@@ -250,6 +255,11 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
       setError(err.message || 'Failed to complete sale')
     } finally {
       setProcessing(false)
+      // Release the latch on EVERY exit, not just the happy path. It was only
+      // ever set, so an out-of-stock refusal or any thrown error left it true and
+      // the Complete Sale button dead for the rest of the modal's life — the till
+      // looked frozen with a full basket on screen.
+      inFlight.current = false
     }
   }
 

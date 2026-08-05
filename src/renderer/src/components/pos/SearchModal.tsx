@@ -38,19 +38,25 @@ export function SearchModal({
       return
     }
 
+    // Same staleness guard as ProductEntry (M3): a response for an older query
+    // must never replace the results for the current one.
+    let cancelled = false
     const timer = setTimeout(async () => {
       setLoading(true)
       try {
         const products = await window.electron.searchProducts(query.trim())
-        setResults(products)
+        if (!cancelled) setResults(products)
       } catch (err) {
-        console.error('Search error:', err)
+        if (!cancelled) console.error('Search error:', err)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }, 300)
 
-    return () => clearTimeout(timer)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [query])
 
   const handleSelect = (product: Product) => {

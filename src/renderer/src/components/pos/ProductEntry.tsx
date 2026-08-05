@@ -41,16 +41,26 @@ export function ProductEntry({
       setShowSuggestions(false)
       return
     }
+    // M3: the response was applied unconditionally, so a search that was still
+    // in flight when the box was cleared — or when the next character was typed —
+    // reopened a dropdown belonging to the PREVIOUS query. On a touchscreen the
+    // cashier's next tap then landed on a suggestion for something they were no
+    // longer searching for, adding the wrong medicine to the basket.
+    let cancelled = false
     const timer = setTimeout(async () => {
       try {
         const results = await window.electron.searchProducts(barcode.trim())
+        if (cancelled) return
         setSuggestions(results.slice(0, 6))
         setShowSuggestions(results.length > 0)
       } catch {
-        setSuggestions([])
+        if (!cancelled) setSuggestions([])
       }
     }, 250)
-    return () => clearTimeout(timer)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
   }, [barcode])
 
   const handleSuggestionSelect = (product: Product) => {
@@ -193,9 +203,7 @@ export function ProductEntry({
                         )}
                       </div>
                       <div className="text-right shrink-0">
-                        <p className="text-sm font-semibold">
-                          Rs. {product.unit_price.toFixed(2)}
-                        </p>
+                        <p className="text-sm font-semibold">Rs. {product.unit_price.toFixed(2)}</p>
                         <p
                           className={`text-xs ${outOfStock ? 'text-destructive' : product.total_stock! < 10 ? 'text-amber-600' : 'text-green-600'}`}
                         >

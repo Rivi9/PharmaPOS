@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 
 export interface KeyboardShortcutHandlers {
   onF2?: () => void // Open search
@@ -10,15 +10,25 @@ export interface KeyboardShortcutHandlers {
 }
 
 export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
+  // `handlers` is a fresh object literal on every render, so depending on it
+  // detached and re-attached the window listener on each one. A ref keeps one
+  // listener for the component's life while still calling the latest handlers.
+  const handlersRef = useRef(handlers)
+  handlersRef.current = handlers
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Don't trigger shortcuts if user is typing in an input
+      const handlers = handlersRef.current
       const target = event.target as HTMLElement
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {
-        // Allow Escape to close modals even when in input
-        if (event.key === 'Escape' && handlers.onEscape) {
-          handlers.onEscape()
-        }
+      const inTextField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA'
+
+      // M2: the input guard used to return before the F-key switch, and
+      // ProductEntry keeps the barcode box focused permanently so a scan is never
+      // missed — which meant **F2/F4/F5/F8/F9 never fired during normal
+      // checkout**, the only time they are wanted. Function keys carry no text,
+      // so they cannot conflict with typing; only the printable-character
+      // shortcuts need the guard, and there are none.
+      if (inTextField && !/^F\d{1,2}$/.test(event.key) && event.key !== 'Escape') {
         return
       }
 
@@ -51,5 +61,5 @@ export function useKeyboardShortcuts(handlers: KeyboardShortcutHandlers): void {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handlers])
+  }, [])
 }

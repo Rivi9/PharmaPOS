@@ -117,8 +117,23 @@ export const usePOSStore = create<POSStore>((set, get) => ({
           ? Math.max(0, Math.floor(item.product.total_stock))
           : Number.POSITIVE_INFINITY
       const safeQty = Math.max(1, Math.floor(quantity))
-      const clampedQty = Math.min(safeQty, maxStock)
+
+      // M4: `product.total_stock` is a snapshot taken when the item was added, and
+      // the clamp used to apply in BOTH directions. If the cart held more than the
+      // snapshot allows — a recalled hold, or stock adjusted since — then one tap
+      // of "−" from 5 clamped to the stale maximum of 3, silently dropping two
+      // units off what the customer was charged for. Reducing a quantity is always
+      // safe, so only an increase is clamped.
+      const decreasing = safeQty < item.quantity
+      const clampedQty = decreasing ? safeQty : Math.min(safeQty, maxStock)
       if (clampedQty < 1) return state
+      if (clampedQty === item.quantity) {
+        return safeQty > item.quantity
+          ? {
+              lastRejection: `Only ${maxStock} of ${item.product.name} in stock`
+            }
+          : state
+      }
 
       items[index] = {
         ...item,
@@ -126,7 +141,7 @@ export const usePOSStore = create<POSStore>((set, get) => ({
         line_total: calculateLineTotal(item.unit_price, clampedQty)
       }
 
-      return { items }
+      return { items, lastRejection: null }
     })
   },
 
