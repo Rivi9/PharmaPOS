@@ -54,11 +54,77 @@ interface POSStore extends CartState {
   saleInProgress: () => boolean
 }
 
+/**
+ * L7: the cart and the held sale lived only in memory, so Ctrl+R — the default
+ * Electron menu is still installed — or a power blip discarded a part-rung basket
+ * with no way back. On a till that is a customer standing at the counter while
+ * every item is scanned again.
+ *
+ * Persisted to sessionStorage rather than localStorage: it should survive a
+ * reload or a renderer crash, not a deliberate restart hours later, and it must
+ * not outlive the machine being switched off with a basket on screen.
+ *
+ * A restored line carries the price it was rung up at, which is the same
+ * behaviour as a basket left on screen for an hour without any reload — the
+ * commit uses the cart's `unit_price` either way. Persistence does not widen that
+ * window, and the four-hour cap bounds it.
+ */
+const CART_KEY = 'pharmapos.cart.v1'
+
+interface PersistedCart {
+  items: CartItem[]
+  saleDiscount: SaleDiscount | null
+  heldSale: CartState | null
+  savedAt: number
+}
+
+/** A restored basket older than this is stale; a new customer is at the counter. */
+const CART_MAX_AGE_MS = 4 * 60 * 60 * 1000
+
+function persistCart(state: {
+  items: CartItem[]
+  saleDiscount: SaleDiscount | null
+  heldSale: CartState | null
+}): void {
+  try {
+    if (state.items.length === 0 && !state.heldSale) {
+      sessionStorage.removeItem(CART_KEY)
+      return
+    }
+    const payload: PersistedCart = {
+      items: state.items,
+      saleDiscount: state.saleDiscount,
+      heldSale: state.heldSale,
+      savedAt: Date.now()
+    }
+    sessionStorage.setItem(CART_KEY, JSON.stringify(payload))
+  } catch {
+    // Storage full or unavailable — the cart is still in memory, so carry on.
+  }
+}
+
+function readPersistedCart(): PersistedCart | null {
+  try {
+    const raw = sessionStorage.getItem(CART_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as PersistedCart
+    if (!Array.isArray(parsed.items)) return null
+    if (typeof parsed.savedAt !== 'number' || Date.now() - parsed.savedAt > CART_MAX_AGE_MS) {
+      sessionStorage.removeItem(CART_KEY)
+      return null
+    }
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 export const usePOSStore = create<POSStore>((set, get) => ({
   // Initial state
-  items: [],
-  saleDiscount: null,
-  heldSale: null,
+  // Restored from a reload if one happened moments ago; see `persistCart`.
+  items: readPersistedCart()?.items ?? [],
+  saleDiscount: readPersistedCart()?.saleDiscount ?? null,
+  heldSale: readPersistedCart()?.heldSale ?? null,
   lastRejection: null,
 
   clearRejection: () => set({ lastRejection: null }),
@@ -246,3 +312,13 @@ export const usePOSStore = create<POSStore>((set, get) => ({
     return get().items.length > 0
   }
 }))
+
+// Persist on every cart change (L7). Subscribing here rather than writing inside
+// each action means no future action can forget to do it.
+usePOSStore.subscribe((state) => {
+  persistCart({
+    items: state.items,
+    saleDiscount: state.saleDiscount,
+    heldSale: state.heldSale
+  })
+})

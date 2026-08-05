@@ -200,8 +200,21 @@ export function buildReceipt(input: ReceiptInput): ReceiptLine[] {
   if (sale.tax_amount > 0) {
     // Prices are tax-inclusive, so this is a breakdown of what is already in the
     // total — labelled "incl." so nobody reads it as an additional charge.
-    const rate = business.vatRate && business.vatRate !== '0' ? ` (${business.vatRate}%)` : ''
-    left(amountRow(`incl. VAT${rate}:`, `${cur}${sale.tax_amount.toFixed(2)}`, width))
+    //
+    // L3: the rate came from the CURRENT setting, so reprinting an old receipt
+    // labelled its historical VAT amount with today's rate — a receipt reprinted
+    // after a rate change stated a percentage that never applied to it. Derived
+    // from the sale's own figures instead: VAT was extracted from the gross, so
+    // rate = tax / (gross - tax).
+    const net = sale.subtotal - sale.tax_amount
+    const derived = net > 0 ? (sale.tax_amount / net) * 100 : null
+    const shown =
+      derived !== null && Number.isFinite(derived)
+        ? ` (${derived.toFixed(derived % 1 === 0 ? 0 : 1)}%)`
+        : business.vatRate && business.vatRate !== '0'
+          ? ` (${business.vatRate}%)`
+          : ''
+    left(amountRow(`incl. VAT${shown}:`, `${cur}${sale.tax_amount.toFixed(2)}`, width))
   }
   rule()
 

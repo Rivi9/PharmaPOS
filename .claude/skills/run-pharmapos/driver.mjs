@@ -282,6 +282,17 @@ const COMMANDS = {
     log('tab', JSON.stringify(name))
   },
 
+  /**
+   * Reload the renderer, as Ctrl+R does — the default Electron menu is still
+   * installed, so an operator can trigger this by accident. Anything the app
+   * keeps only in memory is gone afterwards.
+   */
+  async reload() {
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    await sleep(2500)
+    log('reloaded')
+  },
+
   /** Wait, for debounced UI. `sleep:1500` */
   async sleep(ms = '1000') {
     await sleep(Number(ms))

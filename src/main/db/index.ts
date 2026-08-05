@@ -146,6 +146,24 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
       SET product_name = (SELECT p.name FROM products p WHERE p.id = sale_items.product_id)
       WHERE product_name IS NULL;
     `
+  },
+  {
+    version: 8,
+    sql: `
+      -- L10: stock_batches.quantity is REAL but sale_items.quantity is INTEGER, so
+      -- a fractional quantity could be received and then never sold — and float
+      -- residue like 0.0000001 keeps a batch matching quantity > 0 forever, so
+      -- it stays in the FEFO queue, is counted as sellable, and blocks the batch
+      -- from ever being deleted.
+      --
+      -- Validation now rejects fractional quantities on every write. This repairs
+      -- what is already stored: anything within a rounding error of a whole number
+      -- is snapped to it, and the tiny residue that is really zero becomes zero.
+      UPDATE stock_batches SET quantity = 0 WHERE quantity > 0 AND quantity < 0.001;
+      UPDATE stock_batches
+      SET quantity = CAST(ROUND(quantity) AS INTEGER)
+      WHERE quantity <> CAST(ROUND(quantity) AS INTEGER);
+    `
   }
 ]
 

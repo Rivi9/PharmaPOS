@@ -31,6 +31,31 @@ function App(): React.JSX.Element {
     }
     checkFirstRun()
     useSettingsStore.getState().loadSettings()
+
+    /**
+     * Recover the session after a reload (L7).
+     *
+     * Ctrl+R — the default Electron menu is still installed — wiped the auth
+     * store and dropped the cashier at the login screen mid-sale, with a
+     * part-rung basket. The main-process session survives a reload because it is
+     * keyed to the webContents, so it is asked rather than assumed, and the open
+     * shift is picked up with it. The cart itself is restored by posStore.
+     */
+    const restoreSession = async (): Promise<void> => {
+      try {
+        const current = await window.electron.currentUser()
+        if (!current) return
+        useAuthStore.getState().login(current)
+        const shift = await window.electron.getActiveShift()
+        if (shift) {
+          useShiftStore.getState().setCurrentShift(shift)
+          await useShiftStore.getState().refreshTodaySales(shift.id)
+        }
+      } catch {
+        // Not signed in, or the session has gone — the login screen is correct.
+      }
+    }
+    void restoreSession()
   }, [])
 
   // Intercept OS window-close (Alt+F4, title-bar X).

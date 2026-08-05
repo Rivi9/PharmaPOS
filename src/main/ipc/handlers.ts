@@ -200,6 +200,35 @@ export function registerIpcHandlers(): void {
     }
   })
 
+  /**
+   * Who this renderer is signed in as, according to the main process.
+   *
+   * A reload — Ctrl+R, and the default Electron menu is still installed — wiped
+   * the renderer's auth store and dropped the cashier back to the login screen
+   * mid-sale (L7). The main-process session is keyed to the webContents, which a
+   * reload does not destroy, so it is still valid: the renderer can simply ask.
+   *
+   * Not a privilege escalation — it answers only for the caller's own session,
+   * and returns the same fields login already returned.
+   */
+  ipcMain.handle(IPC_CHANNELS.AUTH_CURRENT_USER, (event) => {
+    const session = getSessionUser(event)
+    if (!session) return null
+    // Re-read from the database so a deactivation or role change since login is
+    // reflected, rather than trusting the cached session blindly.
+    const user = getUserById(session.id)
+    if (!user || !user.isActive) {
+      clearSession(event)
+      return null
+    }
+    return {
+      id: user.id,
+      username: user.username,
+      full_name: user.fullName,
+      role: user.role
+    }
+  })
+
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGOUT, (event) => {
     const session = getSessionUser(event)
     if (session) {

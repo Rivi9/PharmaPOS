@@ -5,6 +5,8 @@ const electronAPI = {
   // Auth
   getUsers: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_GET_USERS),
   logout: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGOUT),
+  // Lets the renderer recover its own session after a reload (L7).
+  currentUser: () => ipcRenderer.invoke(IPC_CHANNELS.AUTH_CURRENT_USER),
   login: (data: { userId: string; pin?: string; password?: string }) =>
     ipcRenderer.invoke(IPC_CHANNELS.AUTH_LOGIN, data),
   createUser: (data: {
