@@ -31,6 +31,10 @@ jobs:
     # newer @electron/rebuild (which pulls a node-gyp that knows VS 18) — held for
     # now because dependency versions are frozen until the current update ships.
     runs-on: windows-2022
+    # A healthy run takes well under this. Without it a broken E2E run ran to
+    # GitHub's 6-hour default: 39 tests x 3 attempts x (60s window wait + 120s
+    # teardown timeout).
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +55,17 @@ jobs:
 
       - name: Unit tests
         run: npm run test:unit
+
+      - name: Rebuild native modules for Electron
+        # The E2E tests launch the dev Electron binary against node_modules, but
+        # `npm ci` installs better-sqlite3 built for Node's ABI, so the database
+        # failed to open, startup stopped before createWindow() and every test
+        # timed out waiting for a window. `electron-forge package` (pretest:e2e)
+        # rebuilds only its own staging copy, not node_modules. Locally
+        # `npm start` rebuilds node_modules in place, which is why it passed there.
+        run: npx electron-rebuild --force
+        env:
+          npm_config_msvs_version: '2022'
 
       - name: End-to-end tests
         # `pretest:e2e` builds first. Without it Playwright silently drives
