@@ -11,6 +11,8 @@ interface Settings {
   card_payment_enabled: string
   /** Printer columns. The preview reads this too, so it matches the printout. */
   printer_width: string
+  /** '1' checks for updates hourly. Off by default; read at startup. */
+  auto_update_enabled: string
 }
 
 interface SettingsState {
@@ -31,7 +33,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     currency_symbol: 'Rs.',
     receipt_footer: '',
     card_payment_enabled: '1',
-    printer_width: '42'
+    printer_width: '42',
+    auto_update_enabled: '0'
   },
   isLoading: true,
   loadError: null,

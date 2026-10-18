@@ -312,7 +312,8 @@ export function registerIpcHandlers(): void {
     'display_baud_rate',
     'backup_enabled',
     'backup_frequency',
-    'backup_time'
+    'backup_time',
+    'auto_update_enabled'
   ])
 
   ipcMain.handle(IPC_CHANNELS.SETTINGS_SET, async (event, { key, value }) => {

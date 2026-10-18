@@ -60,7 +60,7 @@ npm run publish
 
 Auto-updates work via `update-electron-app` + Squirrel.Windows + GitHub releases:
 
-1. Application checks for updates every hour (production only)
+1. Checks run when someone presses **Settings → Updates → Check for Updates**. Hourly background checks are off by default; turn them on in the same tab (applies at next start)
 2. Squirrel downloads the update silently in the background
 3. User is notified via the renderer when update is ready
 4. Update is applied on next app quit (`autoUpdater.quitAndInstall()`)

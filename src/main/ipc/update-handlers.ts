@@ -3,10 +3,7 @@ import { IPC_CHANNELS } from './channels'
 import { checkForUpdates, downloadUpdate, installUpdate } from '../services/updates/auto-updater'
 
 export function registerUpdateHandlers(): void {
-  ipcMain.handle(IPC_CHANNELS.UPDATES_CHECK, () => {
-    checkForUpdates()
-    return { success: true }
-  })
+  ipcMain.handle(IPC_CHANNELS.UPDATES_CHECK, () => checkForUpdates())
 
   ipcMain.handle(IPC_CHANNELS.UPDATES_DOWNLOAD, () => {
     downloadUpdate()
