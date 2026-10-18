@@ -100,12 +100,13 @@ export function EndShiftModal({
   const expectedCash = computedExpectedCash ?? 0
   const cashDifference = closingCashNum - expectedCash
 
-  const handleEndShift = async () => {
+  const handleEndShift = async (fromKeyboard = false) => {
     if (!currentShift || loading) return
     // The numpad binds a bare Enter to this. Without a guard one stray keypress
     // — a scanner suffix, a leaning elbow — closed the shift with a Rs. 0 count
-    // and logged the whole drawer as a shortage.
-    if (closingCash.trim() === '') {
+    // and logged the whole drawer as a shortage. Only Enter is guarded: tapping
+    // End Shift is deliberate, and an empty count is the Rs. 0.00 on screen.
+    if (fromKeyboard && closingCash.trim() === '') {
       setCountError('Enter the closing cash count before ending the shift')
       return
     }
@@ -251,7 +252,9 @@ export function EndShiftModal({
                   : `${currencySymbol} ${expectedCash.toFixed(2)}`}
               </span>
             </div>
-            {closingCashNum > 0 && (
+            {/* Shown at zero too — a 0 count is what End Shift records when the
+                field is empty, and hiding the shortage then is when it matters. */}
+            {!loadingExpectedCash && (
               <div
                 className={`flex justify-between font-semibold ${
                   Math.abs(cashDifference) < 1
@@ -290,7 +293,7 @@ export function EndShiftModal({
                 setClosingCash(v)
                 if (countError) setCountError('')
               }}
-              onSubmit={handleEndShift}
+              onSubmit={() => handleEndShift(true)}
               buttonClassName="h-11"
             />
             {countError && <p className="text-sm text-destructive font-medium">{countError}</p>}
@@ -319,7 +322,7 @@ export function EndShiftModal({
           </Button>
           <Button
             variant="destructive"
-            onClick={handleEndShift}
+            onClick={() => handleEndShift()}
             disabled={loading}
             className="flex-1 h-12 font-semibold"
           >
