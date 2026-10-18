@@ -32,7 +32,8 @@ import {
   Download,
   Upload,
   Play,
-  Square
+  Square,
+  CloudDownload
 } from 'lucide-react'
 
 interface LocalBackup {
@@ -98,6 +99,10 @@ export function SettingsPage(): React.JSX.Element {
   const [restorePassword, setRestorePassword] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [recoveryKey, setRecoveryKey] = useState<string | null>(null)
+
+  // Update state
+  const [updateBusy, setUpdateBusy] = useState(false)
+  const [updateMsg, setUpdateMsg] = useState('')
 
 
   useEffect(() => {
@@ -338,6 +343,43 @@ export function SettingsPage(): React.JSX.Element {
     }
   }
 
+  const handleCheckForUpdates = async (): Promise<void> => {
+    setUpdateBusy(true)
+    setUpdateMsg('')
+    try {
+      const result = (await window.electron.updates.check()) as {
+        status: 'available' | 'up-to-date' | 'error' | 'unavailable'
+        currentVersion: string
+        message?: string
+      }
+      switch (result.status) {
+        case 'available':
+          setUpdateMsg(
+            'A new version is available and downloading — you will be asked to restart when it is ready.'
+          )
+          break
+        case 'up-to-date':
+          setUpdateMsg(`You are on the latest version (v${result.currentVersion}).`)
+          break
+        default:
+          setUpdateMsg(`Error: ${result.message}`)
+      }
+    } catch (err: any) {
+      setUpdateMsg(`Error: ${err.message}`)
+    } finally {
+      setUpdateBusy(false)
+    }
+  }
+
+  const handleAutoUpdateChange = async (value: '0' | '1'): Promise<void> => {
+    setUpdateMsg('')
+    try {
+      await updateSetting('auto_update_enabled', value)
+    } catch (err: any) {
+      setUpdateMsg(`Error: ${err.message}`)
+    }
+  }
+
   const handleSchedulerToggle = async (): Promise<void> => {
     if (!user?.id) return
     setBackupBusy(true)
@@ -375,7 +417,7 @@ export function SettingsPage(): React.JSX.Element {
       </div>
 
       <Tabs defaultValue="printer" className="flex-1 min-h-0 flex flex-col">
-        <TabsList className="grid w-full grid-cols-4 max-w-3xl">
+        <TabsList className="grid w-full grid-cols-5 max-w-3xl">
           <TabsTrigger value="printer">Printer</TabsTrigger>
           <TabsTrigger value="business">Business</TabsTrigger>
           <TabsTrigger value="display" onClick={handleDisplayTabOpen}>
@@ -384,6 +426,7 @@ export function SettingsPage(): React.JSX.Element {
           <TabsTrigger value="backup" onClick={handleBackupTabOpen}>
             Backup
           </TabsTrigger>
+          <TabsTrigger value="updates">Updates</TabsTrigger>
         </TabsList>
 
         <TabsContent value="printer" className="space-y-6 flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
@@ -839,6 +882,62 @@ export function SettingsPage(): React.JSX.Element {
           </div>
         </TabsContent>
 
+        {/* ── Updates Tab ───────────────────────────────────────────── */}
+        <TabsContent value="updates" className="space-y-6 flex-1 min-h-0 overflow-y-auto overscroll-contain pt-4 pb-6 pr-1">
+          <div className="max-w-2xl">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CloudDownload className="h-5 w-5" />
+                  Software Updates
+                </CardTitle>
+                <CardDescription>Check for a newer version of PharmaPOS</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Button
+                  onClick={handleCheckForUpdates}
+                  disabled={updateBusy}
+                  className="h-11 flex items-center gap-2"
+                >
+                  <RefreshCw className={`h-4 w-4 ${updateBusy ? 'animate-spin' : ''}`} />
+                  {updateBusy ? 'Checking...' : 'Check for Updates'}
+                </Button>
+
+                <div className="border-t pt-4">
+                  <label className="text-sm font-medium">Automatic update checks</label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    When on, PharmaPOS checks for updates every hour in the background. Takes
+                    effect the next time PharmaPOS starts.
+                  </p>
+                  <div className="flex gap-3">
+                    <Button
+                      variant={settings.auto_update_enabled === '1' ? 'default' : 'outline'}
+                      className="h-11 flex-1"
+                      onClick={() => handleAutoUpdateChange('1')}
+                    >
+                      On
+                    </Button>
+                    <Button
+                      variant={settings.auto_update_enabled !== '1' ? 'default' : 'outline'}
+                      className="h-11 flex-1"
+                      onClick={() => handleAutoUpdateChange('0')}
+                    >
+                      Off
+                    </Button>
+                  </div>
+                </div>
+
+                {updateMsg && (
+                  <p
+                    className={`text-sm font-medium break-words ${updateMsg.startsWith('Error') ? 'text-destructive' : 'text-green-600'}`}
+                  >
+                    {updateMsg}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
       </Tabs>
 
       {/* Restore — Electron has no window.prompt(), so the password is collected here */}

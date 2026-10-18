@@ -18,4 +18,4 @@
   $env:GITHUB_TOKEN="ghp_your_token_here"
   npm run publish
 
-  Auto-update on existing installs: update-electron-app checks https://update.electronjs.org/Rivi9/pharmapos/win32-x64/{currentVersion} every hour and triggers Squirrel when a newer version is published. 
+  Auto-update on existing installs: the app checks https://update.electronjs.org/Rivi9/pharmapos/win32-x64/{currentVersion} when Settings → Updates → Check for Updates is pressed (or every hour, if automatic checks are turned on in that tab) and triggers Squirrel when a newer version is published. 
