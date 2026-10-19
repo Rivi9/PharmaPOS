@@ -1,17 +1,27 @@
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle
 } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Label } from '@renderer/components/ui/label'
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet
+} from '@renderer/components/ui/field'
+import { Alert, AlertDescription } from '@renderer/components/ui/alert'
+import { Spinner } from '@renderer/components/ui/spinner'
 import {
   Select,
   SelectContent,
@@ -19,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
+import { FormNumberInput } from './form-controls'
 import type { Product, Category, Supplier } from '@renderer/stores/inventoryStore'
 
 const productSchema = z.object({
@@ -28,12 +39,24 @@ const productSchema = z.object({
   sku: z.string().optional(),
   category_id: z.string().optional(),
   supplier_id: z.string().optional(),
-  cost_price: z.number().min(0, 'Cost price must be positive'),
-  unit_price: z.number().min(0, 'Unit price must be positive'),
-  tax_rate: z.number().min(0).max(100).optional(),
+  cost_price: z.number({ error: 'Enter the cost price' }).min(0, 'Cost price must be positive'),
+  unit_price: z.number({ error: 'Enter the unit price' }).min(0, 'Unit price must be positive'),
+  tax_rate: z
+    .number({ error: 'Enter a tax rate (0 for none)' })
+    .min(0, 'Tax rate cannot be negative')
+    .max(100, 'Tax rate cannot be over 100%')
+    .optional(),
   is_tax_inclusive: z.number().optional(),
-  reorder_level: z.number().int().min(0).optional(),
-  reorder_qty: z.number().int().min(0).optional(),
+  reorder_level: z
+    .number({ error: 'Enter a reorder level' })
+    .int('Whole numbers only')
+    .min(0)
+    .optional(),
+  reorder_qty: z
+    .number({ error: 'Enter a reorder quantity' })
+    .int('Whole numbers only')
+    .min(0)
+    .optional(),
   unit: z.string().optional(),
   track_expiry: z.number().optional(),
   is_active: z.number().optional()
@@ -50,6 +73,8 @@ interface ProductFormDialogProps {
   suppliers: Supplier[]
 }
 
+type NumberFieldName = 'cost_price' | 'unit_price' | 'tax_rate' | 'reorder_level' | 'reorder_qty'
+
 export function ProductFormDialog({
   open,
   onClose,
@@ -57,9 +82,10 @@ export function ProductFormDialog({
   product,
   categories,
   suppliers
-}: ProductFormDialogProps) {
+}: ProductFormDialogProps): React.JSX.Element {
   const {
     register,
+    control,
     handleSubmit,
     reset,
     setValue,
@@ -112,7 +138,7 @@ export function ProductFormDialog({
 
   const [submitError, setSubmitError] = useState('')
 
-  const handleFormSubmit = async (data: ProductFormData) => {
+  const handleFormSubmit = async (data: ProductFormData): Promise<void> => {
     setSubmitError('')
     try {
       await onSubmit(data)
@@ -129,153 +155,161 @@ export function ProductFormDialog({
   const categoryId = watch('category_id')
   const supplierId = watch('supplier_id')
 
+  const numberField = (
+    name: NumberFieldName,
+    label: React.ReactNode,
+    opts: { decimal?: boolean; placeholder?: string } = {}
+  ): React.JSX.Element => (
+    <Field data-invalid={!!errors[name]}>
+      <FieldLabel htmlFor={name}>{label}</FieldLabel>
+      <Controller
+        control={control}
+        name={name}
+        render={({ field, fieldState }) => (
+          <FormNumberInput
+            id={name}
+            decimal={opts.decimal}
+            placeholder={opts.placeholder}
+            ref={field.ref}
+            name={field.name}
+            value={field.value}
+            onChange={field.onChange}
+            onBlur={field.onBlur}
+            aria-invalid={fieldState.invalid}
+          />
+        )}
+      />
+      <FieldError errors={[errors[name]]} />
+    </Field>
+  )
+
+  const required = <span className="text-destructive">*</span>
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{product ? 'Edit Product' : 'Add New Product'}</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="flex max-h-[92vh] flex-col gap-0 p-0 sm:max-w-3xl">
+        <DialogHeader className="border-b p-6 pr-16">
+          <DialogTitle className="text-xl font-semibold">
+            {product ? 'Edit Product' : 'Add New Product'}
+          </DialogTitle>
+          <DialogDescription className="text-base">
             {product
               ? 'Update product information, pricing, and stock settings.'
               : 'Add a new product to your inventory with pricing and stock tracking.'}
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">
-                Product Name <span className="text-red-500">*</span>
-              </Label>
-              <Input id="name" {...register('name')} />
-              {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
-            </div>
+        <form
+          onSubmit={handleSubmit(handleFormSubmit)}
+          className="flex min-h-0 flex-1 flex-col"
+          noValidate
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">
+            <FieldGroup className="gap-8">
+              <FieldSet>
+                <FieldLegend>Product</FieldLegend>
+                <div className="grid grid-cols-2 gap-5">
+                  <Field data-invalid={!!errors.name}>
+                    <FieldLabel htmlFor="name">Product Name {required}</FieldLabel>
+                    <Input id="name" aria-invalid={!!errors.name} {...register('name')} />
+                    <FieldError errors={[errors.name]} />
+                  </Field>
 
-            <div className="space-y-2">
-              <Label htmlFor="generic_name">Generic Name</Label>
-              <Input id="generic_name" {...register('generic_name')} />
-            </div>
+                  <Field>
+                    <FieldLabel htmlFor="generic_name">Generic Name</FieldLabel>
+                    <Input id="generic_name" {...register('generic_name')} />
+                  </Field>
 
-            <div className="space-y-2">
-              <Label htmlFor="sku">SKU</Label>
-              <Input id="sku" {...register('sku')} />
-            </div>
+                  <Field>
+                    <FieldLabel htmlFor="sku">SKU</FieldLabel>
+                    <Input id="sku" autoComplete="off" {...register('sku')} />
+                  </Field>
 
-            <div className="space-y-2">
-              <Label htmlFor="barcode">Barcode</Label>
-              <Input id="barcode" {...register('barcode')} />
-            </div>
+                  <Field>
+                    <FieldLabel htmlFor="barcode">Barcode</FieldLabel>
+                    <Input id="barcode" autoComplete="off" {...register('barcode')} />
+                  </Field>
 
-            <div className="space-y-2">
-              <Label htmlFor="category_id">Category</Label>
-              <Select value={categoryId} onValueChange={(value) => setValue('category_id', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                  <Field>
+                    <FieldLabel htmlFor="category_id">Category</FieldLabel>
+                    <Select
+                      value={categoryId}
+                      onValueChange={(value) => setValue('category_id', value)}
+                    >
+                      <SelectTrigger id="category_id" className="w-full">
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((cat) => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
 
-            <div className="space-y-2">
-              <Label htmlFor="supplier_id">Supplier</Label>
-              <Select value={supplierId} onValueChange={(value) => setValue('supplier_id', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select supplier" />
-                </SelectTrigger>
-                <SelectContent>
-                  {suppliers.map((sup) => (
-                    <SelectItem key={sup.id} value={sup.id}>
-                      {sup.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                  <Field>
+                    <FieldLabel htmlFor="supplier_id">Supplier</FieldLabel>
+                    <Select
+                      value={supplierId}
+                      onValueChange={(value) => setValue('supplier_id', value)}
+                    >
+                      <SelectTrigger id="supplier_id" className="w-full">
+                        <SelectValue placeholder="Select supplier" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {suppliers.map((sup) => (
+                          <SelectItem key={sup.id} value={sup.id}>
+                            {sup.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </Field>
+                </div>
+              </FieldSet>
 
-            <div className="space-y-2">
-              <Label htmlFor="cost_price">
-                Cost Price (Rs.) <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="cost_price"
-                type="number"
-                step="0.01"
-                {...register('cost_price', { valueAsNumber: true })}
-              />
-              {errors.cost_price && (
-                <p className="text-sm text-red-500">{errors.cost_price.message}</p>
+              <FieldSet>
+                <FieldLegend>Pricing</FieldLegend>
+                <div className="grid grid-cols-3 gap-5">
+                  {numberField('cost_price', <>Cost Price (Rs.) {required}</>, { decimal: true })}
+                  {numberField('unit_price', <>Unit Price (Rs.) {required}</>, { decimal: true })}
+                  {numberField('tax_rate', 'Tax Rate (%)', { decimal: true })}
+                </div>
+              </FieldSet>
+
+              <FieldSet>
+                <FieldLegend>Stock</FieldLegend>
+                <div className="grid grid-cols-3 gap-5">
+                  <Field>
+                    <FieldLabel htmlFor="unit">Unit</FieldLabel>
+                    <Input id="unit" {...register('unit')} placeholder="e.g., piece, box, bottle" />
+                  </Field>
+                  {numberField('reorder_level', 'Reorder Level')}
+                  {numberField('reorder_qty', 'Reorder Quantity')}
+                </div>
+              </FieldSet>
+
+              {submitError && (
+                <Alert variant="destructive">
+                  <AlertDescription className="text-base font-medium">
+                    {submitError}
+                  </AlertDescription>
+                </Alert>
               )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="unit_price">
-                Unit Price (Rs.) <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="unit_price"
-                type="number"
-                step="0.01"
-                {...register('unit_price', { valueAsNumber: true })}
-              />
-              {errors.unit_price && (
-                <p className="text-sm text-red-500">{errors.unit_price.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="tax_rate">Tax Rate (%)</Label>
-              <Input
-                id="tax_rate"
-                type="number"
-                step="0.1"
-                {...register('tax_rate', { valueAsNumber: true })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="unit">Unit</Label>
-              <Input id="unit" {...register('unit')} placeholder="e.g., piece, box, bottle" />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="reorder_level">Reorder Level</Label>
-              <Input
-                id="reorder_level"
-                type="number"
-                {...register('reorder_level', { valueAsNumber: true })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="reorder_qty">Reorder Quantity</Label>
-              <Input
-                id="reorder_qty"
-                type="number"
-                {...register('reorder_qty', { valueAsNumber: true })}
-              />
-            </div>
+            </FieldGroup>
           </div>
 
-          {submitError && (
-
-            <p className="text-sm text-destructive font-medium">{submitError}</p>
-
-          )}
-
-          <div className="flex justify-end gap-2 pt-4">
-            <Button type="button" variant="outline" onClick={onClose}>
+          <DialogFooter className="border-t p-4 sm:justify-end">
+            <Button type="button" variant="outline" size="lg" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" size="lg" className="min-w-44" disabled={isSubmitting}>
+              {isSubmitting && <Spinner className="size-5" />}
               {isSubmitting ? 'Saving...' : product ? 'Update Product' : 'Create Product'}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

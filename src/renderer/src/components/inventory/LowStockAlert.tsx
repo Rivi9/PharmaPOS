@@ -1,41 +1,44 @@
-import { AlertTriangle } from 'lucide-react'
+import { TriangleAlert } from 'lucide-react'
 import type { Product } from '@renderer/stores/inventoryStore'
 
 interface LowStockAlertProps {
   lowStockProducts: Product[]
 }
 
-export function LowStockAlert({ lowStockProducts }: LowStockAlertProps) {
+export function LowStockAlert({ lowStockProducts }: LowStockAlertProps): React.JSX.Element | null {
   if (lowStockProducts.length === 0) {
     return null
   }
 
   return (
-    <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6">
-      <div className="flex items-start gap-3">
-        <AlertTriangle className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
-        <div className="flex-1">
-          <h3 className="font-semibold text-orange-900 mb-2">
-            Low Stock Alert ({lowStockProducts.length})
-          </h3>
-          <div className="space-y-1">
-            {lowStockProducts.slice(0, 5).map((product) => (
-              <div key={product.id} className="text-sm text-orange-800">
-                <span className="font-medium">{product.name}</span>
-                {product.sku && <span className="text-orange-600"> ({product.sku})</span>} -
-                <span className="font-semibold text-red-600 ml-1">
-                  {product.total_stock || 0} {product.unit}
-                </span>
-                <span className="text-orange-600 ml-1">(reorder at {product.reorder_level})</span>
-              </div>
-            ))}
-            {lowStockProducts.length > 5 && (
-              <div className="text-sm text-orange-600 mt-2">
-                and {lowStockProducts.length - 5} more products...
-              </div>
-            )}
-          </div>
-        </div>
+    <div
+      role="status"
+      className="flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning-muted px-4 py-3"
+    >
+      <TriangleAlert className="mt-0.5 size-5 shrink-0 text-warning" />
+      <div className="min-w-0 flex-1">
+        <h3 className="font-semibold text-warning">Low Stock Alert ({lowStockProducts.length})</h3>
+        <ul className="mt-2 flex flex-wrap gap-2">
+          {lowStockProducts.slice(0, 5).map((product) => (
+            <li
+              key={product.id}
+              className="rounded-lg border border-warning/20 bg-card px-3 py-1.5 text-sm text-foreground"
+            >
+              <span className="font-medium">{product.name}</span>
+              {product.sku && <span className="text-muted-foreground"> ({product.sku})</span>}
+              {' — '}
+              <span className="font-semibold text-destructive tabular-nums">
+                {product.total_stock || 0} {product.unit}
+              </span>
+              <span className="text-muted-foreground"> (reorder at {product.reorder_level})</span>
+            </li>
+          ))}
+          {lowStockProducts.length > 5 && (
+            <li className="self-center px-1 text-sm text-warning">
+              and {lowStockProducts.length - 5} more products...
+            </li>
+          )}
+        </ul>
       </div>
     </div>
   )

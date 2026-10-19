@@ -9,8 +9,22 @@ import { UpdateNotification } from './components/UpdateNotification'
 import { StartShiftModal } from './components/pos/StartShiftModal'
 import { EndShiftModal } from './components/pos/EndShiftModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { Toaster } from './components/ui/sonner'
+import { Spinner } from './components/ui/spinner'
+import { TooltipProvider } from './components/ui/tooltip'
+import { useSystemThemeSync } from './hooks/useTheme'
 
 function App(): React.JSX.Element {
+  useSystemThemeSync()
+  return (
+    <TooltipProvider delayDuration={400}>
+      <AppScreens />
+      <Toaster />
+    </TooltipProvider>
+  )
+}
+
+function AppScreens(): React.JSX.Element {
   const { user, isAuthenticated } = useAuthStore()
   const { currentShift } = useShiftStore()
   const [isFirstRun, setIsFirstRun] = useState<boolean | null>(null)
@@ -25,7 +39,7 @@ function App(): React.JSX.Element {
   }, [currentShift])
 
   useEffect(() => {
-    const checkFirstRun = async () => {
+    const checkFirstRun = async (): Promise<void> => {
       const firstRun = await window.electron.setup.isFirstRun()
       setIsFirstRun(firstRun)
     }
@@ -62,7 +76,7 @@ function App(): React.JSX.Element {
   // Register once on mount (empty deps) — the ref ensures we always read the current shift.
   // Main process sends APP_CLOSE_REQUESTED; we show EndShift or confirm close immediately.
   useEffect(() => {
-    const handler = () => {
+    const handler = (): void => {
       if (currentShiftRef.current) {
         setCloseWindowOnEnd(true)
         setEndShiftOpen(true)
@@ -77,12 +91,12 @@ function App(): React.JSX.Element {
     }
   }, []) // empty: register once, never re-register
 
-  const handleEndShiftClose = () => {
+  const handleEndShiftClose = (): void => {
     setEndShiftOpen(false)
     setCloseWindowOnEnd(false)
   }
 
-  const handleShiftEnded = () => {
+  const handleShiftEnded = (): void => {
     if (closeWindowOnEnd) {
       window.electron.ipcRenderer.send('app:confirm-close')
     }
@@ -92,7 +106,9 @@ function App(): React.JSX.Element {
   if (isFirstRun === null) {
     return (
       <>
-        <div className="min-h-screen flex items-center justify-center">Loading...</div>
+        <div className="flex min-h-screen items-center justify-center bg-canvas text-muted-foreground">
+          <Spinner className="size-8" />
+        </div>
         <UpdateNotification />
       </>
     )

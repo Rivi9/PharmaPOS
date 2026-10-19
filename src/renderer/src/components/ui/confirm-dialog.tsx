@@ -1,3 +1,4 @@
+import { TriangleAlert } from 'lucide-react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -6,6 +7,7 @@ import {
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
+  AlertDialogMedia,
   AlertDialogTitle
 } from '@renderer/components/ui/alert-dialog'
 import { cn } from '@renderer/lib/utils'
@@ -18,27 +20,31 @@ import type { ConfirmDialogProps } from '@renderer/hooks/useConfirm'
 export function ConfirmDialog({ request, onSettle }: ConfirmDialogProps): React.JSX.Element {
   return (
     <AlertDialog open={request !== null} onOpenChange={(open) => !open && onSettle(false)}>
-      <AlertDialogContent>
+      <AlertDialogContent className="sm:max-w-lg">
         <AlertDialogHeader>
-          <AlertDialogTitle>{request?.title}</AlertDialogTitle>
+          {request?.destructive && (
+            <AlertDialogMedia className="bg-destructive/10 text-destructive">
+              <TriangleAlert />
+            </AlertDialogMedia>
+          )}
+          <AlertDialogTitle className="text-xl font-semibold">{request?.title}</AlertDialogTitle>
           {/* Radix warns when Content has no Description, so it is always
               rendered and simply hidden when there is no detail line. */}
-          <AlertDialogDescription className={cn(!request?.description && 'sr-only')}>
+          <AlertDialogDescription className={cn('text-base', !request?.description && 'sr-only')}>
             {request?.description ?? ''}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <AlertDialogFooter>
+        <AlertDialogFooter className="gap-3">
           {!request?.acknowledge && (
-            <AlertDialogCancel onClick={() => onSettle(false)}>
+            <AlertDialogCancel size="lg" className="sm:min-w-36" onClick={() => onSettle(false)}>
               {request?.cancelLabel ?? 'Cancel'}
             </AlertDialogCancel>
           )}
           <AlertDialogAction
             autoFocus
-            className={cn(
-              request?.destructive &&
-                'bg-destructive text-white hover:bg-destructive/90 active:bg-destructive/80'
-            )}
+            size="lg"
+            variant={request?.destructive ? 'destructive-solid' : 'default'}
+            className="sm:min-w-36"
             onClick={() => onSettle(true)}
           >
             {request?.confirmLabel ?? (request?.acknowledge ? 'OK' : 'Confirm')}

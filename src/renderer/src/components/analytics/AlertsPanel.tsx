@@ -1,13 +1,24 @@
+import { AlertTriangle, CircleCheck, Clock, RefreshCw } from 'lucide-react'
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle
 } from '@renderer/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
-import { AlertTriangle, Clock, RefreshCw } from 'lucide-react'
+import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle
+} from '@renderer/components/ui/empty'
+import { Skeleton } from '@renderer/components/ui/skeleton'
+import { cn } from '@renderer/lib/utils'
 import type { LowStockAlert, ExpiryAlert } from '@renderer/types/analytics'
 
 interface AlertsPanelProps {
@@ -20,6 +31,36 @@ interface AlertsPanelProps {
   lastUpdated?: Date | null
 }
 
+function AlertsSkeleton(): React.JSX.Element {
+  return (
+    <div className="flex flex-col gap-3">
+      {[1, 2, 3].map((i) => (
+        <Skeleton key={i} className="h-[72px] w-full rounded-xl" />
+      ))}
+    </div>
+  )
+}
+
+function AllClear({
+  title,
+  description
+}: {
+  title: string
+  description: string
+}): React.JSX.Element {
+  return (
+    <Empty className="border p-6">
+      <EmptyHeader>
+        <EmptyMedia variant="icon" className="bg-success-muted text-success">
+          <CircleCheck />
+        </EmptyMedia>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription>{description}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  )
+}
+
 export function AlertsPanel({
   lowStockAlerts,
   expiryAlerts,
@@ -30,65 +71,69 @@ export function AlertsPanel({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <CardTitle>Alerts</CardTitle>
-            <CardDescription>
-              Low stock and expiry notifications
-              {lastUpdated && ` · updated ${lastUpdated.toLocaleTimeString()}`}
-            </CardDescription>
-          </div>
-          {onRefresh && (
-            <Button
-              variant="outline"
-              className="h-11 gap-2 shrink-0"
-              onClick={onRefresh}
-              disabled={isLoading}
-            >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+        <CardTitle className="text-lg font-semibold">Alerts</CardTitle>
+        <CardDescription>
+          Low stock and expiry notifications
+          {lastUpdated && ` · updated ${lastUpdated.toLocaleTimeString()}`}
+        </CardDescription>
+        {onRefresh && (
+          <CardAction>
+            <Button variant="outline" onClick={onRefresh} disabled={isLoading}>
+              <RefreshCw className={cn(isLoading && 'animate-spin')} />
               Refresh
             </Button>
-          )}
-        </div>
+          </CardAction>
+        )}
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="low-stock">
+        <Tabs defaultValue="low-stock" className="gap-4">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="low-stock">Low Stock ({lowStockAlerts.length})</TabsTrigger>
             <TabsTrigger value="expiring">Expiring ({expiryAlerts.length})</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="low-stock" className="space-y-3">
+          <TabsContent value="low-stock" className="flex flex-col gap-3">
             {isLoading ? (
-              <div className="text-center py-8 text-muted-foreground">Loading...</div>
+              <AlertsSkeleton />
             ) : lowStockAlerts.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No low stock alerts</div>
+              <AllClear
+                title="No low stock alerts"
+                description="Every product is above its reorder level."
+              />
             ) : (
               lowStockAlerts.map((alert) => (
                 <div
                   key={alert.product_id}
-                  className="flex items-start gap-3 p-3 rounded-lg border bg-destructive/10"
+                  className="flex items-center gap-3 rounded-xl border border-destructive/20 bg-destructive/5 p-3 dark:bg-destructive/10"
                 >
-                  <AlertTriangle className="h-5 w-5 text-destructive mt-0.5" />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium">{alert.product_name}</p>
-                    <p className="text-sm text-muted-foreground">
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+                    <AlertTriangle className="size-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-base font-medium">{alert.product_name}</p>
+                    <p className="text-sm text-muted-foreground tabular-nums">
                       Current: {alert.current_stock} | Reorder at: {alert.reorder_level}
                     </p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium">Order {alert.reorder_qty}</p>
-                  </div>
+                  <Badge
+                    variant="outline"
+                    className="h-7 shrink-0 bg-background px-2.5 text-sm tabular-nums"
+                  >
+                    Order {alert.reorder_qty}
+                  </Badge>
                 </div>
               ))
             )}
           </TabsContent>
 
-          <TabsContent value="expiring" className="space-y-3">
+          <TabsContent value="expiring" className="flex flex-col gap-3">
             {isLoading ? (
-              <div className="text-center py-8 text-muted-foreground">Loading...</div>
+              <AlertsSkeleton />
             ) : expiryAlerts.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No expiring items</div>
+              <AllClear
+                title="No expiring items"
+                description="No batches expire within the next 30 days."
+              />
             ) : (
               expiryAlerts.map((alert) => {
                 const isExpired = alert.days_until_expiry < 0
@@ -97,43 +142,51 @@ export function AlertsPanel({
                 return (
                   <div
                     key={alert.batch_id}
-                    className={`flex items-start gap-3 p-3 rounded-lg border ${
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl border p-3',
                       isExpired
-                        ? 'bg-destructive/20'
+                        ? 'border-destructive/20 bg-destructive/5 dark:bg-destructive/10'
                         : isUrgent
-                          ? 'bg-orange-500/10'
-                          : 'bg-yellow-500/10'
-                    }`}
+                          ? 'border-warning/25 bg-warning-muted'
+                          : 'bg-card'
+                    )}
                   >
-                    <Clock
-                      className={`h-5 w-5 mt-0.5 ${
+                    <span
+                      className={cn(
+                        'flex size-10 shrink-0 items-center justify-center rounded-lg',
                         isExpired
-                          ? 'text-destructive'
+                          ? 'bg-destructive/10 text-destructive'
                           : isUrgent
-                            ? 'text-orange-600'
-                            : 'text-yellow-600'
-                      }`}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium">{alert.product_name}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Batch: {alert.batch_number || 'N/A'} | Qty: {alert.quantity}
-                      </p>
-                      <p className="text-xs text-muted-foreground">Expires: {alert.expiry_date}</p>
-                    </div>
-                    <div className="text-right">
-                      <p
-                        className={`text-sm font-medium ${
-                          isExpired
-                            ? 'text-destructive'
-                            : isUrgent
-                              ? 'text-orange-600'
-                              : 'text-yellow-600'
-                        }`}
-                      >
-                        {isExpired ? 'Expired' : `${alert.days_until_expiry}d`}
+                            ? 'bg-warning/15 text-warning'
+                            : 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      <Clock className="size-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-base font-medium">{alert.product_name}</p>
+                      <p className="text-sm text-muted-foreground tabular-nums">
+                        Batch: {alert.batch_number || 'N/A'} | Qty: {alert.quantity} | Expires:{' '}
+                        {alert.expiry_date}
                       </p>
                     </div>
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        'h-7 shrink-0 border-transparent px-2.5 text-sm font-semibold tabular-nums',
+                        isExpired
+                          ? 'bg-destructive text-destructive-foreground'
+                          : isUrgent
+                            ? 'bg-warning text-warning-foreground'
+                            : 'bg-muted text-foreground'
+                      )}
+                    >
+                      {isExpired
+                        ? 'Expired'
+                        : alert.days_until_expiry === 0
+                          ? 'Today'
+                          : `${alert.days_until_expiry}d`}
+                    </Badge>
                   </div>
                 )
               })

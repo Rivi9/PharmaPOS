@@ -1,12 +1,45 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Search, UserPlus, Phone, Mail, History } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { toast } from 'sonner'
+import {
+  UserPlus,
+  Phone,
+  Mail,
+  History,
+  MapPin,
+  StickyNote,
+  CalendarDays,
+  Pencil,
+  UserMinus,
+  ShieldX,
+  Users,
+  Receipt
+} from 'lucide-react'
+import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Card, CardContent, CardHeader, CardTitle } from '@renderer/components/ui/card'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
-import { Label } from '@renderer/components/ui/label'
+import { Textarea } from '@renderer/components/ui/textarea'
+import { Skeleton } from '@renderer/components/ui/skeleton'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@renderer/components/ui/dialog'
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle
+} from '@renderer/components/ui/empty'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@renderer/components/ui/field'
+import { SearchInput } from '@renderer/components/common/search-input'
 import { useAuthStore } from '@renderer/stores/authStore'
 import { ipcErrorMessage } from '@renderer/lib/ipc-error'
+import { formatCurrency } from '@renderer/lib/calculations'
+import { cn } from '@renderer/lib/utils'
 import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
 import { useConfirm } from '@renderer/hooks/useConfirm'
 import { usePermission } from '@renderer/hooks/usePermission'
@@ -30,6 +63,9 @@ interface PurchaseHistoryEntry {
   items: { productName: string; quantity: number; lineTotal: number }[]
 }
 
+/** Which form field a save error belongs to, so it renders under that field. */
+type FormErrorField = 'name' | 'phone' | 'form'
+
 export function CustomersPage(): React.JSX.Element {
   const userId = useAuthStore((s) => s.user?.id ?? '')
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -39,6 +75,10 @@ export function CustomersPage(): React.JSX.Element {
   const [showForm, setShowForm] = useState(false)
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  // The customer whose history is wanted, so a slow response for a customer
+  // tapped earlier cannot overwrite the one now on screen.
+  const historyFor = useRef<string | null>(null)
 
   // Form state
   const [formName, setFormName] = useState('')
@@ -47,6 +87,7 @@ export function CustomersPage(): React.JSX.Element {
   const [formAddress, setFormAddress] = useState('')
   const [formNotes, setFormNotes] = useState('')
   const [formError, setFormError] = useState('')
+  const [formErrorField, setFormErrorField] = useState<FormErrorField>('form')
   const [isSaving, setIsSaving] = useState(false)
   const { confirm, notify, confirmProps } = useConfirm()
   const canErase = usePermission('customers:erase')
@@ -54,10 +95,16 @@ export function CustomersPage(): React.JSX.Element {
   const loadCustomers = useCallback(async () => {
     setIsLoading(true)
     try {
-      const data = await window.electron.customers.list(search || undefined)
+      const data: Customer[] = await window.electron.customers.list(search || undefined)
       setCustomers(data)
+      // Keep the detail panel in step with an edit; a customer filtered out by
+      // the search stays on screen as it was.
+      setSelected((prev) => (prev ? (data.find((c) => c.id === prev.id) ?? prev) : prev))
+    } catch (error) {
+      toast.error('Could not load customers', { description: ipcErrorMessage(error) })
     } finally {
       setIsLoading(false)
+      setHasLoaded(true)
     }
   }, [search])
 
@@ -66,23 +113,30 @@ export function CustomersPage(): React.JSX.Element {
     return () => clearTimeout(timer)
   }, [loadCustomers])
 
-  const loadHistory = async (customerId: string) => {
+  const loadHistory = async (customerId: string): Promise<void> => {
+    historyFor.current = customerId
     try {
       const data = await window.electron.customers.purchaseHistory(customerId)
-      setHistory(data ?? [])
+      if (historyFor.current === customerId) setHistory(data ?? [])
     } catch {
       // Fall back to an empty history so the panel shows "No purchases yet"
       // rather than sitting on "Loading..." forever.
-      setHistory([])
+      if (historyFor.current === customerId) setHistory([])
     }
   }
 
-  const handleSelect = (customer: Customer) => {
+  const handleSelect = (customer: Customer): void => {
     setSelected(customer)
+    setHistory(null)
     loadHistory(customer.id)
   }
 
-  const openCreateForm = () => {
+  const showFormError = (message: string, field: FormErrorField = 'form'): void => {
+    setFormError(message)
+    setFormErrorField(field)
+  }
+
+  const openCreateForm = (): void => {
     setEditCustomer(null)
     setFormName('')
     setFormPhone('')
@@ -93,7 +147,7 @@ export function CustomersPage(): React.JSX.Element {
     setShowForm(true)
   }
 
-  const openEditForm = (customer: Customer) => {
+  const openEditForm = (customer: Customer): void => {
     setEditCustomer(customer)
     setFormName(customer.name)
     setFormPhone(customer.phone ?? '')
@@ -104,9 +158,9 @@ export function CustomersPage(): React.JSX.Element {
     setShowForm(true)
   }
 
-  const handleSaveCustomer = async () => {
+  const handleSaveCustomer = async (): Promise<void> => {
     if (!formName.trim()) {
-      setFormError('Name is required')
+      showFormError('Name is required', 'name')
       return
     }
     setFormError('')
@@ -130,21 +184,22 @@ export function CustomersPage(): React.JSX.Element {
         await window.electron.customers.create(userId, data)
       }
     } catch (error) {
-      setFormError(
-        /UNIQUE constraint failed: customers.phone/.test(String(error))
-          ? 'Another customer already uses that phone number'
-          : ipcErrorMessage(error, 'Failed to save customer')
-      )
+      if (/UNIQUE constraint failed: customers.phone/.test(String(error))) {
+        showFormError('Another customer already uses that phone number', 'phone')
+      } else {
+        showFormError(ipcErrorMessage(error, 'Failed to save customer'))
+      }
       return
     } finally {
       setIsSaving(false)
     }
 
+    toast.success(editCustomer ? `${data.name} updated` : `${data.name} added`)
     setShowForm(false)
     loadCustomers()
   }
 
-  const handleDelete = async (customer: Customer) => {
+  const handleDelete = async (customer: Customer): Promise<void> => {
     const ok = await confirm({
       title: `Remove ${customer.name}?`,
       description:
@@ -159,6 +214,7 @@ export function CustomersPage(): React.JSX.Element {
       await notify('Could not remove customer', ipcErrorMessage(error))
       return
     }
+    toast.success(`${customer.name} removed`)
     if (selected?.id === customer.id) setSelected(null)
     loadCustomers()
   }
@@ -193,255 +249,359 @@ export function CustomersPage(): React.JSX.Element {
     loadCustomers()
   }
 
+  const historyTotal = history?.reduce((s, h) => s + h.total, 0) ?? 0
+
   return (
-    <div className="h-full flex overflow-hidden">
+    <div className="flex h-full gap-4 overflow-hidden bg-canvas p-4">
       {/* Customer List */}
-      <div className="w-96 border-r flex flex-col">
-        <div className="p-4 border-b space-y-3">
-          <div className="flex items-center justify-between">
-            <h1 className="text-lg font-bold">Customers</h1>
-            <Button size="sm" onClick={openCreateForm}>
-              <UserPlus className="w-4 h-4 mr-1" />
+      <div className="flex w-96 shrink-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-xs">
+        <div className="flex flex-col gap-3 border-b p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-semibold">Customers</h1>
+              <p className="text-sm text-muted-foreground">
+                {hasLoaded ? `${customers.length} shown` : 'Loading…'}
+              </p>
+            </div>
+            <Button onClick={openCreateForm}>
+              <UserPlus className="size-5" />
               Add
             </Button>
           </div>
-          <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search by name or phone..."
-              className="pl-8"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
+          <SearchInput
+            value={search}
+            onValueChange={setSearch}
+            loading={isLoading && hasLoaded}
+            placeholder="Search by name or phone..."
+            className="max-w-none"
+          />
         </div>
 
-        <div className="flex-1 overflow-auto">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
-              Loading...
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          {!hasLoaded ? (
+            <div className="flex flex-col gap-2 p-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
             </div>
           ) : customers.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-24 text-muted-foreground text-sm gap-1">
-              <p>No customers found</p>
-              {!search && <p className="text-xs">Click Add to create your first customer</p>}
-            </div>
+            <Empty className="p-8">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Users />
+                </EmptyMedia>
+                <EmptyTitle>No customers found</EmptyTitle>
+                <EmptyDescription>
+                  {search
+                    ? 'Try another name or phone number.'
+                    : 'Tap Add to create your first customer.'}
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
-            customers.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => handleSelect(c)}
-                className={`w-full text-left px-4 py-3 border-b touch-manipulation hover:bg-muted/50 active:bg-muted/70 transition-colors ${selected?.id === c.id ? 'bg-primary/10 border-l-2 border-l-primary' : ''}`}
-              >
-                <div className="font-medium">{c.name}</div>
-                <div className="text-sm text-muted-foreground flex items-center gap-3 mt-0.5">
-                  {c.phone && (
-                    <span className="flex items-center gap-1">
-                      <Phone className="w-3 h-3" />
-                      {c.phone}
-                    </span>
-                  )}
-                </div>
-              </button>
-            ))
+            <ul className="flex flex-col gap-1 p-2">
+              {customers.map((c) => {
+                const isSelected = selected?.id === c.id
+                return (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => handleSelect(c)}
+                      aria-pressed={isSelected}
+                      className={cn(
+                        'flex min-h-16 w-full flex-col justify-center rounded-xl px-4 py-3 text-left transition-colors touch-manipulation hover:bg-muted active:bg-muted',
+                        isSelected && 'bg-accent text-accent-foreground hover:bg-accent'
+                      )}
+                    >
+                      <span className="text-base font-medium">{c.name}</span>
+                      {c.phone && (
+                        <span
+                          className={cn(
+                            'mt-0.5 flex items-center gap-1.5 text-sm',
+                            isSelected ? 'text-accent-foreground/80' : 'text-muted-foreground'
+                          )}
+                        >
+                          <Phone className="size-4" />
+                          {c.phone}
+                        </span>
+                      )}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
           )}
         </div>
       </div>
 
       {/* Customer Detail */}
-      <div className="flex-1 overflow-auto p-6">
+      <div className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
         {!selected ? (
-          <div className="h-full flex items-center justify-center text-muted-foreground">
-            Select a customer to view details
+          <div className="flex h-full items-center justify-center rounded-2xl border bg-card shadow-xs">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Users />
+                </EmptyMedia>
+                <EmptyTitle>Select a customer to view details</EmptyTitle>
+                <EmptyDescription>
+                  Their contact details and purchase history appear here.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           </div>
         ) : (
-          <div className="space-y-6 max-w-2xl">
+          <div className="flex max-w-3xl flex-col gap-4">
             {/* Customer Info */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>{selected.name}</CardTitle>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => openEditForm(selected)}>
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => handleDelete(selected)}
-                    >
-                      Remove
-                    </Button>
-                    {canErase && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => handleErase(selected)}
-                      >
-                        Erase data
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="grid grid-cols-2 gap-4 text-sm">
-                {selected.phone && (
-                  <div>
-                    <p className="text-muted-foreground text-xs uppercase font-medium">Phone</p>
-                    <p className="flex items-center gap-1 mt-0.5">
-                      <Phone className="w-3 h-3" />
-                      {selected.phone}
-                    </p>
-                  </div>
-                )}
-                {selected.email && (
-                  <div>
-                    <p className="text-muted-foreground text-xs uppercase font-medium">Email</p>
-                    <p className="flex items-center gap-1 mt-0.5">
-                      <Mail className="w-3 h-3" />
-                      {selected.email}
-                    </p>
-                  </div>
-                )}
-                {selected.address && (
-                  <div className="col-span-2">
-                    <p className="text-muted-foreground text-xs uppercase font-medium">Address</p>
-                    <p className="mt-0.5">{selected.address}</p>
-                  </div>
-                )}
-                {selected.notes ? (
-                  <div>
-                    <p className="text-muted-foreground text-xs uppercase font-medium">Notes</p>
-                    <p className="mt-0.5">{selected.notes}</p>
-                  </div>
-                ) : (
-                  <div />
-                )}
-                <div>
-                  <p className="text-muted-foreground text-xs uppercase font-medium">
-                    Customer Since
+            <section className="rounded-2xl border bg-card p-6 shadow-xs">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <h2 className="truncate text-2xl font-semibold">{selected.name}</h2>
+                  <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <CalendarDays className="size-4" />
+                    Customer since {new Date(selected.created_at).toLocaleDateString()}
                   </p>
-                  <p className="mt-0.5">{new Date(selected.created_at).toLocaleDateString()}</p>
                 </div>
-              </CardContent>
-            </Card>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={() => openEditForm(selected)}>
+                    <Pencil className="size-5" />
+                    Edit
+                  </Button>
+                  <Button variant="outline" onClick={() => handleDelete(selected)}>
+                    <UserMinus className="size-5" />
+                    Remove
+                  </Button>
+                  {canErase && (
+                    <Button variant="destructive" onClick={() => handleErase(selected)}>
+                      <ShieldX className="size-5" />
+                      Erase data
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <dl className="mt-6 grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+                <DetailItem icon={Phone} label="Phone" value={selected.phone} />
+                <DetailItem icon={Mail} label="Email" value={selected.email} />
+                <DetailItem
+                  icon={MapPin}
+                  label="Address"
+                  value={selected.address}
+                  className="sm:col-span-2"
+                />
+                <DetailItem
+                  icon={StickyNote}
+                  label="Notes"
+                  value={selected.notes}
+                  className="sm:col-span-2"
+                />
+              </dl>
+            </section>
 
             {/* Purchase History */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <History className="w-4 h-4" />
-                  Purchase History
-                  {history && history.length > 0 && (
-                    <span className="ml-auto text-sm text-muted-foreground font-normal">
-                      {history.length} visits · Total: Rs.{' '}
-                      {history.reduce((s, h) => s + h.total, 0).toFixed(2)}
+            <section className="rounded-2xl border bg-card shadow-xs">
+              <div className="flex flex-wrap items-center gap-3 border-b px-6 py-4">
+                <History className="size-5 text-muted-foreground" />
+                <h3 className="text-lg font-semibold">Purchase History</h3>
+                {history && history.length > 0 && (
+                  <span className="ml-auto text-base text-muted-foreground tabular-nums">
+                    {history.length} visits · Total:{' '}
+                    <span className="font-semibold text-foreground">
+                      {formatCurrency(historyTotal)}
                     </span>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+                  </span>
+                )}
+              </div>
+              <div className="p-2">
                 {!history ? (
-                  <p className="text-sm text-muted-foreground">Loading...</p>
-                ) : history.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No purchases yet</p>
-                ) : (
-                  <div className="space-y-3">
-                    {history.map((sale) => (
-                      <div key={sale.id} className="py-2 border-b last:border-0 text-sm">
-                        <div className="flex items-center justify-between">
-                          <p className="font-medium">{sale.receiptNumber}</p>
-                          <p className="font-semibold">Rs. {sale.total.toFixed(2)}</p>
-                        </div>
-                        <p className="text-xs text-muted-foreground mb-1.5">
-                          {new Date(sale.createdAt).toLocaleDateString()} · {sale.paymentMethod}
-                        </p>
-                        <div className="space-y-0.5 pl-2 border-l-2 border-muted">
-                          {sale.items.map((item, i) => (
-                            <div
-                              key={i}
-                              className="flex items-center justify-between text-xs text-muted-foreground"
-                            >
-                              <span>
-                                {item.productName} × {item.quantity}
-                              </span>
-                              <span>Rs. {item.lineTotal.toFixed(2)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                  <div className="flex flex-col gap-2 p-2">
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <Skeleton key={i} className="h-20 w-full" />
                     ))}
                   </div>
+                ) : history.length === 0 ? (
+                  <Empty className="p-8">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <Receipt />
+                      </EmptyMedia>
+                      <EmptyTitle>No purchases yet</EmptyTitle>
+                    </EmptyHeader>
+                  </Empty>
+                ) : (
+                  <ul className="flex flex-col divide-y">
+                    {history.map((sale) => (
+                      <li key={sale.id} className="px-4 py-4">
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="font-medium">{sale.receiptNumber}</p>
+                            <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                              {new Date(sale.createdAt).toLocaleDateString()}
+                              <Badge variant="secondary" className="h-6 px-2.5 text-sm capitalize">
+                                {sale.paymentMethod}
+                              </Badge>
+                            </p>
+                          </div>
+                          <p className="text-lg font-semibold tabular-nums">
+                            {formatCurrency(sale.total)}
+                          </p>
+                        </div>
+                        <ul className="mt-2 flex flex-col gap-1 border-l-2 border-border pl-3">
+                          {sale.items.map((item, i) => (
+                            <li
+                              key={i}
+                              className="flex items-center justify-between gap-4 text-sm text-muted-foreground"
+                            >
+                              <span className="truncate">
+                                {item.productName} × {item.quantity}
+                              </span>
+                              <span className="tabular-nums">{formatCurrency(item.lineTotal)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            </section>
           </div>
         )}
       </div>
 
       {/* Create/Edit Dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editCustomer ? 'Edit Customer' : 'New Customer'}</DialogTitle>
+            <DialogTitle className="text-xl">
+              {editCustomer ? 'Edit Customer' : 'New Customer'}
+            </DialogTitle>
+            <DialogDescription className="text-base">Only the name is required.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 pt-2">
-            {formError && <p className="text-sm text-destructive">{formError}</p>}
-            <div className="space-y-1">
-              <Label>Name *</Label>
-              <Input
-                value={formName}
-                onChange={(e) => setFormName(e.target.value)}
-                placeholder="Full name"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Phone</Label>
-              <Input
-                value={formPhone}
-                onChange={(e) => setFormPhone(e.target.value)}
-                placeholder="07X XXX XXXX"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Email</Label>
-              <Input
-                value={formEmail}
-                onChange={(e) => setFormEmail(e.target.value)}
-                placeholder="email@example.com"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Address</Label>
-              <Input
-                value={formAddress}
-                onChange={(e) => setFormAddress(e.target.value)}
-                placeholder="Address"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>Notes</Label>
-              <Input
-                value={formNotes}
-                onChange={(e) => setFormNotes(e.target.value)}
-                placeholder="Any notes..."
-              />
-            </div>
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" onClick={() => setShowForm(false)} disabled={isSaving}>
+          <form
+            className="flex flex-col gap-6"
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleSaveCustomer()
+            }}
+          >
+            <FieldGroup className="gap-5">
+              <Field data-invalid={(formError && formErrorField === 'name') || undefined}>
+                <FieldLabel htmlFor="customer-name">Name *</FieldLabel>
+                <Input
+                  id="customer-name"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="Full name"
+                  aria-invalid={(formError && formErrorField === 'name') || undefined}
+                  autoComplete="off"
+                />
+                {formErrorField === 'name' && <FieldError>{formError}</FieldError>}
+              </Field>
+              <Field data-invalid={(formError && formErrorField === 'phone') || undefined}>
+                <FieldLabel htmlFor="customer-phone">Phone</FieldLabel>
+                <Input
+                  id="customer-phone"
+                  type="tel"
+                  inputMode="tel"
+                  value={formPhone}
+                  onChange={(e) => setFormPhone(e.target.value)}
+                  placeholder="07X XXX XXXX"
+                  aria-invalid={(formError && formErrorField === 'phone') || undefined}
+                  autoComplete="off"
+                />
+                {formErrorField === 'phone' && <FieldError>{formError}</FieldError>}
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="customer-email">Email</FieldLabel>
+                <Input
+                  id="customer-email"
+                  inputMode="email"
+                  value={formEmail}
+                  onChange={(e) => setFormEmail(e.target.value)}
+                  placeholder="email@example.com"
+                  autoComplete="off"
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="customer-address">Address</FieldLabel>
+                <Textarea
+                  id="customer-address"
+                  value={formAddress}
+                  onChange={(e) => setFormAddress(e.target.value)}
+                  placeholder="Address"
+                  rows={2}
+                  className="min-h-12 md:text-base"
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="customer-notes">Notes</FieldLabel>
+                <Textarea
+                  id="customer-notes"
+                  value={formNotes}
+                  onChange={(e) => setFormNotes(e.target.value)}
+                  placeholder="Any notes..."
+                  rows={2}
+                  className="min-h-12 md:text-base"
+                />
+              </Field>
+            </FieldGroup>
+
+            {formErrorField === 'form' && (
+              <FieldError className="font-medium">{formError}</FieldError>
+            )}
+
+            <DialogFooter className="gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                className="flex-1"
+                onClick={() => setShowForm(false)}
+                disabled={isSaving}
+              >
                 Cancel
               </Button>
-              <Button onClick={handleSaveCustomer} disabled={isSaving}>
+              <Button type="submit" size="lg" className="flex-1" disabled={isSaving}>
                 {isSaving ? 'Saving…' : editCustomer ? 'Update' : 'Create'}
               </Button>
-            </div>
-          </div>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 
       <ConfirmDialog {...confirmProps} />
+    </div>
+  )
+}
+
+function DetailItem({
+  icon: Icon,
+  label,
+  value,
+  className
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  label: string
+  value: string | null
+  className?: string
+}): React.JSX.Element {
+  return (
+    <div className={cn('flex items-start gap-3', className)}>
+      <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+        <Icon className="size-5" />
+      </div>
+      <div className="min-w-0">
+        <dt className="text-sm text-muted-foreground">{label}</dt>
+        <dd
+          className={cn(
+            'text-base break-words whitespace-pre-line',
+            !value && 'text-muted-foreground'
+          )}
+        >
+          {value || '—'}
+        </dd>
+      </div>
     </div>
   )
 }

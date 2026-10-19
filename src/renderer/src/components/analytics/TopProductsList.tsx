@@ -1,3 +1,4 @@
+import { Trophy, PackageSearch } from 'lucide-react'
 import {
   Card,
   CardContent,
@@ -5,7 +6,17 @@ import {
   CardHeader,
   CardTitle
 } from '@renderer/components/ui/card'
-import { Trophy } from 'lucide-react'
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle
+} from '@renderer/components/ui/empty'
+import { Skeleton } from '@renderer/components/ui/skeleton'
+import { formatCurrency } from '@renderer/lib/calculations'
+import { cn } from '@renderer/lib/utils'
+import { useSettingsStore } from '@renderer/stores/settingsStore'
 import type { TopProduct } from '@renderer/types/analytics'
 
 interface TopProductsListProps {
@@ -14,78 +25,91 @@ interface TopProductsListProps {
 }
 
 export function TopProductsList({ products, isLoading }: TopProductsListProps): React.JSX.Element {
-  if (isLoading) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Top Products</CardTitle>
-          <CardDescription>Best sellers by revenue</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div key={i} className="flex items-center gap-3">
-                <div className="h-4 w-4 bg-muted animate-pulse rounded" />
-                <div className="flex-1">
-                  <div className="h-4 w-32 bg-muted animate-pulse rounded" />
-                </div>
-                <div className="h-4 w-20 bg-muted animate-pulse rounded" />
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  if (products.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Top Products</CardTitle>
-          <CardDescription>Best sellers by revenue</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-center py-8 text-muted-foreground">No sales data available</div>
-        </CardContent>
-      </Card>
-    )
-  }
+  const sym = useSettingsStore((s) => s.settings.currency_symbol) || 'Rs.'
+  const topRevenue = products.reduce((max, p) => Math.max(max, p.total_revenue), 0)
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Top Products</CardTitle>
-        <CardDescription>Best sellers by revenue</CardDescription>
+        <CardTitle className="text-lg font-semibold">Top Products</CardTitle>
+        <CardDescription>Best sellers by revenue over the past week</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
-          {products.map((product, index) => (
-            <div key={product.product_id} className="flex items-center gap-3">
-              <div
-                className={`flex h-8 w-8 items-center justify-center rounded-full font-bold ${
-                  index === 0
-                    ? 'bg-yellow-500 text-yellow-950'
-                    : index === 1
-                      ? 'bg-gray-400 text-gray-950'
-                      : index === 2
-                        ? 'bg-orange-600 text-orange-950'
-                        : 'bg-muted text-muted-foreground'
-                }`}
-              >
-                {index < 3 ? <Trophy className="h-4 w-4" /> : index + 1}
+        {isLoading ? (
+          <div className="flex flex-col gap-4">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="size-10 rounded-full" />
+                <div className="flex flex-1 flex-col gap-2">
+                  <Skeleton className="h-5 w-2/3" />
+                  <Skeleton className="h-2 w-full" />
+                </div>
+                <Skeleton className="h-5 w-24" />
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">{product.product_name}</p>
-                <p className="text-sm text-muted-foreground">{product.total_quantity} units sold</p>
-              </div>
-              <div className="text-right">
-                <p className="font-medium">Rs. {product.total_revenue.toFixed(2)}</p>
-                <p className="text-sm text-green-600">+Rs. {product.total_profit.toFixed(2)}</p>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : products.length === 0 ? (
+          <Empty className="border p-6">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <PackageSearch />
+              </EmptyMedia>
+              <EmptyTitle>No sales data available</EmptyTitle>
+              <EmptyDescription>Best sellers appear here once sales are recorded.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <ol className="flex flex-col gap-1">
+            {products.map((product, index) => {
+              const share = topRevenue > 0 ? (product.total_revenue / topRevenue) * 100 : 0
+              return (
+                <li key={product.product_id} className="flex items-center gap-3 py-2">
+                  <span
+                    className={cn(
+                      'flex size-10 shrink-0 items-center justify-center rounded-full text-base font-semibold tabular-nums',
+                      index === 0
+                        ? 'bg-primary text-primary-foreground'
+                        : index < 3
+                          ? 'bg-accent text-accent-foreground'
+                          : 'bg-muted text-muted-foreground'
+                    )}
+                    aria-label={`Rank ${index + 1}`}
+                  >
+                    {index < 3 ? <Trophy className="size-5" /> : index + 1}
+                  </span>
+                  <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="truncate text-base font-medium">{product.product_name}</p>
+                      <p className="shrink-0 text-base font-semibold tabular-nums">
+                        {formatCurrency(product.total_revenue, sym)}
+                      </p>
+                    </div>
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${share}%` }}
+                      />
+                    </div>
+                    <div className="flex items-baseline justify-between gap-3 text-sm">
+                      <span className="text-muted-foreground">
+                        {product.total_quantity} units sold
+                      </span>
+                      <span
+                        className={cn(
+                          'tabular-nums',
+                          product.total_profit < 0 ? 'text-destructive' : 'text-success'
+                        )}
+                      >
+                        {product.total_profit < 0 ? '−' : '+'}
+                        {formatCurrency(Math.abs(product.total_profit), sym)} profit
+                      </span>
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
+          </ol>
+        )}
       </CardContent>
     </Card>
   )

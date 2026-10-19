@@ -2,7 +2,14 @@ import { useEffect } from 'react'
 import { Package } from 'lucide-react'
 import { useProductStore } from '@renderer/stores/productStore'
 import { usePOSStore } from '@renderer/stores/posStore'
-import { Button } from '@renderer/components/ui/button'
+import { StockBadge } from '@renderer/components/common/product-option'
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle
+} from '@renderer/components/ui/empty'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { formatCurrency } from '@renderer/lib/calculations'
 
@@ -18,76 +25,67 @@ export function QuickItems({ refreshTrigger }: QuickItemsProps = {}): React.JSX.
 
   // Load quick items on mount and whenever a sale completes (refreshTrigger changes)
   useEffect(() => {
-    loadQuickItems()
-  }, [refreshTrigger])
-
-  const loadQuickItems = async () => {
-    try {
-      const items = await window.electron.getQuickItems()
-      setQuickItems(items)
-    } catch (err) {
-      console.error('Failed to load quick items:', err)
+    const loadQuickItems = async (): Promise<void> => {
+      try {
+        const items = await window.electron.getQuickItems()
+        setQuickItems(items)
+      } catch (err) {
+        console.error('Failed to load quick items:', err)
+      }
     }
-  }
+    void loadQuickItems()
+  }, [refreshTrigger, setQuickItems])
 
-  const handleQuickAdd = (product: (typeof quickItems)[0]) => {
+  const handleQuickAdd = (product: (typeof quickItems)[0]): void => {
     if (!product.total_stock || product.total_stock === 0) {
       return // Silently ignore out-of-stock items
     }
     addItem(product, 1)
   }
 
-  const getStockIndicator = (stock: number | undefined): string => {
-    if (!stock || stock === 0) return 'bg-destructive'
-    if (stock < 10) return 'bg-amber-500'
-    return 'bg-green-500'
-  }
-
   if (quickItems.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center text-muted-foreground">
-        <div className="text-center">
-          <Package className="h-12 w-12 mx-auto mb-3 opacity-50" />
-          <p className="text-sm">No quick items available</p>
-          <p className="text-xs mt-1">Best-selling products will appear here</p>
-        </div>
-      </div>
+      <Empty className="h-full">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Package />
+          </EmptyMedia>
+          <EmptyTitle>No quick items yet</EmptyTitle>
+          <EmptyDescription>Best-selling products appear here after a few sales.</EmptyDescription>
+        </EmptyHeader>
+      </Empty>
     )
   }
 
   return (
-    <div className="grid grid-cols-2 gap-2 h-full content-start">
-      {quickItems.map((product) => (
-        <Button
-          key={product.id}
-          onClick={() => handleQuickAdd(product)}
-          variant="outline"
-          className="h-24 p-3 flex flex-col items-start gap-1.5 relative overflow-hidden"
-          disabled={!product.total_stock || product.total_stock === 0}
-        >
-          {/* Stock indicator dot */}
-          <div
-            className={`absolute top-2 right-2 w-3 h-3 rounded-full ${getStockIndicator(product.total_stock)}`}
-            title={`${product.total_stock || 0} in stock`}
-          />
-
-          {/* Product info */}
-          <div className="w-full text-left">
-            <p className="font-semibold text-sm line-clamp-2 pr-4 leading-tight">{product.name}</p>
-            {product.generic_name && (
-              <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                {product.generic_name}
-              </p>
-            )}
-          </div>
-
-          {/* Price */}
-          <div className="w-full flex items-end justify-between mt-auto">
-            <span className="font-bold">{formatCurrency(product.unit_price, currencySymbol)}</span>
-            <span className="text-xs text-muted-foreground">{product.total_stock || 0}</span>
-          </div>
-        </Button>
-      ))}
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(13.5rem,1fr))] content-start gap-3">
+      {quickItems.map((product) => {
+        const out = !product.total_stock || product.total_stock === 0
+        return (
+          <button
+            key={product.id}
+            type="button"
+            onClick={() => handleQuickAdd(product)}
+            disabled={out}
+            className="group flex h-28 touch-manipulation flex-col items-start justify-between rounded-xl border bg-card p-3 text-left shadow-xs transition-all hover:border-primary/40 hover:bg-accent/40 active:scale-[0.97] active:bg-accent disabled:opacity-50"
+          >
+            <div className="w-full min-w-0">
+              <p className="line-clamp-2 text-base leading-tight font-semibold">{product.name}</p>
+              {product.generic_name && (
+                <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                  {product.generic_name}
+                </p>
+              )}
+            </div>
+            <div className="flex w-full items-end justify-between gap-2">
+              <span className="text-base font-bold whitespace-nowrap tabular-nums">
+                {formatCurrency(product.unit_price, currencySymbol)}
+              </span>
+              <StockBadge stock={product.total_stock} />
+            </div>
+          </button>
+        )
+      })}
     </div>
   )
 }

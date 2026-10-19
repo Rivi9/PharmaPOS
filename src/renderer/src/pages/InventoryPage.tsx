@@ -1,8 +1,20 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/ui/tabs'
 import { Button } from '@renderer/components/ui/button'
-import { Input } from '@renderer/components/ui/input'
-import { Plus, Download, Upload, Search } from 'lucide-react'
+import { Switch } from '@renderer/components/ui/switch'
+import { Label } from '@renderer/components/ui/label'
+import { Alert, AlertDescription } from '@renderer/components/ui/alert'
+import { SearchInput } from '@renderer/components/common/search-input'
+import { toast } from 'sonner'
+import {
+  Plus,
+  Download,
+  Upload,
+  ChevronLeft,
+  ChevronRight,
+  CircleAlert,
+  CircleCheck
+} from 'lucide-react'
 import { useInventoryStore } from '@renderer/stores/inventoryStore'
 import type { Product, Category, Supplier, StockBatch } from '@renderer/stores/inventoryStore'
 import { useAuthStore } from '@renderer/stores/authStore'
@@ -22,10 +34,18 @@ import { StockBatchFormDialog } from '@renderer/components/inventory/StockBatchF
 
 // Alerts
 import { LowStockAlert } from '@renderer/components/inventory/LowStockAlert'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@renderer/components/ui/dialog'
 import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
 import { useConfirm } from '@renderer/hooks/useConfirm'
 import { ipcErrorMessage } from '@renderer/lib/ipc-error'
+import { localDateString } from '../../../shared/dates'
 
 /**
  * Rows fetched per page. Matches the table's own page size so one page of DOM
@@ -50,28 +70,37 @@ function ServerPager({
   const pages = Math.ceil(total / PAGE_SIZE)
   if (pages <= 1) return null
   return (
-    <div className="flex items-center justify-end gap-2 pt-2">
-      <Button
-        variant="outline"
-        size="sm"
-        className="min-h-11 min-w-11"
-        disabled={page === 0}
-        onClick={() => onPage(page - 1)}
-      >
+    <nav
+      aria-label="pagination"
+      className="flex items-center justify-end gap-3 border-t bg-card px-4 py-3"
+    >
+      <Button variant="outline" disabled={page === 0} onClick={() => onPage(page - 1)}>
+        <ChevronLeft className="size-5" />
         Previous
       </Button>
-      <span className="text-sm text-muted-foreground tabular-nums px-2">
-        {page + 1} / {pages}
+      <span className="min-w-24 px-2 text-center text-base text-muted-foreground tabular-nums">
+        Page {page + 1} of {pages}
       </span>
-      <Button
-        variant="outline"
-        size="sm"
-        className="min-h-11 min-w-11"
-        disabled={page + 1 >= pages}
-        onClick={() => onPage(page + 1)}
-      >
+      <Button variant="outline" disabled={page + 1 >= pages} onClick={() => onPage(page + 1)}>
         Next
+        <ChevronRight className="size-5" />
       </Button>
+    </nav>
+  )
+}
+
+/** The rounded panel each tab's table sits in; the inner div is the scroller. */
+function TablePanel({
+  children,
+  footer
+}: {
+  children: React.ReactNode
+  footer?: React.ReactNode
+}): React.JSX.Element {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border bg-card shadow-xs">
+      <div className="min-h-0 flex-1 overflow-auto overscroll-contain">{children}</div>
+      {footer}
     </div>
   )
 }
@@ -105,6 +134,10 @@ export function InventoryPage(): React.JSX.Element {
   const [categorySearch, setCategorySearch] = useState('')
   const [supplierSearch, setSupplierSearch] = useState('')
   const [batchSearch, setBatchSearch] = useState('')
+  // Discontinued products are hidden from the list by default; the discontinue
+  // confirmation promises they can be restored "from the Discontinued filter",
+  // and this is that filter (it went missing when the search moved into SQL).
+  const [showDiscontinued, setShowDiscontinued] = useState(false)
 
   // Server-side paging for the two tables that can hold thousands of rows.
   const [productPage, setProductPage] = useState(0)
@@ -133,13 +166,14 @@ export function InventoryPage(): React.JSX.Element {
   // Load data on mount
   useEffect(() => {
     loadAllData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Typing in the search box now hits the database, so debounce it. A new search
   // resets to the first page — page 7 of the previous result set is meaningless.
   useEffect(() => {
     setProductPage(0)
-  }, [productSearch])
+  }, [productSearch, showDiscontinued])
   useEffect(() => {
     setBatchPage(0)
   }, [batchSearch])
@@ -148,7 +182,7 @@ export function InventoryPage(): React.JSX.Element {
     const timer = setTimeout(loadProducts, productSearch ? 250 : 0)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productSearch, productPage])
+  }, [productSearch, productPage, showDiscontinued])
 
   useEffect(() => {
     const timer = setTimeout(loadStockBatches, batchSearch ? 250 : 0)
@@ -156,7 +190,7 @@ export function InventoryPage(): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchSearch, batchPage])
 
-  const loadAllData = async () => {
+  const loadAllData = async (): Promise<void> => {
     await Promise.all([
       loadProducts(),
       loadCategories(),
@@ -176,7 +210,8 @@ export function InventoryPage(): React.JSX.Element {
       const result = await window.electron.listProductsPage(userId, {
         search: productSearch || undefined,
         limit: PAGE_SIZE,
-        offset: productPage * PAGE_SIZE
+        offset: productPage * PAGE_SIZE,
+        includeInactive: showDiscontinued || undefined
       })
       if (result.success) {
         setProducts(result.data.rows)
@@ -245,11 +280,12 @@ export function InventoryPage(): React.JSX.Element {
   }
 
   // Product handlers
-  const handleProductSubmit = async (data: any) => {
+  const handleProductSubmit = async (data: Record<string, unknown>): Promise<void> => {
     if (selectedProduct) {
       const result = await window.electron.updateProduct(userId, selectedProduct.id, data)
       if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
+        toast.success('Product updated')
         await loadProducts()
         await loadLowStockProducts()
         setProductDialogOpen(false)
@@ -259,6 +295,7 @@ export function InventoryPage(): React.JSX.Element {
       const result = await window.electron.createProduct(userId, data)
       if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
+        toast.success('Product created')
         await loadProducts()
         await loadLowStockProducts()
         setProductDialogOpen(false)
@@ -271,18 +308,19 @@ export function InventoryPage(): React.JSX.Element {
   const handleProductReactivate = async (product: Product): Promise<void> => {
     const result = await window.electron.reactivateProduct(userId, product.id)
     if (result.success) {
+      toast.success(`${product.name} restored`)
       await Promise.all([loadProducts(), loadStockBatches()])
     } else {
       await notify('Could not restore the product', result.error)
     }
   }
 
-  const handleProductEdit = (product: Product) => {
+  const handleProductEdit = (product: Product): void => {
     setSelectedProduct(product)
     setProductDialogOpen(true)
   }
 
-  const handleProductDelete = async (product: Product) => {
+  const handleProductDelete = async (product: Product): Promise<void> => {
     const ok = await confirm({
       title: `Discontinue ${product.name}?`,
       description:
@@ -293,6 +331,7 @@ export function InventoryPage(): React.JSX.Element {
     if (!ok) return
     const result = await window.electron.deleteProduct(userId, product.id)
     if (result.success) {
+      toast.success(`${product.name} discontinued`)
       // Reload batches too — the deleted product's batches are now stale.
       await Promise.all([loadProducts(), loadStockBatches()])
     } else {
@@ -301,11 +340,12 @@ export function InventoryPage(): React.JSX.Element {
   }
 
   // Category handlers
-  const handleCategorySubmit = async (data: any) => {
+  const handleCategorySubmit = async (data: Record<string, unknown>): Promise<void> => {
     if (selectedCategory) {
       const result = await window.electron.updateCategory(userId, selectedCategory.id, data)
       if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
+        toast.success('Category updated')
         await loadCategories()
         setCategoryDialogOpen(false)
         setSelectedCategory(null)
@@ -314,18 +354,19 @@ export function InventoryPage(): React.JSX.Element {
       const result = await window.electron.createCategory(userId, data)
       if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
+        toast.success('Category created')
         await loadCategories()
         setCategoryDialogOpen(false)
       }
     }
   }
 
-  const handleCategoryEdit = (category: Category) => {
+  const handleCategoryEdit = (category: Category): void => {
     setSelectedCategory(category)
     setCategoryDialogOpen(true)
   }
 
-  const handleCategoryDelete = async (category: Category) => {
+  const handleCategoryDelete = async (category: Category): Promise<void> => {
     const ok = await confirm({
       title: `Delete the ${category.name} category?`,
       description: 'This cannot be undone. Categories still holding products cannot be deleted.',
@@ -335,6 +376,7 @@ export function InventoryPage(): React.JSX.Element {
     if (!ok) return
     const result = await window.electron.deleteCategory(userId, category.id)
     if (result.success) {
+      toast.success(`${category.name} deleted`)
       await loadCategories()
       await loadProducts()
     } else {
@@ -343,11 +385,12 @@ export function InventoryPage(): React.JSX.Element {
   }
 
   // Supplier handlers
-  const handleSupplierSubmit = async (data: any) => {
+  const handleSupplierSubmit = async (data: Record<string, unknown>): Promise<void> => {
     if (selectedSupplier) {
       const result = await window.electron.updateSupplier(userId, selectedSupplier.id, data)
       if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
+        toast.success('Supplier updated')
         await loadSuppliers()
         setSupplierDialogOpen(false)
         setSelectedSupplier(null)
@@ -356,18 +399,19 @@ export function InventoryPage(): React.JSX.Element {
       const result = await window.electron.createSupplier(userId, data)
       if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
+        toast.success('Supplier created')
         await loadSuppliers()
         setSupplierDialogOpen(false)
       }
     }
   }
 
-  const handleSupplierEdit = (supplier: Supplier) => {
+  const handleSupplierEdit = (supplier: Supplier): void => {
     setSelectedSupplier(supplier)
     setSupplierDialogOpen(true)
   }
 
-  const handleSupplierDelete = async (supplier: Supplier) => {
+  const handleSupplierDelete = async (supplier: Supplier): Promise<void> => {
     const ok = await confirm({
       title: `Deactivate ${supplier.name}?`,
       description:
@@ -378,6 +422,7 @@ export function InventoryPage(): React.JSX.Element {
     if (!ok) return
     const result = await window.electron.deleteSupplier(userId, supplier.id)
     if (result.success) {
+      toast.success(`${supplier.name} deactivated`)
       await loadSuppliers()
     } else {
       await notify('Could not deactivate the supplier', result.error)
@@ -385,11 +430,12 @@ export function InventoryPage(): React.JSX.Element {
   }
 
   // Stock batch handlers
-  const handleBatchSubmit = async (data: any) => {
+  const handleBatchSubmit = async (data: Record<string, unknown>): Promise<void> => {
     if (selectedBatch) {
       const result = await window.electron.updateStockBatch(userId, selectedBatch.id, data)
       if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
+        toast.success('Batch updated')
         await loadStockBatches()
         await loadProducts() // Refresh products to update stock counts
         await loadLowStockProducts()
@@ -400,6 +446,7 @@ export function InventoryPage(): React.JSX.Element {
       const result = await window.electron.createStockBatch(userId, data)
       if (!result.success) throw new Error(result.error || 'Save failed')
       if (result.success) {
+        toast.success('Stock received')
         await loadStockBatches()
         await loadProducts() // Refresh products to update stock counts
         await loadLowStockProducts()
@@ -408,12 +455,12 @@ export function InventoryPage(): React.JSX.Element {
     }
   }
 
-  const handleBatchEdit = (batch: StockBatch) => {
+  const handleBatchEdit = (batch: StockBatch): void => {
     setSelectedBatch(batch)
     setBatchDialogOpen(true)
   }
 
-  const handleBatchDelete = async (batch: StockBatch) => {
+  const handleBatchDelete = async (batch: StockBatch): Promise<void> => {
     const ok = await confirm({
       title: batch.batch_number ? `Delete batch ${batch.batch_number}?` : 'Delete this batch?',
       description:
@@ -424,6 +471,7 @@ export function InventoryPage(): React.JSX.Element {
     if (!ok) return
     const result = await window.electron.deleteStockBatch(userId, batch.id)
     if (result.success) {
+      toast.success('Batch deleted')
       await loadStockBatches()
       await loadProducts() // Refresh products to update stock counts
       await loadLowStockProducts()
@@ -441,14 +489,23 @@ export function InventoryPage(): React.JSX.Element {
     totalRows?: number
   } | null>(null)
 
-  const handleImportExcel = async () => {
+  const handleImportExcel = async (): Promise<void> => {
     try {
       const result = await window.electron.importProductsExcel(userId)
       if (!result.canceled) {
         await loadProducts()
         await loadStockBatches()
         await loadLowStockProducts()
-        setImportResult({ imported: result.imported, errors: result.errors })
+        // Pass the whole outcome through. Only `imported` and `errors` were kept,
+        // so the "…and N more not shown" line and the row count never appeared
+        // and a sheet with 400 bad rows reported "50 problems".
+        setImportResult({
+          imported: result.imported,
+          batchesCreated: result.batchesCreated,
+          errors: result.errors ?? [],
+          errorsTruncated: result.errorsTruncated,
+          totalRows: result.totalRows
+        })
       }
     } catch (error) {
       await notify('Import failed', ipcErrorMessage(error))
@@ -456,17 +513,20 @@ export function InventoryPage(): React.JSX.Element {
   }
 
   // CSV Export
-  const handleExportProducts = async () => {
+  const handleExportProducts = async (): Promise<void> => {
     const result = await window.electron.exportProductsCSV(userId)
-    if (result.success) {
-      const blob = new Blob([result.data], { type: 'text/csv' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `products-${new Date().toISOString().split('T')[0]}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
+    if (!result.success) {
+      toast.error('Could not export the products', { description: result.error })
+      return
     }
+    const blob = new Blob([result.data], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    // Local date (M21): toISOString() named an after-midnight export by yesterday.
+    a.download = `products-${localDateString()}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   // Products and batches arrive already searched and paged from SQL. Categories
@@ -498,42 +558,48 @@ export function InventoryPage(): React.JSX.Element {
 
   const filteredBatches = stockBatches
 
+  const countText = 'whitespace-nowrap text-sm text-muted-foreground tabular-nums'
+
   return (
-    <div className="h-full flex flex-col p-6 bg-background">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">Inventory Management</h1>
-        <p className="text-muted-foreground">Manage products, categories, suppliers, and stock</p>
+    <div className="flex h-full flex-col gap-4 bg-canvas p-6">
+      <div>
+        <h1 className="text-2xl font-semibold">Inventory Management</h1>
+        <p className="text-base text-muted-foreground">
+          Manage products, categories, suppliers, and stock
+        </p>
       </div>
 
       <LowStockAlert lowStockProducts={lowStockProducts} />
 
       {loadError && (
-        <p className="mb-4 rounded-md bg-destructive/10 p-3 text-sm font-medium text-destructive">
-          {loadError} — the list below may be incomplete or out of date.
-        </p>
+        <Alert variant="destructive" className="border-destructive/30 bg-destructive/10">
+          <CircleAlert />
+          <AlertDescription className="text-base font-medium">
+            {loadError} — the list below may be incomplete or out of date.
+          </AlertDescription>
+        </Alert>
       )}
 
-      <Tabs defaultValue="products" className="flex-1 min-h-0 flex flex-col">
-        <TabsList className="grid w-full grid-cols-4 max-w-2xl">
+      <Tabs defaultValue="products" className="flex min-h-0 flex-1 flex-col gap-4">
+        <TabsList className="grid w-full max-w-2xl grid-cols-4">
           <TabsTrigger value="products">Products</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
           <TabsTrigger value="stock">Stock Batches</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="products" className="flex-1 min-h-0 flex flex-col mt-6 space-y-4">
-          <div className="flex justify-between items-center gap-4">
-            <div className="flex items-center gap-4 flex-1">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search products by name, SKU, barcode..."
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <div className="text-sm text-muted-foreground whitespace-nowrap">
+        <TabsContent value="products" className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <SearchInput
+                aria-label="Search products"
+                placeholder="Search products by name, SKU, barcode..."
+                value={productSearch}
+                onValueChange={setProductSearch}
+                loading={productLoading}
+                className="flex-1"
+              />
+              <div className={countText}>
                 {productLoading
                   ? 'Searching…'
                   : productTotal === 0
@@ -543,123 +609,131 @@ export function InventoryPage(): React.JSX.Element {
                     : `Showing ${productPage * PAGE_SIZE + 1}–${Math.min((productPage + 1) * PAGE_SIZE, productTotal)} of ${productTotal}${productSearch ? ' matching' : ''} products`}
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={handleImportExcel}>
-                <Upload className="h-4 w-4 mr-2" />
+            <div className="flex items-center gap-2">
+              <Label
+                htmlFor="show-discontinued"
+                className="h-12 cursor-pointer gap-3 rounded-lg px-3 text-base font-normal"
+              >
+                <Switch
+                  id="show-discontinued"
+                  checked={showDiscontinued}
+                  onCheckedChange={setShowDiscontinued}
+                />
+                Show discontinued
+              </Label>
+              <Button variant="outline" onClick={handleImportExcel}>
+                <Upload className="size-5" />
                 Import Excel
               </Button>
-              <Button variant="outline" size="sm" onClick={handleExportProducts}>
-                <Download className="h-4 w-4 mr-2" />
+              <Button variant="outline" onClick={handleExportProducts}>
+                <Download className="size-5" />
                 Export CSV
               </Button>
               <Button
-                size="sm"
                 onClick={() => {
                   setSelectedProduct(null)
                   setProductDialogOpen(true)
                 }}
               >
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="size-5" />
                 Add Product
               </Button>
             </div>
           </div>
-          <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
+          <TablePanel
+            footer={<ServerPager page={productPage} total={productTotal} onPage={setProductPage} />}
+          >
             <ProductsTable
               products={filteredProducts}
               onEdit={handleProductEdit}
               onDelete={handleProductDelete}
               onReactivate={handleProductReactivate}
+              loading={productLoading}
+              searching={!!productSearch}
             />
-            <ServerPager page={productPage} total={productTotal} onPage={setProductPage} />
-          </div>
+          </TablePanel>
         </TabsContent>
 
-        <TabsContent value="categories" className="flex-1 min-h-0 flex flex-col mt-6 space-y-4">
-          <div className="flex justify-between items-center gap-4">
-            <div className="flex items-center gap-4 flex-1">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search categories by name..."
-                  value={categorySearch}
-                  onChange={(e) => setCategorySearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <div className="text-sm text-muted-foreground whitespace-nowrap">
+        <TabsContent value="categories" className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <SearchInput
+                aria-label="Search categories"
+                placeholder="Search categories by name..."
+                value={categorySearch}
+                onValueChange={setCategorySearch}
+                className="flex-1"
+              />
+              <div className={countText}>
                 {filteredCategories.length} of {categories.length} categories
               </div>
             </div>
             <Button
-              size="sm"
               onClick={() => {
                 setSelectedCategory(null)
                 setCategoryDialogOpen(true)
               }}
             >
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-5" />
               Add Category
             </Button>
           </div>
-          <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
+          <TablePanel>
             <CategoriesTable
               categories={filteredCategories}
               onEdit={handleCategoryEdit}
               onDelete={handleCategoryDelete}
+              searching={!!categorySearch}
             />
-          </div>
+          </TablePanel>
         </TabsContent>
 
-        <TabsContent value="suppliers" className="flex-1 min-h-0 flex flex-col mt-6 space-y-4">
-          <div className="flex justify-between items-center gap-4">
-            <div className="flex items-center gap-4 flex-1">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search suppliers by name, contact..."
-                  value={supplierSearch}
-                  onChange={(e) => setSupplierSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <div className="text-sm text-muted-foreground whitespace-nowrap">
+        <TabsContent value="suppliers" className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <SearchInput
+                aria-label="Search suppliers"
+                placeholder="Search suppliers by name, contact..."
+                value={supplierSearch}
+                onValueChange={setSupplierSearch}
+                className="flex-1"
+              />
+              <div className={countText}>
                 {filteredSuppliers.length} of {suppliers.length} suppliers
               </div>
             </div>
             <Button
-              size="sm"
               onClick={() => {
                 setSelectedSupplier(null)
                 setSupplierDialogOpen(true)
               }}
             >
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-5" />
               Add Supplier
             </Button>
           </div>
-          <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
+          <TablePanel>
             <SuppliersTable
               suppliers={filteredSuppliers}
               onEdit={handleSupplierEdit}
               onDelete={handleSupplierDelete}
+              searching={!!supplierSearch}
             />
-          </div>
+          </TablePanel>
         </TabsContent>
 
-        <TabsContent value="stock" className="flex-1 min-h-0 flex flex-col mt-6 space-y-4">
-          <div className="flex justify-between items-center gap-4">
-            <div className="flex items-center gap-4 flex-1">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search batches by product, batch number..."
-                  value={batchSearch}
-                  onChange={(e) => setBatchSearch(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <div className="text-sm text-muted-foreground whitespace-nowrap">
+        <TabsContent value="stock" className="flex min-h-0 flex-1 flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <SearchInput
+                aria-label="Search batches"
+                placeholder="Search batches by product, batch number..."
+                value={batchSearch}
+                onValueChange={setBatchSearch}
+                loading={batchLoading}
+                className="flex-1"
+              />
+              <div className={countText}>
                 {batchLoading
                   ? 'Searching…'
                   : batchTotal === 0
@@ -670,25 +744,27 @@ export function InventoryPage(): React.JSX.Element {
               </div>
             </div>
             <Button
-              size="sm"
               onClick={() => {
                 setSelectedBatch(null)
                 setBatchDialogOpen(true)
               }}
             >
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="size-5" />
               Receive Stock
             </Button>
           </div>
-          <div className="flex-1 min-h-0 overflow-auto overscroll-contain">
+          <TablePanel
+            footer={<ServerPager page={batchPage} total={batchTotal} onPage={setBatchPage} />}
+          >
             <StockBatchesTable
               batches={filteredBatches}
               onEdit={handleBatchEdit}
               onDelete={handleBatchDelete}
               onViewHistory={setHistoryBatch}
+              loading={batchLoading}
+              searching={!!batchSearch}
             />
-            <ServerPager page={batchPage} total={batchTotal} onPage={setBatchPage} />
-          </div>
+          </TablePanel>
         </TabsContent>
       </Tabs>
 
@@ -746,30 +822,35 @@ export function InventoryPage(): React.JSX.Element {
 
       {/* Import Result Dialog */}
       <Dialog open={!!importResult} onOpenChange={() => setImportResult(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Excel Import Complete</DialogTitle>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader className="pr-10">
+            <DialogTitle className="text-xl font-semibold">Excel Import Complete</DialogTitle>
+            <DialogDescription className="sr-only">Result of the Excel import</DialogDescription>
           </DialogHeader>
           {importResult && (
-            <div className="space-y-3">
+            <div className="space-y-4">
               {importResult.imported > 0 ? (
-                <p className="text-sm text-green-700 font-medium">
-                  {importResult.imported} product{importResult.imported !== 1 ? 's' : ''} imported
-                  {importResult.batchesCreated
-                    ? `, ${importResult.batchesCreated} with opening stock`
-                    : ''}
-                  .
+                <p className="flex items-center gap-2 text-base font-medium text-success">
+                  <CircleCheck className="size-5 shrink-0" />
+                  <span>
+                    {importResult.imported} product{importResult.imported !== 1 ? 's' : ''} imported
+                    {importResult.batchesCreated
+                      ? `, ${importResult.batchesCreated} with opening stock`
+                      : ''}
+                    .
+                  </span>
                 </p>
               ) : (
                 <>
-                  <p className="text-sm text-destructive font-medium">
+                  <p className="flex items-center gap-2 text-base font-medium text-destructive">
+                    <CircleAlert className="size-5 shrink-0" />
                     Nothing was imported — the file was not changed.
                   </p>
                   {/* The import is deliberately all-or-nothing. A half-imported
                       medicine catalogue is worse than a refused one: nobody can
                       tell which half is missing, and the stock figures are wrong
                       in a way no report reveals. */}
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-sm text-muted-foreground">
                     Every row has to be valid before anything is written. Fix the rows below and
                     import the sheet again.
                   </p>
@@ -777,14 +858,14 @@ export function InventoryPage(): React.JSX.Element {
               )}
               {importResult.errors.length > 0 && (
                 <div>
-                  <p className="text-sm font-medium text-destructive mb-1">
+                  <p className="mb-2 text-base font-medium text-destructive">
                     {importResult.errors.length + (importResult.errorsTruncated ?? 0)} problem
                     {importResult.errors.length + (importResult.errorsTruncated ?? 0) !== 1
                       ? 's'
                       : ''}
                     {importResult.totalRows ? ` in ${importResult.totalRows} rows` : ''}:
                   </p>
-                  <ul className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-y-auto overscroll-contain">
+                  <ul className="max-h-48 space-y-1 overflow-y-auto overscroll-contain rounded-xl border bg-muted/40 p-3 text-sm text-muted-foreground">
                     {importResult.errors.map((e, i) => (
                       <li key={i}>{e}</li>
                     ))}
@@ -792,17 +873,19 @@ export function InventoryPage(): React.JSX.Element {
                   {/* Capped: 10,000 bad rows previously rendered 10,000 <li>
                       nodes into this modal. */}
                   {(importResult.errorsTruncated ?? 0) > 0 && (
-                    <p className="text-xs text-muted-foreground mt-1 font-medium">
+                    <p className="mt-2 text-sm font-medium text-muted-foreground">
                       …and {importResult.errorsTruncated} more not shown.
                     </p>
                   )}
                 </div>
               )}
-              <Button className="w-full" onClick={() => setImportResult(null)}>
-                Close
-              </Button>
             </div>
           )}
+          <DialogFooter>
+            <Button size="lg" className="w-full" onClick={() => setImportResult(null)}>
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

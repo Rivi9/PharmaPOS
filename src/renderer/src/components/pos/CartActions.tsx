@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Pause, RotateCcw, Trash2 } from 'lucide-react'
+import { Banknote, Pause, RotateCcw, Trash2 } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import {
   AlertDialog,
@@ -19,6 +19,8 @@ interface CartActionsProps {
   onRecall: () => void
   onClear: () => void
   onPayment: () => void
+  /** Text on the pay button, e.g. "Pay Rs. 505.00". */
+  payLabel?: string
   /** Optionally control the clear-confirmation dialog so the F8 shortcut can open it too. */
   clearConfirmOpen?: boolean
   onClearConfirmOpenChange?: (open: boolean) => void
@@ -31,6 +33,7 @@ export function CartActions({
   onRecall,
   onClear,
   onPayment,
+  payLabel = 'Pay',
   clearConfirmOpen: externalClearConfirmOpen,
   onClearConfirmOpenChange
 }: CartActionsProps): React.JSX.Element {
@@ -43,16 +46,16 @@ export function CartActions({
     externalClearConfirmOpen !== undefined ? externalClearConfirmOpen : internalClearConfirmOpen
   const setClearConfirmOpen = onClearConfirmOpenChange || setInternalClearConfirmOpen
 
-  const handleClearClick = () => {
+  const handleClearClick = (): void => {
     setClearConfirmOpen(true)
   }
 
-  const handleClearConfirm = () => {
+  const handleClearConfirm = (): void => {
     onClear()
     setClearConfirmOpen(false)
   }
 
-  const handleRecallClick = () => {
+  const handleRecallClick = (): void => {
     if (hasItems) {
       setRecallConfirmOpen(true)
     } else {
@@ -60,7 +63,7 @@ export function CartActions({
     }
   }
 
-  const handleRecallConfirm = () => {
+  const handleRecallConfirm = (): void => {
     onRecall()
     setRecallConfirmOpen(false)
   }
@@ -68,43 +71,24 @@ export function CartActions({
   return (
     <>
       <div className="grid grid-cols-3 gap-2">
-        {/* Hold Button */}
-        <Button
-          variant="outline"
-          disabled={!hasItems}
-          onClick={onHold}
-          className="h-12 flex flex-col items-center gap-1 py-2"
-        >
-          <Pause className="h-5 w-5" />
-          <span className="text-xs">Hold</span>
+        <Button variant="outline" size="lg" disabled={!hasItems} onClick={onHold}>
+          <Pause />
+          Hold
         </Button>
-
-        {/* Recall Button */}
-        <Button
-          variant="outline"
-          disabled={!hasHeldSale}
-          onClick={handleRecallClick}
-          className="h-12 flex flex-col items-center gap-1 py-2"
-        >
-          <RotateCcw className="h-5 w-5" />
-          <span className="text-xs">Recall</span>
+        <Button variant="outline" size="lg" disabled={!hasHeldSale} onClick={handleRecallClick}>
+          <RotateCcw />
+          Recall
         </Button>
-
-        {/* Clear Button */}
-        <Button
-          variant="outline"
-          disabled={!hasItems}
-          onClick={handleClearClick}
-          className="h-12 flex flex-col items-center gap-1 py-2 text-destructive hover:text-destructive"
-        >
-          <Trash2 className="h-5 w-5" />
-          <span className="text-xs">Clear</span>
+        <Button variant="destructive" size="lg" disabled={!hasItems} onClick={handleClearClick}>
+          <Trash2 />
+          Clear
         </Button>
       </div>
 
-      {/* Pay Button — large, easy to tap */}
-      <Button disabled={!hasItems} onClick={onPayment} className="w-full h-16 text-xl font-bold">
-        Pay Now
+      {/* Pay — the biggest target on the screen */}
+      <Button size="xl" disabled={!hasItems} onClick={onPayment} className="h-18 w-full text-2xl">
+        <Banknote className="size-7!" />
+        {payLabel}
       </Button>
 
       {/* Recall Confirmation Dialog — shown when cart has unsaved items */}
@@ -134,10 +118,7 @@ export function CartActions({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleClearConfirm}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 active:bg-destructive/80"
-            >
+            <AlertDialogAction variant="destructive-solid" onClick={handleClearConfirm}>
               Clear Cart
             </AlertDialogAction>
           </AlertDialogFooter>

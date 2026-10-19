@@ -1,10 +1,24 @@
 import { useState, useEffect, useRef } from 'react'
-import { Search, Package } from 'lucide-react'
-import { Input } from '@renderer/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
+import { PackageSearchIcon } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from '@renderer/components/ui/dialog'
+import { SearchInput } from '@renderer/components/common/search-input'
+import { ProductOption } from '@renderer/components/common/product-option'
+import { ScrollArea } from '@renderer/components/ui/scroll-area'
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle
+} from '@renderer/components/ui/empty'
 import type { Product } from '@renderer/lib/types'
-import { useSettingsStore } from '@renderer/stores/settingsStore'
-import { formatCurrency } from '@renderer/lib/calculations'
+import { cn } from '@renderer/lib/utils'
 
 interface SearchModalProps {
   open: boolean
@@ -13,148 +27,124 @@ interface SearchModalProps {
   initialQuery?: string
 }
 
+/**
+ * Full-height product list (F2 / Browse): the same ranked search as the till
+ * box, with room for 50 results and big rows.
+ */
 export function SearchModal({
   open,
   onClose,
   onSelect,
   initialQuery
 }: SearchModalProps): React.JSX.Element {
-  const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<Product[]>([])
+  const [answered, setAnswered] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Focus input when modal opens; pre-fill query if provided
   useEffect(() => {
     if (open) {
-      setTimeout(() => inputRef.current?.focus(), 100)
+      setTimeout(() => inputRef.current?.focus(), 50)
       setQuery(initialQuery ?? '')
       setResults([])
+      setAnswered(null)
     }
   }, [open, initialQuery])
 
-  // Search on query change (debounced)
+  // Same staleness guard as ProductEntry (M3): a response for an older query
+  // must never replace the results for the current one.
   useEffect(() => {
-    if (!query.trim()) {
+    const q = query.trim()
+    if (!q) {
       setResults([])
+      setAnswered(null)
       return
     }
-
-    // Same staleness guard as ProductEntry (M3): a response for an older query
-    // must never replace the results for the current one.
     let cancelled = false
+    setLoading(true)
     const timer = setTimeout(async () => {
-      setLoading(true)
       try {
-        const products = await window.electron.searchProducts(query.trim())
-        if (!cancelled) setResults(products)
+        const products = await window.electron.searchProducts(q, 50)
+        if (!cancelled) {
+          setResults(products)
+          setAnswered(q)
+        }
       } catch (err) {
         if (!cancelled) console.error('Search error:', err)
       } finally {
         if (!cancelled) setLoading(false)
       }
-    }, 300)
-
+    }, 120)
     return () => {
       cancelled = true
       clearTimeout(timer)
     }
   }, [query])
 
-  const handleSelect = (product: Product) => {
-    onSelect(product)
-  }
-
-  const getStockColor = (stock: number | undefined): string => {
-    if (!stock || stock === 0) return 'text-destructive'
-    if (stock < 10) return 'text-amber-600'
-    return 'text-green-600'
-  }
+  const trimmed = query.trim()
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh]">
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="flex h-[85vh] max-w-3xl flex-col gap-4 sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle className="text-xl">Search Products</DialogTitle>
+          <DialogTitle className="text-xl">Find a product</DialogTitle>
+          <DialogDescription>
+            Name, generic name, SKU or barcode — words in any order. Tap a product to add it.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Search Input — tall for touch */}
-          <div className="relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-            <Input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onClick={() => inputRef.current?.focus()}
-              placeholder="Search by name, generic name, barcode, or SKU..."
-              className="pl-12 h-12 text-base"
-              style={{ touchAction: 'manipulation' }}
-            />
+        <SearchInput
+          ref={inputRef}
+          value={query}
+          onValueChange={setQuery}
+          loading={loading}
+          placeholder="e.g. azithro 500"
+          className="h-14 max-w-none rounded-xl text-lg"
+        />
+
+        <ScrollArea className="min-h-0 flex-1 rounded-xl border">
+          {!trimmed && (
+            <Empty className="py-16">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <PackageSearchIcon />
+                </EmptyMedia>
+                <EmptyTitle>Start typing to search</EmptyTitle>
+                <EmptyDescription>Results update as you type.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
+          {trimmed && answered === trimmed && results.length === 0 && (
+            <Empty className="py-16">
+              <EmptyHeader>
+                <EmptyTitle>No products match &ldquo;{trimmed}&rdquo;</EmptyTitle>
+                <EmptyDescription>Check the spelling, or try the generic name.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          )}
+          <div className="divide-y">
+            {results.map((product) => {
+              const out = !product.total_stock || product.total_stock <= 0
+              return (
+                <button
+                  key={product.id}
+                  type="button"
+                  // click, not pointerdown: scrolling the list must not add items.
+                  onClick={() => onSelect(product)}
+                  disabled={out}
+                  className={cn(
+                    'flex min-h-18 w-full touch-manipulation items-center px-4 py-3 text-left transition-colors hover:bg-muted/60 active:bg-accent',
+                    out && 'cursor-not-allowed opacity-50'
+                  )}
+                >
+                  <ProductOption product={product} query={trimmed} />
+                </button>
+              )
+            })}
           </div>
-
-          {/* Results — tall rows for touch */}
-          <div className="min-h-[300px] max-h-[55vh] overflow-auto border rounded-lg">
-            {loading && (
-              <div className="p-8 text-center text-muted-foreground text-base">Searching...</div>
-            )}
-
-            {!loading && results.length === 0 && query && (
-              <div className="p-8 text-center text-muted-foreground text-base">
-                No products found for "{query}"
-              </div>
-            )}
-
-            {!loading && results.length === 0 && !query && (
-              <div className="p-8 text-center text-muted-foreground">
-                <Package className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p className="text-base">Start typing to search products</p>
-              </div>
-            )}
-
-            {!loading && results.length > 0 && (
-              <div className="divide-y">
-                {results.map((product) => (
-                  <button
-                    key={product.id}
-                    onClick={() => handleSelect(product)}
-                    disabled={!product.total_stock || product.total_stock === 0}
-                    className="w-full p-5 text-left hover:bg-muted/50 active:bg-muted transition-colors min-h-[72px] disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <div className="flex items-center justify-between gap-4">
-                      <div className="flex-1 min-w-0">
-                        <p className="font-semibold text-base truncate">{product.name}</p>
-                        {product.generic_name && (
-                          <p className="text-sm text-muted-foreground truncate mt-0.5">
-                            {product.generic_name}
-                          </p>
-                        )}
-                        <p className="text-sm text-muted-foreground mt-1">
-                          SKU: {product.sku}
-                          {product.barcode && ` • ${product.barcode}`}
-                        </p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="font-bold text-base">
-                          {formatCurrency(product.unit_price, currencySymbol)}
-                        </p>
-                        <p
-                          className={`text-sm font-medium mt-0.5 ${getStockColor(product.total_stock)}`}
-                        >
-                          {product.total_stock || 0} in stock
-                        </p>
-                      </div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <p className="text-sm text-muted-foreground text-center">Tap a product to add to cart</p>
-        </div>
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   )

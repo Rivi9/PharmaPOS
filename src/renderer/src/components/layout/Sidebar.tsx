@@ -53,24 +53,25 @@ function NavButton({ item, active, onClick }: NavButtonProps): React.JSX.Element
 
   return (
     <button
+      type="button"
       onClick={onClick}
-      style={{ touchAction: 'manipulation' }}
+      aria-current={active ? 'page' : undefined}
       className={cn(
-        'w-16 h-16 rounded-lg flex flex-col items-center justify-center gap-1 px-1 select-none transition-colors',
+        'flex h-[4.5rem] w-20 touch-manipulation flex-col items-center justify-center gap-1.5 rounded-xl px-1 transition-colors select-none active:scale-[0.97]',
         active
-          ? 'bg-primary text-primary-foreground'
-          : 'text-muted-foreground hover:bg-accent hover:text-foreground active:bg-accent active:text-foreground'
+          ? 'bg-primary text-primary-foreground shadow-sm'
+          : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground active:bg-accent'
       )}
     >
-      <item.icon className="w-5 h-5 shrink-0" />
-      <span className="text-[10px] font-medium leading-none">{item.label}</span>
+      <item.icon className="size-6 shrink-0" />
+      <span className="text-xs leading-none font-medium">{item.label}</span>
     </button>
   )
 }
 
 export function Sidebar({ currentPage, onNavigate }: SidebarProps): React.JSX.Element {
   return (
-    <aside className="w-20 shrink-0 bg-muted border-r flex flex-col items-center py-4 gap-2">
+    <aside className="flex w-24 shrink-0 flex-col items-center gap-2 border-r bg-background py-3">
       {NAV_ITEMS.map((item) => (
         <NavButton
           key={item.id}

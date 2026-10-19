@@ -1,17 +1,26 @@
-import { useEffect, useState, useRef } from 'react'
-import { useForm } from 'react-hook-form'
+import { useEffect, useRef, useState } from 'react'
+import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle
 } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Label } from '@renderer/components/ui/label'
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel
+} from '@renderer/components/ui/field'
+import { Alert, AlertDescription } from '@renderer/components/ui/alert'
+import { Spinner } from '@renderer/components/ui/spinner'
 import {
   Select,
   SelectContent,
@@ -19,16 +28,26 @@ import {
   SelectTrigger,
   SelectValue
 } from '@renderer/components/ui/select'
+import { SearchCombobox } from '@renderer/components/common/search-combobox'
+import { ProductOption } from '@renderer/components/common/product-option'
+import { DatePickerInput, FormNumberInput } from './form-controls'
 import type { StockBatch, Product, Supplier } from '@renderer/stores/inventoryStore'
+import { localDateString } from '../../../../shared/dates'
 
 const stockBatchSchema = z.object({
   product_id: z.string().min(1, 'Product is required'),
   batch_number: z.string().optional(),
-  quantity: z.number().int().min(1, 'Quantity must be at least 1'),
+  // 0 is allowed here because an edit may legitimately run a batch down to
+  // nothing (the delete confirmation tells the operator to do exactly that, and
+  // the main process accepts it). A *new* receipt of 0 is refused in submit.
+  quantity: z
+    .number({ error: 'Enter a quantity' })
+    .int('Whole numbers only')
+    .min(0, 'Quantity cannot be negative'),
   // Only used when editing: a quantity change becomes a recorded stock
   // adjustment, and an adjustment without a reason is untraceable shrinkage.
   adjustment_reason: z.string().optional(),
-  cost_price: z.number().min(0, 'Cost price must be positive'),
+  cost_price: z.number({ error: 'Enter the cost price' }).min(0, 'Cost price must be positive'),
   selling_price: z.union([z.number().min(0), z.nan()]).optional(),
   expiry_date: z.string().optional(),
   received_date: z.string().optional(),
@@ -47,7 +66,7 @@ interface StockBatchFormDialogProps {
 }
 
 /** Label shown in the combobox. Products may have no SKU, so guard it. */
-function productLabel(product: Product): string {
+function productLabel(product: Pick<Product, 'name' | 'sku'>): string {
   return product.sku ? `${product.name} (${product.sku})` : product.name
 }
 
@@ -61,22 +80,28 @@ export function StockBatchFormDialog({
   batch,
   products,
   suppliers
-}: StockBatchFormDialogProps) {
+}: StockBatchFormDialogProps): React.JSX.Element {
   const [productSearch, setProductSearch] = useState('')
-  const [showSuggestions, setShowSuggestions] = useState(false)
-  const productInputRef = useRef<HTMLInputElement>(null)
+  // The label of the product currently chosen. Re-focusing after a selection
+  // leaves that label in the box; that is a browse, not a search for that exact
+  // string, so the suggestions must not be filtered by it.
+  const chosenLabel = useRef<string | null>(null)
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     setValue,
+    setError,
     watch,
     formState: { errors, isSubmitting }
   } = useForm<StockBatchFormData>({
     resolver: zodResolver(stockBatchSchema),
     defaultValues: {
-      received_date: new Date().toISOString().split('T')[0]
+      // Local calendar date (M21) — toISOString() is the UTC date, which dated
+      // stock received after midnight local as the previous day.
+      received_date: localDateString()
     }
   })
 
@@ -92,19 +117,31 @@ export function StockBatchFormDialog({
         received_date: batch.received_date,
         supplier_id: batch.supplier_id || ''
       })
-      // Pre-fill the search box with the existing product name
+      // Pre-fill the search box with the existing product name. The page only
+      // holds one page of products, so fall back to the name on the batch row.
       const existing = products.find((p) => p.id === batch.product_id)
-      setProductSearch(existing ? productLabel(existing) : '')
+      const label = existing
+        ? productLabel(existing)
+        : batch.product_name
+          ? productLabel({ name: batch.product_name, sku: batch.sku ?? '' })
+          : ''
+      chosenLabel.current = label || null
+      setProductSearch(label)
     } else {
-      reset({ received_date: new Date().toISOString().split('T')[0] })
+      reset({ received_date: localDateString() })
+      chosenLabel.current = null
       setProductSearch('')
     }
   }, [batch, reset, products])
 
   const [submitError, setSubmitError] = useState('')
 
-  const handleFormSubmit = async (data: StockBatchFormData) => {
+  const handleFormSubmit = async (data: StockBatchFormData): Promise<void> => {
     setSubmitError('')
+    if (!batch && data.quantity < 1) {
+      setError('quantity', { message: 'Quantity must be at least 1' })
+      return
+    }
     // Enforced here rather than in the zod schema because it is conditional on
     // the quantity actually having moved, which the schema cannot see.
     if (quantityChanged && !data.adjustment_reason?.trim()) {
@@ -121,6 +158,7 @@ export function StockBatchFormDialog({
       return
     }
     reset()
+    chosenLabel.current = null
     setProductSearch('')
   }
 
@@ -140,241 +178,265 @@ export function StockBatchFormDialog({
   // client-side would make 9,950 products of a large catalogue unreachable from
   // this box — you could not receive stock against them at all. The prop is still
   // used to label the already-chosen product when editing.
-  const [remoteProducts, setRemoteProducts] = useState<Product[]>([])
-  const [searching, setSearching] = useState(false)
-  const selectedProduct =
-    products.find((p) => p.id === watch('product_id')) ??
-    remoteProducts.find((p) => p.id === watch('product_id'))
+  const fetchProducts = async (query: string): Promise<Product[]> => {
+    const browsingAll = query.length === 0 || query === chosenLabel.current?.trim()
+    const result: { success: boolean; data?: { rows: Product[] } } =
+      await window.electron.listProductsPage('', {
+        search: browsingAll ? undefined : query,
+        limit: MAX_SUGGESTIONS
+      })
+    return result?.success && result.data ? result.data.rows : []
+  }
 
-  const query = productSearch.trim()
-  // Re-focusing after a selection leaves the chosen product's label in the box;
-  // that is a browse, not a search for that exact string.
-  const browsingAll =
-    query.length === 0 || (selectedProduct && productSearch === productLabel(selectedProduct))
-  const effectiveQuery = browsingAll ? '' : query
-
-  useEffect(() => {
-    if (!open) return
-    let cancelled = false
-    setSearching(true)
-    const timer = setTimeout(
-      () => {
-        window.electron
-          .listProductsPage('', { search: effectiveQuery || undefined, limit: MAX_SUGGESTIONS })
-          .then((result: { success: boolean; data?: { rows: Product[] } }) => {
-            if (cancelled) return
-            setRemoteProducts(result?.success && result.data ? result.data.rows : [])
-          })
-          .catch(() => {
-            if (!cancelled) setRemoteProducts([])
-          })
-          .finally(() => {
-            if (!cancelled) setSearching(false)
-          })
-      },
-      effectiveQuery ? 200 : 0
-    )
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [open, effectiveQuery])
-
-  const filteredProducts = remoteProducts
-  // The server caps at MAX_SUGGESTIONS, so a full page means "there may be more".
-  const hiddenCount = remoteProducts.length >= MAX_SUGGESTIONS ? MAX_SUGGESTIONS : 0
-
-  const handleProductSelect = (product: Product) => {
+  const handleProductSelect = (product: Product): void => {
     setValue('product_id', product.id, { shouldValidate: true })
-    setProductSearch(productLabel(product))
-    setShowSuggestions(false)
+    const label = productLabel(product)
+    chosenLabel.current = label
+    setProductSearch(label)
+  }
+
+  // A barcode scanner types the code and Enter. Pick the product whose barcode
+  // or SKU is exactly that; anything looser waits for the operator to choose.
+  const handleProductEnter = async (query: string): Promise<void> => {
+    if (query === chosenLabel.current?.trim()) return
+    const rows = await fetchProducts(query).catch(() => [] as Product[])
+    const exact = rows.find((p) => p.barcode === query || p.sku === query)
+    if (exact) handleProductSelect(exact)
   }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{batch ? 'Edit Stock Batch' : 'Receive Stock'}</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="flex max-h-[92vh] flex-col gap-0 p-0 sm:max-w-2xl">
+        <DialogHeader className="border-b p-6 pr-16">
+          <DialogTitle className="text-xl font-semibold">
+            {batch ? 'Edit Stock Batch' : 'Receive Stock'}
+          </DialogTitle>
+          <DialogDescription className="text-base">
             {batch
               ? 'Update stock batch details including quantity and expiry date.'
               : 'Record a new stock receipt with batch tracking and expiry information.'}
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
-          {/* Product — searchable combobox */}
-          <div className="space-y-2">
-            <Label htmlFor="product_search">
-              Product <span className="text-red-500">*</span>
-            </Label>
-            <div className="relative">
-              <Input
-                id="product_search"
-                ref={productInputRef}
-                value={productSearch}
-                onChange={(e) => {
-                  setProductSearch(e.target.value)
-                  setValue('product_id', '', { shouldValidate: false })
-                  setShowSuggestions(true)
-                }}
-                onFocus={(e) => {
-                  // Select the text so typing replaces the previous choice
-                  e.target.select()
-                  setShowSuggestions(true)
-                }}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                placeholder="Tap to browse, or type to search by name or SKU…"
-                autoComplete="off"
-              />
-              {/* Suggestions come over IPC now, so "nothing found" and "not
-                  fetched yet" are different states and must not look the same. */}
-              {showSuggestions && filteredProducts.length === 0 && (
-                <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border rounded-lg shadow-lg px-3 py-2 text-sm text-muted-foreground">
-                  {searching ? 'Searching…' : 'No products match that'}
-                </div>
-              )}
-              {showSuggestions && filteredProducts.length > 0 && (
-                // Selection is on click, NOT pointerdown: pointerdown fires the
-                // instant a finger lands, so dragging to scroll would pick whichever
-                // row was under the initial touch. The 150ms blur delay above
-                // outlives the click, so the list is still open when it fires.
-                <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border rounded-lg shadow-lg max-h-64 overflow-y-auto overscroll-contain">
-                  {filteredProducts.map((product) => (
-                    <button
-                      key={product.id}
-                      type="button"
-                      onClick={() => handleProductSelect(product)}
-                      className="w-full min-h-11 px-3 py-2.5 text-left hover:bg-muted active:bg-muted/80 border-b last:border-b-0"
-                    >
-                      <p className="text-sm font-medium">{product.name}</p>
-                      {product.sku && (
-                        <p className="text-xs text-muted-foreground">{product.sku}</p>
-                      )}
-                    </button>
-                  ))}
-                  {hiddenCount > 0 && (
-                    <p className="px-3 py-2 text-xs text-muted-foreground bg-muted/40">
-                      Showing the first {MAX_SUGGESTIONS} matches — keep typing to narrow.
-                    </p>
+        <form
+          onSubmit={handleSubmit(handleFormSubmit)}
+          className="flex min-h-0 flex-1 flex-col"
+          noValidate
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">
+            <FieldGroup className="gap-5">
+              {/* Product — searchable combobox */}
+              <Field data-invalid={!!errors.product_id}>
+                <FieldLabel htmlFor="product_search">
+                  Product <span className="text-destructive">*</span>
+                </FieldLabel>
+                {/* Suggestions come over IPC, so "nothing found" and "not
+                    fetched yet" are different states: the combobox shows a
+                    spinner until the current query is answered, and only then
+                    "No products match that". Rows are picked on click, NOT
+                    pointerdown — a finger landing to scroll must not choose. */}
+                <SearchCombobox<Product>
+                  id="product_search"
+                  query={productSearch}
+                  onQueryChange={(q) => {
+                    setProductSearch(q)
+                    chosenLabel.current = null
+                    setValue('product_id', '', { shouldValidate: false })
+                  }}
+                  fetchItems={fetchProducts}
+                  getKey={(p) => p.id}
+                  renderItem={(p, q) => (
+                    <ProductOption product={p} query={q === chosenLabel.current?.trim() ? '' : q} />
                   )}
-                </div>
-              )}
-            </div>
-            {errors.product_id && (
-              <p className="text-sm text-red-500">{errors.product_id.message}</p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="batch_number">Batch Number</Label>
-              <Input id="batch_number" {...register('batch_number')} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="quantity">
-                Quantity <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="quantity"
-                type="number"
-                {...register('quantity', { valueAsNumber: true })}
-              />
-              {errors.quantity && <p className="text-sm text-red-500">{errors.quantity.message}</p>}
-              {batch && quantityChanged && (
-                <p className="text-xs text-muted-foreground">
-                  {watchedQuantity > batch.quantity ? 'Adding' : 'Removing'}{' '}
-                  {Math.abs(watchedQuantity - batch.quantity)} — recorded as a stock adjustment
-                </p>
-              )}
-            </div>
-
-            {batch && quantityChanged && (
-              <div className="space-y-2 col-span-2">
-                <Label htmlFor="adjustment_reason">
-                  Reason for the quantity change <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="adjustment_reason"
-                  placeholder="Damaged, miscount, expired stock removed…"
-                  {...register('adjustment_reason')}
+                  onSelect={handleProductSelect}
+                  onSubmit={(q) => void handleProductEnter(q)}
+                  minChars={0}
+                  debounceMs={200}
+                  selectOnFocus
+                  placeholder="Tap to browse, or type to search by name or SKU…"
+                  emptyText="No products match that"
+                  footer={(items) =>
+                    items.length >= MAX_SUGGESTIONS
+                      ? `Showing the first ${MAX_SUGGESTIONS} matches — keep typing to narrow.`
+                      : null
+                  }
+                  aria-invalid={!!errors.product_id}
                 />
-                {errors.adjustment_reason && (
-                  <p className="text-sm text-red-500">{errors.adjustment_reason.message}</p>
+                <FieldError errors={[errors.product_id]} />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-5">
+                <Field>
+                  <FieldLabel htmlFor="batch_number">Batch Number</FieldLabel>
+                  <Input id="batch_number" autoComplete="off" {...register('batch_number')} />
+                </Field>
+
+                <Field data-invalid={!!errors.quantity}>
+                  <FieldLabel htmlFor="quantity">
+                    Quantity <span className="text-destructive">*</span>
+                  </FieldLabel>
+                  <Controller
+                    control={control}
+                    name="quantity"
+                    render={({ field, fieldState }) => (
+                      <FormNumberInput
+                        id="quantity"
+                        ref={field.ref}
+                        name={field.name}
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        aria-invalid={fieldState.invalid}
+                      />
+                    )}
+                  />
+                  <FieldError errors={[errors.quantity]} />
+                  {batch && quantityChanged && (
+                    <FieldDescription>
+                      {watchedQuantity > batch.quantity ? 'Adding' : 'Removing'}{' '}
+                      {Math.abs(watchedQuantity - batch.quantity)} — recorded as a stock adjustment
+                    </FieldDescription>
+                  )}
+                </Field>
+
+                {batch && quantityChanged && (
+                  <Field className="col-span-2" data-invalid={!!errors.adjustment_reason}>
+                    <FieldLabel htmlFor="adjustment_reason">
+                      Reason for the quantity change <span className="text-destructive">*</span>
+                    </FieldLabel>
+                    <Input
+                      id="adjustment_reason"
+                      placeholder="Damaged, miscount, expired stock removed…"
+                      {...register('adjustment_reason')}
+                    />
+                    <FieldError errors={[errors.adjustment_reason]} />
+                  </Field>
                 )}
+
+                <Field data-invalid={!!errors.cost_price}>
+                  <FieldLabel htmlFor="cost_price">
+                    Cost Price (Rs.) <span className="text-destructive">*</span>
+                  </FieldLabel>
+                  <Controller
+                    control={control}
+                    name="cost_price"
+                    render={({ field, fieldState }) => (
+                      <FormNumberInput
+                        id="cost_price"
+                        decimal
+                        ref={field.ref}
+                        name={field.name}
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        aria-invalid={fieldState.invalid}
+                      />
+                    )}
+                  />
+                  <FieldError errors={[errors.cost_price]} />
+                </Field>
+
+                <Field data-invalid={!!errors.selling_price}>
+                  <FieldLabel htmlFor="selling_price">Selling Price (Rs.)</FieldLabel>
+                  <Controller
+                    control={control}
+                    name="selling_price"
+                    render={({ field, fieldState }) => (
+                      <FormNumberInput
+                        id="selling_price"
+                        decimal
+                        ref={field.ref}
+                        name={field.name}
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        placeholder="Leave blank to use the product price"
+                        aria-invalid={fieldState.invalid}
+                      />
+                    )}
+                  />
+                  <FieldDescription>
+                    Set this when a batch sells at a different price to the product default — the
+                    till charges the price of the batch it dispenses from.
+                  </FieldDescription>
+                  <FieldError errors={[errors.selling_price]} />
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="expiry_date">Expiry Date</FieldLabel>
+                  <Controller
+                    control={control}
+                    name="expiry_date"
+                    render={({ field }) => (
+                      <DatePickerInput
+                        id="expiry_date"
+                        value={field.value}
+                        onChange={field.onChange}
+                        placeholder="No expiry date"
+                        clearable
+                        yearsBack={3}
+                        yearsAhead={15}
+                      />
+                    )}
+                  />
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="received_date">Received Date</FieldLabel>
+                  <Controller
+                    control={control}
+                    name="received_date"
+                    render={({ field }) => (
+                      <DatePickerInput
+                        id="received_date"
+                        value={field.value}
+                        onChange={field.onChange}
+                        yearsBack={10}
+                        yearsAhead={0}
+                      />
+                    )}
+                  />
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="supplier_id">Supplier</FieldLabel>
+                  <Select
+                    value={supplierId}
+                    onValueChange={(value) => setValue('supplier_id', value)}
+                  >
+                    <SelectTrigger id="supplier_id" className="w-full">
+                      <SelectValue placeholder="Select supplier" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {suppliers.map((sup) => (
+                        <SelectItem key={sup.id} value={sup.id}>
+                          {sup.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Field>
               </div>
-            )}
 
-            <div className="space-y-2">
-              <Label htmlFor="cost_price">
-                Cost Price (Rs.) <span className="text-red-500">*</span>
-              </Label>
-              <Input
-                id="cost_price"
-                type="number"
-                step="0.01"
-                {...register('cost_price', { valueAsNumber: true })}
-              />
-              {errors.cost_price && (
-                <p className="text-sm text-red-500">{errors.cost_price.message}</p>
+              {submitError && (
+                <Alert variant="destructive">
+                  <AlertDescription className="text-base font-medium">
+                    {submitError}
+                  </AlertDescription>
+                </Alert>
               )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="selling_price">Selling Price (Rs.)</Label>
-              <Input
-                id="selling_price"
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                className="h-11"
-                placeholder="Leave blank to use the product price"
-                {...register('selling_price', { valueAsNumber: true })}
-              />
-              <p className="text-xs text-muted-foreground">
-                Set this when a batch sells at a different price to the product default — the till
-                charges the price of the batch it dispenses from.
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="expiry_date">Expiry Date</Label>
-              <Input id="expiry_date" type="date" {...register('expiry_date')} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="received_date">Received Date</Label>
-              <Input id="received_date" type="date" {...register('received_date')} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="supplier_id">Supplier</Label>
-              <Select value={supplierId} onValueChange={(value) => setValue('supplier_id', value)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select supplier" />
-                </SelectTrigger>
-                <SelectContent>
-                  {suppliers.map((sup) => (
-                    <SelectItem key={sup.id} value={sup.id}>
-                      {sup.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            </FieldGroup>
           </div>
 
-          {submitError && <p className="text-sm text-destructive font-medium">{submitError}</p>}
-
-          <div className="flex justify-end gap-2 pt-4">
-            <Button type="button" variant="outline" onClick={onClose}>
+          <DialogFooter className="border-t p-4 sm:justify-end">
+            <Button type="button" variant="outline" size="lg" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" size="lg" className="min-w-44" disabled={isSubmitting}>
+              {isSubmitting && <Spinner className="size-5" />}
               {isSubmitting ? 'Saving...' : batch ? 'Update Batch' : 'Receive Stock'}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

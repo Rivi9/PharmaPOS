@@ -23,8 +23,8 @@ import { logAudit } from '../services/audit'
 
 export function registerPOSHandlers(): void {
   // Product handlers
-  ipcMain.handle(IPC_CHANNELS.PRODUCT_SEARCH, async (_event, query: string) => {
-    return searchProducts(query)
+  ipcMain.handle(IPC_CHANNELS.PRODUCT_SEARCH, async (_event, query: string, limit?: number) => {
+    return searchProducts(String(query ?? ''), typeof limit === 'number' ? limit : undefined)
   })
 
   ipcMain.handle(IPC_CHANNELS.PRODUCT_GET_BY_BARCODE, async (_event, barcode: string) => {

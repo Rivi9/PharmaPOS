@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Progress } from './ui/progress'
-import { Download, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Alert, AlertDescription, AlertTitle } from './ui/alert'
+import { Download, RefreshCw, AlertTriangle, RotateCw } from 'lucide-react'
 import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
 import { useConfirm } from '@renderer/hooks/useConfirm'
 
@@ -29,7 +30,11 @@ export function UpdateNotification(): React.JSX.Element | null {
 
   useEffect(() => {
     // Listen for update events
-    const handleUpdateStatus = (_event: any, status: { event: string; data: any }) => {
+    const handleUpdateStatus = (
+      _event: unknown,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- payload shape differs per event
+      status: { event: string; data: any }
+    ): void => {
       switch (status.event) {
         case 'update-available':
           // Squirrel starts downloading as soon as it finds an update, so this
@@ -67,7 +72,7 @@ export function UpdateNotification(): React.JSX.Element | null {
     }
   }, [])
 
-  const handleDownload = () => {
+  const handleDownload = (): void => {
     window.electron.updates.download()
   }
 
@@ -86,14 +91,16 @@ export function UpdateNotification(): React.JSX.Element | null {
   }
 
   return (
-    <div className="fixed bottom-4 right-4 w-96 z-50">
-      <Card className="shadow-lg border-primary">
+    <div className="fixed right-4 bottom-4 z-50 w-[min(24rem,calc(100vw-2rem))]">
+      <Card className="rounded-2xl shadow-lg ring-primary/30">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <RefreshCw className="h-5 w-5" />
+          <CardTitle className="flex items-center gap-2 text-lg font-semibold">
+            <span className="flex size-9 items-center justify-center rounded-full bg-accent text-accent-foreground">
+              <RefreshCw className={downloading ? 'size-5 animate-spin' : 'size-5'} />
+            </span>
             {updateAvailable ? 'Update Available' : 'Update'}
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="text-base">
             {updateDownloaded
               ? updateInfo?.version
                 ? `Version ${updateInfo.version} is ready to install`
@@ -106,23 +113,23 @@ export function UpdateNotification(): React.JSX.Element | null {
 
         <CardContent className="space-y-3">
           {updateError && (
-            <div className="flex gap-2 rounded-md bg-destructive/10 p-2 text-sm text-destructive">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              <div className="min-w-0">
-                <p className="font-medium">Update failed</p>
-                <p className="text-xs break-words">{updateError}</p>
-                <p className="text-xs mt-1 text-muted-foreground">
+            <Alert variant="destructive" className="bg-destructive/10">
+              <AlertTriangle />
+              <AlertTitle>Update failed</AlertTitle>
+              <AlertDescription>
+                <p className="break-words">{updateError}</p>
+                <p className="mt-1 text-muted-foreground">
                   The till keeps working on the current version.
                 </p>
-              </div>
-            </div>
+              </AlertDescription>
+            </Alert>
           )}
           {!updateDownloaded ? (
             <>
               {downloading && downloadProgress ? (
                 <div className="space-y-2">
                   <Progress value={downloadProgress.percent} />
-                  <p className="text-xs text-muted-foreground text-center">
+                  <p className="text-center text-sm text-muted-foreground tabular-nums">
                     {downloadProgress.percent.toFixed(0)}% -{' '}
                     {formatBytes(downloadProgress.bytesPerSecond)}/s
                   </p>
@@ -130,28 +137,30 @@ export function UpdateNotification(): React.JSX.Element | null {
               ) : downloading ? (
                 // Squirrel reports no progress. Offering "Download Update" here
                 // only started a second check while the first was downloading.
-                <p className="text-sm text-muted-foreground">
+                <p className="text-base text-muted-foreground">
                   Downloading… you can keep using the till.
                 </p>
               ) : (
                 <Button
+                  size="lg"
                   onClick={() => {
                     setUpdateError('')
                     handleDownload()
                   }}
                   className="w-full"
                 >
-                  <Download className="h-4 w-4 mr-2" />
+                  <Download />
                   {updateError ? 'Try again' : 'Download Update'}
                 </Button>
               )}
             </>
           ) : (
             <div className="space-y-2">
-              <p className="text-sm text-muted-foreground">
+              <p className="text-base text-muted-foreground">
                 Update downloaded and ready to install
               </p>
-              <Button onClick={handleInstall} className="w-full">
+              <Button size="lg" onClick={handleInstall} className="w-full">
+                <RotateCw />
                 Install & Restart
               </Button>
             </div>

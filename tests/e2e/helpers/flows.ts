@@ -67,7 +67,7 @@ export async function login(page: Page): Promise<void> {
   await expect(
     page
       .getByText(/Opening Cash/i)
-      .or(page.getByPlaceholder(/Scan or enter barcode/i))
+      .or(page.getByPlaceholder(/Scan a barcode/i))
       .first()
   ).toBeVisible({ timeout: 20_000 })
 }
@@ -78,7 +78,7 @@ export async function startShift(page: Page, amount = '5000'): Promise<void> {
     await page.getByRole('button', { name: digit, exact: true }).first().click()
   }
   await page.getByRole('button', { name: /Start Shift/i }).click()
-  await expect(page.getByPlaceholder(/Scan or enter barcode/i)).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByPlaceholder(/Scan a barcode/i)).toBeVisible({ timeout: 20_000 })
 }
 
 /** Fresh install → signed in → shift open → sitting on the POS. */

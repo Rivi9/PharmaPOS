@@ -144,7 +144,7 @@ const COMMANDS = {
       await page.getByRole('button', { name: digit, exact: true }).first().click()
     }
     await clickText('Start Shift')
-    await page.getByPlaceholder(/Scan or enter barcode/i).waitFor({ timeout: 20_000 })
+    await page.getByPlaceholder(/Scan a barcode/i).waitFor({ timeout: 20_000 })
     log('shift open with float', amount)
   },
 
@@ -247,8 +247,79 @@ const COMMANDS = {
     log(out)
   },
 
+  /**
+   * Seed a small catalogue with the shop's own product names (from
+   * `Pharmacy POS.xlsx`), including the "azi" cluster the ranked search was
+   * built for, one out-of-stock line and one expiring in 12 days.
+   */
+  async rxseed() {
+    const db = new DatabaseSync(dbPath)
+    const rows = [
+      // name, generic, sku, barcode, price, stock, expiryDays
+      ['Azigen 500mg', 'Azithromycin', 'AZG500', '4790001', 72, 8, 400],
+      ['Azigen Syr', 'Azithromycin', 'AZGSYR', '4790002', 540, 5, 400],
+      ['Azileb Syr200', 'Azithromycin', 'AZL200', '4790003', 590, 0, 400],
+      ['Azithromycin 250mg', 'Azithromycin', 'AZT250', '4790004', 48, 30, 400],
+      ['Azithromycin 500mg', 'Azithromycin', 'AZT500', '4790005', 85, 240, 12],
+      ['Azithromycin Syrup', 'Azithromycin', 'AZTSYR', '4790006', 640, 36, 400],
+      [
+        'Burna Cream- (Silver Sulfardiazine)',
+        'Silver Sulfadiazine',
+        'BRN01',
+        '4790007',
+        380,
+        8,
+        400
+      ],
+      ['Clofazimine', 'Clofazimine', 'CLF01', '4790008', 120, 4, 400],
+      ['Diazide 40mg', 'Gliclazide', 'DZD40', '4790009', 14, 90, 400],
+      ['Gliclazide 80mg', 'Gliclazide', 'GLZ80', '4790010', 18, 120, 400],
+      ['Panadol 500mg', 'Paracetamol', 'PAN500', '4790012', 6, 500, 400],
+      ['Amoxicillin 500mg', 'Amoxicillin', 'AMX500', '4790013', 22, 25, 400],
+      ['Cetirizine 10mg', 'Cetirizine', 'CTZ10', '4790014', 9, 300, 400],
+      ['Metformin 500mg', 'Metformin', 'MTF500', '4790015', 7, 600, 400],
+      ['Omeprazole 20mg', 'Omeprazole', 'OMP20', '4790016', 15, 150, 400],
+      ['Salbutamol Inhaler', 'Salbutamol', 'SAL100', '4790017', 950, 12, 400]
+    ]
+    try {
+      const now = new Date().toISOString()
+      db.exec('BEGIN')
+      const prod = db.prepare(
+        `INSERT OR REPLACE INTO products (id,name,generic_name,barcode,sku,unit_price,cost_price,reorder_level,
+           reorder_qty,tax_rate,is_tax_inclusive,is_active,created_at,updated_at)
+         VALUES (?,?,?,?,?,?,?,10,50,0,1,1,?,?)`
+      )
+      const batch = db.prepare(
+        `INSERT OR REPLACE INTO stock_batches (id,product_id,batch_number,quantity,cost_price,expiry_date,received_date,created_at)
+         VALUES (?,?,'RX-1',?,?,?,?,?)`
+      )
+      for (const [name, generic, sku, barcode, price, stock, expiryDays] of rows) {
+        const id = 'rx-' + sku
+        prod.run(id, name, generic, barcode, sku, price, price * 0.6, now, now)
+        if (stock > 0) {
+          const expiry = new Date(Date.now() + expiryDays * 864e5).toISOString().split('T')[0]
+          batch.run('rxb-' + sku, id, stock, price * 0.6, expiry, now, now)
+        }
+      }
+      db.exec('COMMIT')
+    } finally {
+      db.close()
+    }
+    log('rxseed:', rows.length, 'products')
+  },
+
+  /** Type into the till's product box without pressing Enter: `type:azi`. */
+  async type(text = '') {
+    const box = page.getByPlaceholder(/Scan a barcode/i)
+    await box.click()
+    await box.fill('')
+    await box.pressSequentially(text, { delay: 40 })
+    await sleep(700)
+    log('typed', JSON.stringify(text))
+  },
+
   async scan(barcode = 'PARA500') {
-    const box = page.getByPlaceholder(/Scan or enter barcode/i)
+    const box = page.getByPlaceholder(/Scan a barcode/i)
     await box.fill(barcode)
     await box.press('Enter')
     await sleep(1200)
@@ -257,7 +328,7 @@ const COMMANDS = {
 
   /** Open the payment modal, tender cash, confirm. */
   async pay(cash = '100') {
-    await clickText('Pay Now')
+    await page.getByRole('button', { name: /^Pay /i }).first().click()
     await sleep(800)
     await page.locator('#cash-received').fill(String(cash))
     await page.getByRole('button', { name: /^Complete Sale$/ }).click()
@@ -432,7 +503,7 @@ async function run(line) {
   // colon truncated any JS object literal or SQL cast — `eval:...{name:'x'}`
   // arrived as `...{name` and failed with a bare `SyntaxError: Unexpected token`
   // that pointed nowhere near the real cause.
-  const FREEFORM = new Set(['eval', 'sql', 'clicktext', 'text', 'click', 'time', 'tab'])
+  const FREEFORM = new Set(['eval', 'sql', 'clicktext', 'text', 'click', 'time', 'tab', 'type'])
   const separator = trimmed.includes(':') ? ':' : ' '
   const head = trimmed.split(/[: ]/)[0]
 

@@ -1,17 +1,22 @@
-import { useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { useEffect, useState } from 'react'
+import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle
 } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Label } from '@renderer/components/ui/label'
+import { Textarea } from '@renderer/components/ui/textarea'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@renderer/components/ui/field'
+import { Alert, AlertDescription } from '@renderer/components/ui/alert'
+import { Spinner } from '@renderer/components/ui/spinner'
+import { FormNumberInput } from './form-controls'
 import type { Supplier } from '@renderer/stores/inventoryStore'
 
 const supplierSchema = z.object({
@@ -20,7 +25,11 @@ const supplierSchema = z.object({
   phone: z.string().optional(),
   email: z.string().email('Invalid email').optional().or(z.literal('')),
   address: z.string().optional(),
-  lead_time_days: z.number().int().min(0).optional(),
+  lead_time_days: z
+    .number({ error: 'Enter the lead time in days' })
+    .int('Whole days only')
+    .min(0)
+    .optional(),
   is_active: z.number().optional()
 })
 
@@ -33,9 +42,15 @@ interface SupplierFormDialogProps {
   supplier?: Supplier | null
 }
 
-export function SupplierFormDialog({ open, onClose, onSubmit, supplier }: SupplierFormDialogProps) {
+export function SupplierFormDialog({
+  open,
+  onClose,
+  onSubmit,
+  supplier
+}: SupplierFormDialogProps): React.JSX.Element {
   const {
     register,
+    control,
     handleSubmit,
     reset,
     formState: { errors, isSubmitting }
@@ -66,72 +81,117 @@ export function SupplierFormDialog({ open, onClose, onSubmit, supplier }: Suppli
     }
   }, [supplier, reset])
 
-  const handleFormSubmit = async (data: SupplierFormData) => {
-    await onSubmit(data)
+  const [submitError, setSubmitError] = useState('')
+
+  const handleFormSubmit = async (data: SupplierFormData): Promise<void> => {
+    setSubmitError('')
+    try {
+      await onSubmit(data)
+    } catch (err) {
+      // Same rule as the product form: a refused save keeps the input and says
+      // why, instead of an unhandled rejection and nothing on screen.
+      setSubmitError((err as Error)?.message || 'Could not save')
+      return
+    }
     reset()
   }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{supplier ? 'Edit Supplier' : 'Add New Supplier'}</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="flex max-h-[92vh] flex-col gap-0 p-0 sm:max-w-2xl">
+        <DialogHeader className="border-b p-6 pr-16">
+          <DialogTitle className="text-xl font-semibold">
+            {supplier ? 'Edit Supplier' : 'Add New Supplier'}
+          </DialogTitle>
+          <DialogDescription className="text-base">
             {supplier
               ? 'Update supplier contact information and delivery details.'
               : 'Add a new supplier for product sourcing and inventory management.'}
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">
-              Supplier Name <span className="text-red-500">*</span>
-            </Label>
-            <Input id="name" {...register('name')} />
-            {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
+        <form
+          onSubmit={handleSubmit(handleFormSubmit)}
+          className="flex min-h-0 flex-1 flex-col"
+          noValidate
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-6">
+            <FieldGroup className="gap-5">
+              <Field data-invalid={!!errors.name}>
+                <FieldLabel htmlFor="name">
+                  Supplier Name <span className="text-destructive">*</span>
+                </FieldLabel>
+                <Input id="name" aria-invalid={!!errors.name} {...register('name')} />
+                <FieldError errors={[errors.name]} />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-5">
+                <Field>
+                  <FieldLabel htmlFor="contact_person">Contact Person</FieldLabel>
+                  <Input id="contact_person" {...register('contact_person')} />
+                </Field>
+
+                <Field>
+                  <FieldLabel htmlFor="phone">Phone</FieldLabel>
+                  <Input id="phone" type="tel" inputMode="tel" {...register('phone')} />
+                </Field>
+
+                <Field className="col-span-2" data-invalid={!!errors.email}>
+                  <FieldLabel htmlFor="email">Email</FieldLabel>
+                  <Input
+                    id="email"
+                    type="email"
+                    aria-invalid={!!errors.email}
+                    {...register('email')}
+                  />
+                  <FieldError errors={[errors.email]} />
+                </Field>
+
+                <Field className="col-span-2">
+                  <FieldLabel htmlFor="address">Address</FieldLabel>
+                  <Textarea id="address" rows={2} {...register('address')} />
+                </Field>
+
+                <Field data-invalid={!!errors.lead_time_days}>
+                  <FieldLabel htmlFor="lead_time_days">Lead Time (days)</FieldLabel>
+                  <Controller
+                    control={control}
+                    name="lead_time_days"
+                    render={({ field, fieldState }) => (
+                      <FormNumberInput
+                        id="lead_time_days"
+                        ref={field.ref}
+                        name={field.name}
+                        value={field.value}
+                        onChange={field.onChange}
+                        onBlur={field.onBlur}
+                        aria-invalid={fieldState.invalid}
+                      />
+                    )}
+                  />
+                  <FieldError errors={[errors.lead_time_days]} />
+                </Field>
+              </div>
+
+              {submitError && (
+                <Alert variant="destructive">
+                  <AlertDescription className="text-base font-medium">
+                    {submitError}
+                  </AlertDescription>
+                </Alert>
+              )}
+            </FieldGroup>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="contact_person">Contact Person</Label>
-              <Input id="contact_person" {...register('contact_person')} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="phone">Phone</Label>
-              <Input id="phone" {...register('phone')} />
-            </div>
-
-            <div className="space-y-2 col-span-2">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" {...register('email')} />
-              {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
-            </div>
-
-            <div className="space-y-2 col-span-2">
-              <Label htmlFor="address">Address</Label>
-              <Input id="address" {...register('address')} />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="lead_time_days">Lead Time (days)</Label>
-              <Input
-                id="lead_time_days"
-                type="number"
-                {...register('lead_time_days', { valueAsNumber: true })}
-              />
-            </div>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-4">
-            <Button type="button" variant="outline" onClick={onClose}>
+          <DialogFooter className="border-t p-4 sm:justify-end">
+            <Button type="button" variant="outline" size="lg" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" size="lg" className="min-w-44" disabled={isSubmitting}>
+              {isSubmitting && <Spinner className="size-5" />}
               {isSubmitting ? 'Saving...' : supplier ? 'Update Supplier' : 'Create Supplier'}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

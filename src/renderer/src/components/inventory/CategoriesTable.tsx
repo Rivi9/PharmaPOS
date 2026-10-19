@@ -1,13 +1,9 @@
 import { useMemo } from 'react'
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  useReactTable
-} from '@tanstack/react-table'
+import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { Button } from '@renderer/components/ui/button'
-import { Edit, Trash2 } from 'lucide-react'
+import { Pencil, Trash2, FolderTree } from 'lucide-react'
 import type { Category } from '@renderer/stores/inventoryStore'
+import { InventoryDataTable } from './data-table'
 
 const columnHelper = createColumnHelper<Category>()
 
@@ -15,9 +11,16 @@ interface CategoriesTableProps {
   categories: Category[]
   onEdit: (category: Category) => void
   onDelete: (category: Category) => void
+  /** A search is active — the empty state should say "no match". */
+  searching?: boolean
 }
 
-export function CategoriesTable({ categories, onEdit, onDelete }: CategoriesTableProps) {
+export function CategoriesTable({
+  categories,
+  onEdit,
+  onDelete,
+  searching
+}: CategoriesTableProps): React.JSX.Element {
   const columns = useMemo(
     () => [
       columnHelper.accessor('name', {
@@ -26,6 +29,7 @@ export function CategoriesTable({ categories, onEdit, onDelete }: CategoriesTabl
       }),
       columnHelper.accessor('description', {
         header: 'Description',
+        meta: { className: 'whitespace-normal text-muted-foreground' },
         cell: (info) => info.getValue() || '-'
       }),
       columnHelper.accessor('parent_name', {
@@ -34,28 +38,30 @@ export function CategoriesTable({ categories, onEdit, onDelete }: CategoriesTabl
       }),
       columnHelper.accessor('product_count', {
         header: 'Products',
+        meta: { className: 'text-right tabular-nums' },
         cell: (info) => info.getValue() || 0
       }),
       columnHelper.display({
         id: 'actions',
-        header: 'Actions',
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { className: 'w-0 text-right' },
         cell: (info) => (
-          <div className="flex gap-3">
+          <div className="flex justify-end gap-2">
             <Button
               variant="ghost"
               size="icon"
               onClick={() => onEdit(info.row.original)}
-             
+              aria-label="Edit category"
             >
-              <Edit className="h-4 w-4" />
+              <Pencil className="size-5" />
             </Button>
             <Button
-              variant="ghost"
+              variant="destructive"
               size="icon"
               onClick={() => onDelete(info.row.original)}
-              className="text-red-600 hover:text-red-700"
+              aria-label="Delete category"
             >
-              <Trash2 className="h-4 w-4" />
+              <Trash2 className="size-5" />
             </Button>
           </div>
         )
@@ -71,41 +77,17 @@ export function CategoriesTable({ categories, onEdit, onDelete }: CategoriesTabl
   })
 
   return (
-    <div className="rounded-md border">
-      <table className="w-full">
-        <thead className="bg-muted">
-          {table.getHeaderGroups().map((headerGroup) => (
-            <tr key={headerGroup.id}>
-              {headerGroup.headers.map((header) => (
-                <th key={header.id} className="px-4 py-3 text-left text-sm font-medium">
-                  {header.isPlaceholder
-                    ? null
-                    : flexRender(header.column.columnDef.header, header.getContext())}
-                </th>
-              ))}
-            </tr>
-          ))}
-        </thead>
-        <tbody>
-          {table.getRowModel().rows.length === 0 ? (
-            <tr>
-              <td colSpan={columns.length} className="px-4 py-8 text-center text-muted-foreground">
-                No categories found. Create your first category to get started.
-              </td>
-            </tr>
-          ) : (
-            table.getRowModel().rows.map((row) => (
-              <tr key={row.id} className="border-t hover:bg-muted/50 active:bg-muted/60">
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-4 py-3 text-sm">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
-    </div>
+    <InventoryDataTable
+      table={table}
+      empty={
+        searching
+          ? { icon: <FolderTree />, title: 'No categories match that' }
+          : {
+              icon: <FolderTree />,
+              title: 'No categories found',
+              description: 'Create your first category to get started.'
+            }
+      }
+    />
   )
 }

@@ -12,12 +12,19 @@ interface CashNumpadProps {
   onSubmit?: () => void
   /** Extra classes applied to every numpad button */
   buttonClassName?: string
+  /** Extra classes for the grid wrapper (width, gap). */
+  className?: string
 }
 
 const KEYS = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', 'backspace'] as const
 
 /**
  * 12-button cash numpad (3×4 grid: 7-9 / 4-6 / 1-3 / . 0 ⌫).
+ *
+ * Keys are 64px tall: this is the most-tapped control on the till, used
+ * standing up, often with a gloved or wet finger. Digit buttons are named by
+ * their digit alone (E2E tests and the driver click `name: '5', exact: true`),
+ * so they must never get an aria-label or extra text.
  *
  * Touch: click any button.
  * Keyboard: digits, `.`, Backspace / Delete are captured globally
@@ -28,7 +35,8 @@ export function CashNumpad({
   value,
   onChange,
   onSubmit,
-  buttonClassName
+  buttonClassName,
+  className
 }: CashNumpadProps): React.JSX.Element {
   // Refs so the single keydown listener always sees the latest values
   const valueRef = useRef(value)
@@ -69,7 +77,7 @@ export function CashNumpad({
 
     const handleKeyDown = (e: KeyboardEvent): void => {
       // Don't intercept when a text input / textarea is focused
-      const tag = (e.target as HTMLElement).tagName.toLowerCase()
+      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase() ?? ''
       if (tag === 'input' || tag === 'textarea') return
 
       // Ignore OS key-repeat, which could otherwise fire submit repeatedly.
@@ -108,17 +116,31 @@ export function CashNumpad({
   }
 
   return (
-    <div className="grid grid-cols-3 gap-2 select-none">
-      {KEYS.map((key) => (
-        <Button
-          key={key}
-          variant="outline"
-          className={cn('text-lg font-semibold', buttonClassName)}
-          onClick={() => handleClick(key)}
-        >
-          {key === 'backspace' ? <Delete className="h-4 w-4" /> : key}
-        </Button>
-      ))}
+    <div className={cn('grid grid-cols-3 gap-2.5 select-none', className)}>
+      {KEYS.map((key) =>
+        key === 'backspace' ? (
+          <Button
+            key={key}
+            type="button"
+            variant="secondary"
+            aria-label="Backspace"
+            className={cn('h-16 rounded-xl', buttonClassName)}
+            onClick={() => handleClick(key)}
+          >
+            <Delete className="size-6" />
+          </Button>
+        ) : (
+          <Button
+            key={key}
+            type="button"
+            variant="outline"
+            className={cn('h-16 rounded-xl text-2xl font-semibold tabular-nums', buttonClassName)}
+            onClick={() => handleClick(key)}
+          >
+            {key}
+          </Button>
+        )
+      )}
     </div>
   )
 }

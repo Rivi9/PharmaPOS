@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -8,15 +9,35 @@ import {
 } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Label } from '@renderer/components/ui/label'
-import { CheckCircle2, XCircle, Printer } from 'lucide-react'
+import { Badge } from '@renderer/components/ui/badge'
+import { Spinner } from '@renderer/components/ui/spinner'
+import { Alert, AlertDescription } from '@renderer/components/ui/alert'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@renderer/components/ui/field'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@renderer/components/ui/select'
+import { NumberInput } from '@renderer/components/common/number-input'
+import { CheckCircle2, XCircle, Printer, RefreshCw } from 'lucide-react'
 import { ipcErrorMessage } from '@renderer/lib/ipc-error'
+
+interface PrinterConfig {
+  type: 'epson' | 'star' | 'generic'
+  interface: 'tcp' | 'usb'
+  path: string
+  ip: string
+  port: number
+  width: number
+}
 
 export function PrinterSetupWizard(): React.JSX.Element {
   const [step, setStep] = useState(1)
-  const [config, setConfig] = useState({
-    type: 'epson' as 'epson' | 'star' | 'generic',
-    interface: 'usb' as 'tcp' | 'usb',
+  const [config, setConfig] = useState<PrinterConfig>({
+    type: 'epson',
+    interface: 'usb',
     path: '',
     ip: '',
     port: 9100,
@@ -29,13 +50,13 @@ export function PrinterSetupWizard(): React.JSX.Element {
   const [usbListLoading, setUsbListLoading] = useState(false)
   const [saveMessage, setSaveMessage] = useState<{ ok: boolean; text: string } | null>(null)
 
-  const loadUsbPrinters = async (currentPath?: string) => {
+  const loadUsbPrinters = async (currentPath?: string): Promise<void> => {
     setUsbListLoading(true)
     try {
       const list = await window.electron.printer.listUSB()
       setUsbPrinters(list as Array<{ name: string; path: string }>)
       if (list.length > 0 && !currentPath) {
-        setConfig((prev) => ({ ...prev, path: (list[0] as any).path }))
+        setConfig((prev) => ({ ...prev, path: (list[0] as { path: string }).path }))
       }
     } catch {
       setUsbPrinters([])
@@ -47,7 +68,7 @@ export function PrinterSetupWizard(): React.JSX.Element {
   useEffect(() => {
     window.electron.printer
       .getConfig()
-      .then((saved: any) => {
+      .then((saved: Partial<PrinterConfig> | null) => {
         if (saved) {
           setConfig({
             type: saved.type || 'epson',
@@ -67,14 +88,14 @@ export function PrinterSetupWizard(): React.JSX.Element {
       })
   }, [])
 
-  const handleInterfaceChange = (value: 'tcp' | 'usb') => {
+  const handleInterfaceChange = (value: 'tcp' | 'usb'): void => {
     setConfig({ ...config, interface: value, path: '' })
     if (value === 'usb') {
       loadUsbPrinters()
     }
   }
 
-  const handleTestPrinter = async () => {
+  const handleTestPrinter = async (): Promise<void> => {
     setIsLoading(true)
     setTestResult(null)
     setTestError(null)
@@ -97,9 +118,9 @@ export function PrinterSetupWizard(): React.JSX.Element {
         setTestResult(false)
         setTestError(result.error || 'Unknown error')
       }
-    } catch (error: any) {
+    } catch (error) {
       setTestResult(false)
-      setTestError(error.message)
+      setTestError(ipcErrorMessage(error, 'Unknown error'))
     } finally {
       setIsLoading(false)
     }
@@ -130,81 +151,104 @@ export function PrinterSetupWizard(): React.JSX.Element {
     }
   }
 
+  /** parseInt('') is NaN; show an empty box rather than the text "NaN". */
+  const numberText = (n: number): string => (Number.isNaN(n) ? '' : String(n))
+
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center gap-2">
-          <Printer className="h-5 w-5" />
-          <CardTitle>Printer Setup Wizard</CardTitle>
-        </div>
-        <CardDescription>Configure your thermal receipt printer</CardDescription>
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Printer className="size-5" />
+          Printer Setup Wizard
+        </CardTitle>
+        <CardDescription className="text-base">
+          Configure your thermal receipt printer
+        </CardDescription>
+        <CardAction>
+          <Badge variant="secondary" className="h-7 px-3 text-sm">
+            Step {step} of 3
+          </Badge>
+        </CardAction>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Step 1: Choose Printer Type */}
         {step === 1 && (
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="printer-type">Printer Type</Label>
-              <select
-                id="printer-type"
-                value={config.type}
-                onChange={(e) => setConfig({ ...config, type: e.target.value as any })}
-                className="w-full border rounded-md px-3 py-2"
-              >
-                <option value="epson">Epson (ESC/POS)</option>
-                <option value="star">Star Micronics</option>
-                <option value="generic">Generic (ESC/POS)</option>
-              </select>
-            </div>
+          <FieldGroup className="gap-5">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Field>
+                <FieldLabel htmlFor="printer-type">Printer Type</FieldLabel>
+                <Select
+                  value={config.type}
+                  onValueChange={(v) => setConfig({ ...config, type: v as PrinterConfig['type'] })}
+                >
+                  <SelectTrigger id="printer-type" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    <SelectItem value="epson">Epson (ESC/POS)</SelectItem>
+                    <SelectItem value="star">Star Micronics</SelectItem>
+                    <SelectItem value="generic">Generic (ESC/POS)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
 
-            <div>
-              <Label htmlFor="printer-interface">Connection Type</Label>
-              <select
-                id="printer-interface"
-                value={config.interface}
-                onChange={(e) => handleInterfaceChange(e.target.value as 'tcp' | 'usb')}
-                className="w-full border rounded-md px-3 py-2"
-              >
-                <option value="usb">USB</option>
-                <option value="tcp">Network (TCP/IP)</option>
-              </select>
+              <Field>
+                <FieldLabel htmlFor="printer-interface">Connection Type</FieldLabel>
+                <Select
+                  value={config.interface}
+                  onValueChange={(v) => handleInterfaceChange(v as 'tcp' | 'usb')}
+                >
+                  <SelectTrigger id="printer-interface" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    <SelectItem value="usb">USB</SelectItem>
+                    <SelectItem value="tcp">Network (TCP/IP)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </Field>
             </div>
 
             {config.interface === 'usb' && (
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <Label htmlFor="printer-path">Printer</Label>
-                  <button
+              <Field>
+                <FieldLabel htmlFor="printer-path">Printer</FieldLabel>
+                <div className="flex gap-2">
+                  {usbPrinters.length > 0 ? (
+                    <Select
+                      value={config.path}
+                      onValueChange={(v) => setConfig({ ...config, path: v })}
+                    >
+                      <SelectTrigger id="printer-path" className="w-auto min-w-0 flex-1">
+                        <SelectValue placeholder="Select a printer" />
+                      </SelectTrigger>
+                      <SelectContent position="popper">
+                        {usbPrinters.map((p) => (
+                          <SelectItem key={p.path} value={p.path}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id="printer-path"
+                      className="flex-1"
+                      value={config.path}
+                      onChange={(e) => setConfig({ ...config, path: e.target.value })}
+                      placeholder="Enter printer name (e.g. EPSON TM-T81III)"
+                    />
+                  )}
+                  <Button
                     type="button"
+                    variant="outline"
                     onClick={() => loadUsbPrinters()}
                     disabled={usbListLoading}
-                    className="text-xs text-primary underline disabled:opacity-50"
                   >
+                    {usbListLoading ? <Spinner className="size-5" /> : <RefreshCw />}
                     {usbListLoading ? 'Loading...' : 'Refresh list'}
-                  </button>
+                  </Button>
                 </div>
-                {usbPrinters.length > 0 ? (
-                  <select
-                    id="printer-path"
-                    value={config.path}
-                    onChange={(e) => setConfig({ ...config, path: e.target.value })}
-                    className="w-full border rounded-md px-3 py-2"
-                  >
-                    {usbPrinters.map((p) => (
-                      <option key={p.path} value={p.path}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <Input
-                    id="printer-path"
-                    value={config.path}
-                    onChange={(e) => setConfig({ ...config, path: e.target.value })}
-                    placeholder="Enter printer name (e.g. EPSON TM-T81III)"
-                  />
-                )}
-                <p className="text-xs text-muted-foreground mt-1">
+                <FieldDescription>
                   USB printing requires the <strong>WinUSB</strong> driver. Download{' '}
                   <a
                     href="#"
@@ -212,86 +256,89 @@ export function PrinterSetupWizard(): React.JSX.Element {
                       e.preventDefault()
                       window.open('https://zadig.akeo.ie')
                     }}
-                    className="underline"
                   >
                     Zadig
                   </a>
                   , select your printer, and install WinUSB. Then click Refresh.
-                </p>
-              </div>
+                </FieldDescription>
+              </Field>
             )}
 
             {config.interface === 'tcp' && (
-              <>
-                <div>
-                  <Label htmlFor="printer-ip">IP Address</Label>
+              <div className="grid gap-5 sm:grid-cols-[2fr_1fr]">
+                <Field>
+                  <FieldLabel htmlFor="printer-ip">IP Address</FieldLabel>
                   <Input
                     id="printer-ip"
+                    inputMode="decimal"
                     value={config.ip}
                     onChange={(e) => setConfig({ ...config, ip: e.target.value })}
                     placeholder="192.168.1.100"
                   />
-                </div>
-                <div>
-                  <Label htmlFor="printer-port">Port</Label>
-                  <Input
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="printer-port">Port</FieldLabel>
+                  <NumberInput
                     id="printer-port"
-                    type="number"
-                    value={config.port}
-                    onChange={(e) => setConfig({ ...config, port: parseInt(e.target.value) })}
+                    value={numberText(config.port)}
+                    onValueChange={(v) => setConfig({ ...config, port: parseInt(v) })}
                   />
-                </div>
-              </>
+                </Field>
+              </div>
             )}
 
-            <div>
-              <Label htmlFor="printer-width">Receipt Width (characters)</Label>
-              <Input
+            <Field>
+              <FieldLabel htmlFor="printer-width">Receipt Width (characters)</FieldLabel>
+              <NumberInput
                 id="printer-width"
-                type="number"
-                value={config.width}
-                onChange={(e) => setConfig({ ...config, width: parseInt(e.target.value) })}
+                value={numberText(config.width)}
+                onValueChange={(v) => setConfig({ ...config, width: parseInt(v) })}
               />
-              <p className="text-xs text-muted-foreground mt-1">
+              <FieldDescription>
                 Common: 32 (58mm), 42 (80mm Font A), 56 (80mm Font B)
-              </p>
-            </div>
+              </FieldDescription>
+            </Field>
 
-            <Button onClick={() => setStep(2)} className="w-full">
+            <Button size="lg" onClick={() => setStep(2)} className="w-full">
               Next: Test Printer
             </Button>
-          </div>
+          </FieldGroup>
         )}
 
         {/* Step 2: Test Printer */}
         {step === 2 && (
           <div className="space-y-4">
-            <div className="text-center py-8">
+            <div className="py-8 text-center">
               {testResult === null && !isLoading && (
                 <>
-                  <Printer className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-lg font-medium mb-2">Ready to test printer</p>
-                  <p className="text-sm text-muted-foreground mb-6">
+                  <Printer className="mx-auto mb-4 size-16 text-muted-foreground" />
+                  <p className="mb-2 text-lg font-medium">Ready to test printer</p>
+                  <p className="mb-6 text-base text-muted-foreground">
                     Click the button below to print a test page
                   </p>
-                  <Button onClick={handleTestPrinter} size="lg">
-                    Print Test Page
-                  </Button>
+                  <div className="flex justify-center gap-3">
+                    <Button size="lg" variant="outline" onClick={() => setStep(1)}>
+                      Back
+                    </Button>
+                    <Button onClick={handleTestPrinter} size="lg">
+                      Print Test Page
+                    </Button>
+                  </div>
                 </>
               )}
 
               {isLoading && (
                 <>
-                  <div className="animate-spin h-16 w-16 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4" />
+                  <Spinner className="mx-auto mb-4 size-16 text-primary" />
                   <p className="text-lg font-medium">Testing printer...</p>
                 </>
               )}
 
               {testResult === true && (
                 <>
-                  <CheckCircle2 className="h-16 w-16 mx-auto mb-4 text-green-600" />
-                  <p className="text-lg font-medium text-green-600 mb-2">Test successful!</p>
-                  <p className="text-sm text-muted-foreground">
+                  <CheckCircle2 className="mx-auto mb-4 size-16 text-success" />
+                  <p className="mb-2 text-lg font-medium text-success">Test successful!</p>
+                  <p className="text-base text-muted-foreground">
                     Proceeding to save configuration...
                   </p>
                 </>
@@ -299,21 +346,23 @@ export function PrinterSetupWizard(): React.JSX.Element {
 
               {testResult === false && (
                 <>
-                  <XCircle className="h-16 w-16 mx-auto mb-4 text-destructive" />
-                  <p className="text-lg font-medium text-destructive mb-2">Test failed</p>
+                  <XCircle className="mx-auto mb-4 size-16 text-destructive" />
+                  <p className="mb-2 text-lg font-medium text-destructive">Test failed</p>
                   {testError && (
-                    <p className="text-sm font-mono bg-muted px-3 py-2 rounded mb-4 max-w-sm mx-auto text-left break-all">
+                    <p className="mx-auto mb-4 max-w-sm break-all rounded-md bg-muted px-3 py-2 text-left font-mono text-sm">
                       {testError}
                     </p>
                   )}
-                  <p className="text-sm text-muted-foreground mb-6">
+                  <p className="mb-6 text-base text-muted-foreground">
                     Please check your printer connection and settings
                   </p>
-                  <div className="flex gap-2 justify-center">
-                    <Button variant="outline" onClick={() => setStep(1)}>
+                  <div className="flex justify-center gap-3">
+                    <Button size="lg" variant="outline" onClick={() => setStep(1)}>
                       Back to Settings
                     </Button>
-                    <Button onClick={handleTestPrinter}>Try Again</Button>
+                    <Button size="lg" onClick={handleTestPrinter}>
+                      Try Again
+                    </Button>
                   </div>
                 </>
               )}
@@ -324,17 +373,18 @@ export function PrinterSetupWizard(): React.JSX.Element {
         {/* Step 3: Save Configuration */}
         {step === 3 && (
           <div className="space-y-4">
-            <div className="text-center py-8">
-              <CheckCircle2 className="h-16 w-16 mx-auto mb-4 text-green-600" />
-              <p className="text-lg font-medium mb-2">Printer configured successfully!</p>
-              <p className="text-sm text-muted-foreground mb-6">
+            <div className="py-8 text-center">
+              <CheckCircle2 className="mx-auto mb-4 size-16 text-success" />
+              <p className="mb-2 text-lg font-medium">Printer configured successfully!</p>
+              <p className="mb-6 text-base text-muted-foreground">
                 Save this configuration to use it for all receipts
               </p>
-              <div className="flex gap-2 justify-center">
-                <Button variant="outline" onClick={() => setStep(1)}>
+              <div className="flex justify-center gap-3">
+                <Button size="lg" variant="outline" onClick={() => setStep(1)}>
                   Configure Another
                 </Button>
-                <Button onClick={handleSaveConfig} disabled={isLoading}>
+                <Button size="lg" onClick={handleSaveConfig} disabled={isLoading}>
+                  {isLoading && <Spinner className="size-5" />}
                   Save Configuration
                 </Button>
               </div>
@@ -342,21 +392,18 @@ export function PrinterSetupWizard(): React.JSX.Element {
           </div>
         )}
         {saveMessage && (
-          <div
+          <Alert
             role="status"
+            variant={saveMessage.ok ? 'default' : 'destructive'}
             className={
-              saveMessage.ok
-                ? 'mt-4 flex items-center gap-2 rounded-md bg-green-50 p-3 text-sm font-medium text-green-800'
-                : 'mt-4 flex items-center gap-2 rounded-md bg-destructive/10 p-3 text-sm font-medium text-destructive'
+              saveMessage.ok ? 'border-success/30 bg-success-muted text-success' : undefined
             }
           >
-            {saveMessage.ok ? (
-              <CheckCircle2 className="h-4 w-4 shrink-0" />
-            ) : (
-              <XCircle className="h-4 w-4 shrink-0" />
-            )}
-            <span>{saveMessage.text}</span>
-          </div>
+            {saveMessage.ok ? <CheckCircle2 /> : <XCircle />}
+            <AlertDescription className="text-base font-medium text-current">
+              {saveMessage.text}
+            </AlertDescription>
+          </Alert>
         )}
       </CardContent>
     </Card>

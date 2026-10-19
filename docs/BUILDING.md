@@ -8,6 +8,20 @@ This guide covers building and packaging PharmaPOS for distribution.
 - npm 9 or higher
 - Windows 10/11 (for Windows builds and code signing)
 
+### Developing on macOS
+
+The app also runs on macOS for development (verified on Apple Silicon, Node 26,
+Electron 44); printer and pole display report "no device". Install **inside a
+`.worktrees/<name>` worktree** so the ~1 GB of `node_modules` stays disposable:
+
+```bash
+npm ci
+# `npx electron-rebuild` crashes under Node 26 (old yargs); use the API:
+node -e "require('@electron/rebuild').rebuild({buildPath:process.cwd(),electronVersion:require('electron/package.json').version,force:true})"
+npx electron-forge package
+npm run test:unit && npm run test:e2e
+```
+
 ## Development
 
 ```bash

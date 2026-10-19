@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { RotateCcw, TriangleAlert } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 
 interface Props {
@@ -38,19 +39,28 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!error) return this.props.children
 
     return (
-      <div className="h-full w-full flex items-center justify-center p-6">
-        <div className="max-w-md w-full border rounded-xl p-6 space-y-4 bg-card">
-          <div className="space-y-1">
-            <h2 className="text-lg font-bold text-destructive">Something went wrong</h2>
-            <p className="text-sm text-muted-foreground">
-              {this.props.label ?? 'This section could not be displayed.'} The rest of the
-              application is unaffected and any completed sale has already been saved.
-            </p>
+      <div className="flex h-full w-full items-center justify-center bg-canvas p-6">
+        <div
+          role="alert"
+          className="w-full max-w-md space-y-5 rounded-2xl border bg-card p-6 shadow-xs"
+        >
+          <div className="flex items-start gap-4">
+            <div className="flex size-12 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <TriangleAlert className="size-6" />
+            </div>
+            <div className="space-y-1">
+              <h2 className="text-xl font-semibold">Something went wrong</h2>
+              <p className="text-base text-muted-foreground">
+                {this.props.label ?? 'This section could not be displayed.'} The rest of the
+                application is unaffected and any completed sale has already been saved.
+              </p>
+            </div>
           </div>
-          <pre className="text-xs bg-muted rounded-lg p-3 overflow-auto max-h-40 whitespace-pre-wrap">
+          <pre className="max-h-40 overflow-auto rounded-lg bg-muted p-3 text-sm whitespace-pre-wrap text-muted-foreground">
             {error.message}
           </pre>
-          <Button className="w-full h-12" onClick={this.handleReset}>
+          <Button size="lg" className="w-full" onClick={this.handleReset}>
+            <RotateCcw />
             Try again
           </Button>
         </div>
