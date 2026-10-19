@@ -18,6 +18,7 @@ import { _electron as electron } from 'playwright-core'
 import * as readline from 'node:readline'
 import { DatabaseSync } from 'node:sqlite'
 import fs from 'node:fs'
+import { createRequire } from 'node:module'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -43,14 +44,9 @@ function electronBinary() {
   // packages with the EnableNodeCliInspectArguments fuse disabled, so Playwright
   // cannot attach to the packaged app and _electron.launch() dies with a bare
   // "Process failed to launch!". The dev binary runs the same .vite/build output.
-  if (process.platform === 'win32')
-    return path.join(PROJECT_ROOT, 'node_modules/electron/dist/electron.exe')
-  if (process.platform === 'darwin')
-    return path.join(
-      PROJECT_ROOT,
-      'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'
-    )
-  return path.join(PROJECT_ROOT, 'node_modules/electron/dist/electron')
+  // Requiring the package returns the binary's path — and since Electron 42,
+  // which no longer downloads it during `npm ci`, downloads it on first use.
+  return createRequire(path.join(PROJECT_ROOT, 'package.json'))('electron')
 }
 
 function childEnv() {
