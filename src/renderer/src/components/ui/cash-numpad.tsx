@@ -77,7 +77,7 @@ export function CashNumpad({
 
     const handleKeyDown = (e: KeyboardEvent): void => {
       // Don't intercept when a text input / textarea is focused
-      const tag = (e.target as HTMLElement).tagName.toLowerCase()
+      const tag = (e.target as HTMLElement | null)?.tagName?.toLowerCase() ?? ''
       if (tag === 'input' || tag === 'textarea') return
 
       // Ignore OS key-repeat, which could otherwise fire submit repeatedly.
