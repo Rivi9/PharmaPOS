@@ -31,7 +31,8 @@ const electronAPI = {
   getActiveShift: () => ipcRenderer.invoke(IPC_CHANNELS.SHIFT_GET_ACTIVE),
 
   // Product
-  searchProducts: (query: string) => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_SEARCH, query),
+  searchProducts: (query: string, limit?: number) =>
+    ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_SEARCH, query, limit),
   getProductByBarcode: (barcode: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_GET_BY_BARCODE, barcode),
   getQuickItems: () => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_GET_QUICK_ITEMS),

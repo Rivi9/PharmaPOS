@@ -3,6 +3,7 @@ import { getDb } from '../db/index'
 import { getDatabase } from './database'
 import { products } from '../db/schema'
 import type { Product, NewProduct } from '../db/schema'
+import { productSearchQuery } from '../../shared/product-search'
 
 export type { Product, NewProduct }
 
@@ -33,57 +34,22 @@ export function getProducts(): Product[] {
 }
 
 /**
- * Search products by name, generic name, barcode, or SKU
+ * Ranked, multi-word product search for the till. See src/shared/product-search.ts
+ * for the matching and ranking rules.
  */
 export function searchProducts(
-  query: string
+  query: string,
+  limit = 20
 ): (Product & { total_stock: number; nearest_expiry: string | null })[] {
-  const q = query.trim()
-  const db = getDatabase()
-  const searchTerm = `%${q}%`
-
-  const results = db
-    .prepare(
-      `
-    SELECT
-      p.*,
-      COALESCE((
-        SELECT SUM(b.quantity) FROM stock_batches b
-        WHERE b.product_id = p.id AND b.quantity > 0
-          AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
-      ), 0) as total_stock,
-      COALESCE((
-        SELECT b.selling_price FROM stock_batches b
-        WHERE b.product_id = p.id AND b.quantity > 0 AND b.selling_price IS NOT NULL
-          AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
-        ORDER BY
-          CASE WHEN b.expiry_date IS NULL OR b.expiry_date = '' THEN 1 ELSE 0 END,
-          b.expiry_date ASC, b.received_date ASC
-        LIMIT 1
-      ), p.unit_price) as batch_unit_price,
-      (
-        SELECT MIN(b.expiry_date) FROM stock_batches b
-        WHERE b.product_id = p.id AND b.quantity > 0
-          AND b.expiry_date IS NOT NULL AND b.expiry_date <> ''
-      ) as nearest_expiry
-    FROM products p
-    WHERE p.is_active = 1
-      AND (
-        p.name LIKE ? OR
-        p.generic_name LIKE ? OR
-        p.barcode = ? OR
-        p.sku LIKE ?
-      )
-    GROUP BY p.id
-    ORDER BY p.name ASC
-    LIMIT 20
-  `
-    )
-    .all(searchTerm, searchTerm, q, searchTerm) as (Product & {
+  const built = productSearchQuery(query, { limit: Math.min(Math.max(1, limit), 50) })
+  if (!built) return []
+  const results = getDatabase()
+    .prepare(built.sql)
+    .all(...built.params) as (Product & {
     total_stock: number
     nearest_expiry: string | null
+    search_rank?: number
   })[]
-
   return results.map(withBatchPrice)
 }
 

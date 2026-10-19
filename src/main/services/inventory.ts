@@ -5,6 +5,7 @@ import { categories, suppliers, stockBatches, products, inventoryAdjustments } f
 import type { Category, Supplier, StockBatch } from '../db/schema'
 import { round2 } from '../../shared/money'
 import { localDateString } from '../../shared/dates'
+import { productSearchSql } from '../../shared/product-search'
 
 // =====================
 // PRODUCTS
@@ -161,18 +162,22 @@ function likeTerm(search: string | undefined): string | null {
  */
 export function listProductsPage(query: PagedQuery = {}): Page<Record<string, unknown>> {
   const db = getDatabase()
-  const term = likeTerm(query.search)
   const limit = Math.min(Math.max(1, query.limit ?? 50), MAX_PAGE)
   const offset = Math.max(0, query.offset ?? 0)
 
   const where: string[] = []
   const params: unknown[] = []
   if (!query.includeInactive) where.push('p.is_active = 1')
-  if (term) {
-    where.push('(p.name LIKE ? OR p.sku LIKE ? OR p.barcode LIKE ? OR p.generic_name LIKE ?)')
-    params.push(term, term, term, term)
+  // Same multi-word matching and ranking as the till, so a product found on one
+  // screen is found the same way on the other.
+  const search = productSearchSql(query.search ?? '')
+  if (search) {
+    where.push(search.where)
+    params.push(...search.whereParams)
   }
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : ''
+  const rankSql = search ? `${search.rank} ASC,` : ''
+  const rankParams = search ? search.rankParams : []
 
   const { total } = db
     .prepare(`SELECT COUNT(*) as total FROM products p ${whereSql}`)
@@ -194,11 +199,11 @@ export function listProductsPage(query: PagedQuery = {}): Page<Record<string, un
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN suppliers s ON p.supplier_id = s.id
     ${whereSql}
-    ORDER BY p.is_active DESC, p.name ASC
+    ORDER BY p.is_active DESC, ${rankSql} p.name ASC
     LIMIT ? OFFSET ?
   `
     )
-    .all(...params, limit, offset) as Record<string, unknown>[]
+    .all(...params, ...rankParams, limit, offset) as Record<string, unknown>[]
 
   return { rows, total }
 }
