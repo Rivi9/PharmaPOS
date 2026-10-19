@@ -4,16 +4,23 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle
 } from '@renderer/components/ui/card'
+import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
-import { Input } from '@renderer/components/ui/input'
-import { FileText, Download } from 'lucide-react'
+import { Field, FieldLabel } from '@renderer/components/ui/field'
+import { Spinner } from '@renderer/components/ui/spinner'
+import { Boxes, Download, Receipt, Scale } from 'lucide-react'
+import { toast } from 'sonner'
+import { cn } from '@renderer/lib/utils'
 import { useAuthStore } from '@renderer/stores/authStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
+import { DatePickerField } from './DatePickerField'
+import { parseLocalDate } from './chart-helpers'
 import { jsPDF } from 'jspdf'
-import autoTable from 'jspdf-autotable'
+import autoTable, { type CellHookData } from 'jspdf-autotable'
 
 // ── Local types mirroring the backend report shapes ───────────────────────────
 
@@ -84,6 +91,11 @@ const GREEN = [22, 163, 74] as const // green-600
 
 function fmt(n: number, sym: string): string {
   return `${sym} ${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+
+/** Bottom edge of the table autoTable just drew (it stashes this on the doc). */
+function lastTableY(doc: jsPDF): number {
+  return (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY
 }
 
 function pct(n: number): string {
@@ -188,13 +200,13 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
       2: { halign: 'right' },
       3: { halign: 'right' }
     },
-    didParseCell: ({ cell, column }: any) => {
+    didParseCell: ({ cell, column }: CellHookData) => {
       if (column.index > 0) cell.styles.halign = 'right'
     },
     margin: { left: 14, right: 14 }
   })
 
-  y = (doc as any).lastAutoTable.finalY + 8
+  y = lastTableY(doc) + 8
 
   // Top products
   if (y > 240) {
@@ -221,13 +233,13 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
       2: { halign: 'right' },
       3: { halign: 'right' }
     },
-    didParseCell: ({ cell, column }: any) => {
+    didParseCell: ({ cell, column }: CellHookData) => {
       if (column.index > 0) cell.styles.halign = 'right'
     },
     margin: { left: 14, right: 14 }
   })
 
-  y = (doc as any).lastAutoTable.finalY + 8
+  y = lastTableY(doc) + 8
 
   // Payment methods
   if (y > 240) {
@@ -248,7 +260,7 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
     bodyStyles: { fontSize: 8, textColor: [...DARK] },
     alternateRowStyles: { fillColor: [...SURFACE] },
     columnStyles: { 0: { halign: 'left' }, 1: { halign: 'right' }, 2: { halign: 'right' } },
-    didParseCell: ({ cell, column }: any) => {
+    didParseCell: ({ cell, column }: CellHookData) => {
       if (column.index > 0) cell.styles.halign = 'right'
     },
     margin: { left: 14, right: 14 }
@@ -331,13 +343,13 @@ function buildInventoryPdf(data: InventoryValuationData, businessName: string, s
       3: { halign: 'right' },
       4: { halign: 'right' }
     },
-    didParseCell: ({ cell, column }: any) => {
+    didParseCell: ({ cell, column }: CellHookData) => {
       if (column.index > 0) cell.styles.halign = 'right'
     },
     margin: { left: 14, right: 14 }
   })
 
-  y = (doc as any).lastAutoTable.finalY + 8
+  y = lastTableY(doc) + 8
 
   // By product
   if (y > 230) {
@@ -368,7 +380,7 @@ function buildInventoryPdf(data: InventoryValuationData, businessName: string, s
       4: { halign: 'right' },
       5: { halign: 'right' }
     },
-    didParseCell: ({ cell, column }: any) => {
+    didParseCell: ({ cell, column }: CellHookData) => {
       if (column.index > 0) cell.styles.halign = 'right'
     },
     margin: { left: 14, right: 14 }
@@ -428,13 +440,13 @@ function buildProfitLossPdf(data: ProfitLossData, businessName: string, sym: str
       3: { halign: 'right' },
       4: { halign: 'right' }
     },
-    didParseCell: ({ cell, column }: any) => {
+    didParseCell: ({ cell, column }: CellHookData) => {
       if (column.index > 0) cell.styles.halign = 'right'
     },
     margin: { left: 14, right: 14 }
   })
 
-  y = (doc as any).lastAutoTable.finalY + 8
+  y = lastTableY(doc) + 8
 
   // By month
   if (data.by_month.length > 0) {
@@ -496,6 +508,29 @@ function addPageNumbers(doc: jsPDF): void {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+const PRESETS: { label: string; range: () => [string, string] }[] = [
+  { label: 'Today', range: () => [localDateString(), localDateString()] },
+  { label: 'Last 7 days', range: () => [localDateOffset(-7), localDateString()] },
+  { label: 'Last 30 days', range: () => [localDateOffset(-30), localDateString()] },
+  {
+    label: 'This month',
+    range: () => {
+      const now = new Date()
+      return [localDateString(new Date(now.getFullYear(), now.getMonth(), 1)), localDateString()]
+    }
+  },
+  {
+    label: 'Last month',
+    range: () => {
+      const now = new Date()
+      return [
+        localDateString(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+        localDateString(new Date(now.getFullYear(), now.getMonth(), 0))
+      ]
+    }
+  }
+]
+
 export function ReportsPanel(): React.JSX.Element {
   const { user } = useAuthStore()
   const userId = user?.id ?? ''
@@ -506,28 +541,27 @@ export function ReportsPanel(): React.JSX.Element {
   const [startDate, setStartDate] = useState(localDateOffset(-30))
   const [endDate, setEndDate] = useState(localDateString())
   const [loadingReport, setLoadingReport] = useState<'sales' | 'inventory' | 'pl' | null>(null)
-  const [error, setError] = useState<string | null>(null)
 
   const run = async <T,>(
     key: 'sales' | 'inventory' | 'pl',
     fetch: () => Promise<T>,
     build: (data: T) => jsPDF,
     filename: string
-  ) => {
+  ): Promise<void> => {
     setLoadingReport(key)
-    setError(null)
     try {
       const data = await fetch()
       const doc = build(data)
       doc.save(filename)
-    } catch (err: any) {
-      setError(err.message || 'Failed to generate report')
+      toast.success('Report generated', { description: filename })
+    } catch (err) {
+      toast.error((err as Error)?.message || 'Failed to generate report')
     } finally {
       setLoadingReport(null)
     }
   }
 
-  const generateSalesReport = () =>
+  const generateSalesReport = (): Promise<void> =>
     run(
       'sales',
       () => window.electron.analytics.reports.generateSalesReport(userId, startDate, endDate),
@@ -535,7 +569,7 @@ export function ReportsPanel(): React.JSX.Element {
       `sales-report-${startDate}-to-${endDate}.pdf`
     )
 
-  const generateInventoryReport = () =>
+  const generateInventoryReport = (): Promise<void> =>
     run(
       'inventory',
       () => window.electron.analytics.reports.generateInventoryValuation(userId),
@@ -543,7 +577,7 @@ export function ReportsPanel(): React.JSX.Element {
       `inventory-valuation-${new Date().toISOString().split('T')[0]}.pdf`
     )
 
-  const generateProfitLossReport = () =>
+  const generateProfitLossReport = (): Promise<void> =>
     run(
       'pl',
       () => window.electron.analytics.reports.generateProfitLossReport(userId, startDate, endDate),
@@ -557,60 +591,118 @@ export function ReportsPanel(): React.JSX.Element {
       title: 'Sales Report',
       description:
         'Comprehensive sales analysis with daily breakdown, top products, and payment methods',
+      icon: Receipt,
+      usesPeriod: true,
       onGenerate: generateSalesReport
     },
     {
       key: 'inventory' as const,
       title: 'Inventory Valuation',
       description: 'Current stock value and breakdown by category and individual product',
+      icon: Boxes,
+      usesPeriod: false,
       onGenerate: generateInventoryReport
     },
     {
       key: 'pl' as const,
       title: 'Profit & Loss',
       description: 'P&L statement with category breakdown and monthly trend',
+      icon: Scale,
+      usesPeriod: true,
       onGenerate: generateProfitLossReport
     }
   ]
 
+  const today = parseLocalDate(localDateString())
+  const start = parseLocalDate(startDate)
+  const end = parseLocalDate(endDate)
+
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <Card>
         <CardHeader>
-          <CardTitle>Report Generator</CardTitle>
+          <CardTitle className="text-lg font-semibold">Report Generator</CardTitle>
           <CardDescription>
             Generate and download comprehensive business reports as PDF
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="text-sm font-medium mb-2 block">Start Date</label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-sm font-medium mb-2 block">End Date</label>
-              <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
-            </div>
+        <CardContent className="gap-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field>
+              <FieldLabel htmlFor="report-start-date">Start Date</FieldLabel>
+              <DatePickerField
+                id="report-start-date"
+                value={startDate}
+                onChange={setStartDate}
+                disabled={[...(end ? [{ after: end }] : []), ...(today ? [{ after: today }] : [])]}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="report-end-date">End Date</FieldLabel>
+              <DatePickerField
+                id="report-end-date"
+                value={endDate}
+                onChange={setEndDate}
+                disabled={[
+                  ...(start ? [{ before: start }] : []),
+                  ...(today ? [{ after: today }] : [])
+                ]}
+              />
+            </Field>
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Quick date ranges">
+            {PRESETS.map((preset) => {
+              const [s, e] = preset.range()
+              const active = s === startDate && e === endDate
+              return (
+                <Button
+                  key={preset.label}
+                  variant="outline"
+                  size="sm"
+                  aria-pressed={active}
+                  className={cn(
+                    'px-4',
+                    active && 'border-primary bg-accent text-accent-foreground hover:bg-accent'
+                  )}
+                  onClick={() => {
+                    setStartDate(s)
+                    setEndDate(e)
+                  }}
+                >
+                  {preset.label}
+                </Button>
+              )
+            })}
+          </div>
         </CardContent>
       </Card>
 
       <div className="grid gap-4 md:grid-cols-3">
-        {reports.map(({ key, title, description, onGenerate }) => (
+        {reports.map(({ key, title, description, icon: Icon, usesPeriod, onGenerate }) => (
           <Card key={key}>
-            <CardHeader>
-              <FileText className="h-8 w-8 mb-2 text-primary" />
-              <CardTitle>{title}</CardTitle>
-              <CardDescription>{description}</CardDescription>
+            <CardHeader className="gap-3">
+              <div className="flex items-start justify-between gap-3">
+                <span className="flex size-12 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+                  <Icon className="size-6" />
+                </span>
+                <Badge variant="outline" className="h-7 px-2.5 text-sm text-muted-foreground">
+                  {usesPeriod ? 'Selected period' : 'As of today'}
+                </Badge>
+              </div>
+              <CardTitle className="text-lg font-semibold">{title}</CardTitle>
+              <CardDescription className="text-base">{description}</CardDescription>
             </CardHeader>
-            <CardContent>
-              <Button onClick={onGenerate} disabled={loadingReport !== null} className="w-full">
-                <Download className="h-4 w-4 mr-2" />
+            <CardFooter className="mt-auto">
+              <Button
+                size="lg"
+                onClick={onGenerate}
+                disabled={loadingReport !== null}
+                className="w-full"
+              >
+                {loadingReport === key ? <Spinner className="size-5" /> : <Download />}
                 {loadingReport === key ? 'Generating…' : 'Generate PDF'}
               </Button>
-            </CardContent>
+            </CardFooter>
           </Card>
         ))}
       </div>
