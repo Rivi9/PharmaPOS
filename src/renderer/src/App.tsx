@@ -9,8 +9,22 @@ import { UpdateNotification } from './components/UpdateNotification'
 import { StartShiftModal } from './components/pos/StartShiftModal'
 import { EndShiftModal } from './components/pos/EndShiftModal'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { Toaster } from './components/ui/sonner'
+import { Spinner } from './components/ui/spinner'
+import { TooltipProvider } from './components/ui/tooltip'
+import { useSystemThemeSync } from './hooks/useTheme'
 
 function App(): React.JSX.Element {
+  useSystemThemeSync()
+  return (
+    <TooltipProvider delayDuration={400}>
+      <AppScreens />
+      <Toaster />
+    </TooltipProvider>
+  )
+}
+
+function AppScreens(): React.JSX.Element {
   const { user, isAuthenticated } = useAuthStore()
   const { currentShift } = useShiftStore()
   const [isFirstRun, setIsFirstRun] = useState<boolean | null>(null)
@@ -92,7 +106,9 @@ function App(): React.JSX.Element {
   if (isFirstRun === null) {
     return (
       <>
-        <div className="min-h-screen flex items-center justify-center">Loading...</div>
+        <div className="flex min-h-screen items-center justify-center bg-canvas text-muted-foreground">
+          <Spinner className="size-8" />
+        </div>
         <UpdateNotification />
       </>
     )

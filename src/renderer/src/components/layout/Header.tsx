@@ -1,5 +1,8 @@
 import { Button } from '@renderer/components/ui/button'
-import { Settings, LogOut, Clock } from 'lucide-react'
+import { Settings, LogOut, Clock, Cross } from 'lucide-react'
+import { Badge } from '@renderer/components/ui/badge'
+import { Avatar, AvatarFallback } from '@renderer/components/ui/avatar'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui/tooltip'
 import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { formatCurrency } from '@renderer/lib/calculations'
@@ -27,39 +30,62 @@ export function Header({ user, onEndShift, onSettings }: HeaderProps): React.JSX
   const todaySalesTotal = useShiftStore((s) => s.todaySalesTotal)
   const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
 
+  const initials = (user?.full_name ?? '?')
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
   return (
-    <header className="h-14 border-b bg-background flex items-center justify-between px-4 shrink-0">
+    <header className="flex h-16 shrink-0 items-center justify-between gap-4 border-b bg-background px-4">
       <div className="flex items-center gap-4">
-        <h1 className="text-lg font-bold text-primary">PharmaPOS</h1>
+        <div className="flex items-center gap-2.5">
+          <span className="grid size-9 place-items-center rounded-lg bg-primary text-primary-foreground">
+            <Cross className="size-5" />
+          </span>
+          <span className="text-lg font-bold tracking-tight">PharmaPOS</span>
+        </div>
 
         {currentShift && (
-          <div className="hidden sm:flex items-center gap-1.5 text-sm text-muted-foreground border rounded-md px-3 py-1">
-            <Clock className="h-3.5 w-3.5" />
-            <span>{shiftStartTime(currentShift.started_at)}</span>
-            <span className="mx-1 text-border">|</span>
-            <span className="font-medium text-foreground">{formatCurrency(todaySalesTotal, currencySymbol)}</span>
+          <div className="hidden items-center gap-2 sm:flex">
+            <Badge variant="outline" className="h-8 gap-1.5 border-transparent bg-accent px-3 text-sm text-accent-foreground">
+              <Clock className="size-4" />
+              Shift since {shiftStartTime(currentShift.started_at)}
+            </Badge>
+            <Badge variant="outline" className="h-8 px-3 text-sm tabular-nums">
+              Today {formatCurrency(todaySalesTotal, currencySymbol)}
+            </Badge>
           </div>
         )}
       </div>
 
       <div className="flex items-center gap-2">
         {user && (
-          <span className="hidden sm:block text-sm text-muted-foreground">{user.full_name}</span>
+          <div className="hidden items-center gap-2.5 pr-1 sm:flex">
+            <Avatar className="size-9">
+              <AvatarFallback className="bg-secondary text-sm font-semibold">{initials}</AvatarFallback>
+            </Avatar>
+            <div className="leading-tight">
+              <p className="text-sm font-medium">{user.full_name}</p>
+              <p className="text-xs text-muted-foreground capitalize">{user.role}</p>
+            </div>
+          </div>
         )}
 
-        <Button variant="ghost" size="icon" onClick={onSettings} title="Settings">
-          <Settings className="w-5 h-5" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" onClick={onSettings} aria-label="Settings">
+              <Settings />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Settings</TooltipContent>
+        </Tooltip>
 
         {currentShift && (
-          <Button
-            variant="outline"
-            className="h-11 text-destructive border-destructive/30 hover:bg-destructive/5 active:bg-destructive/10 gap-1.5"
-            onClick={onEndShift}
-            title="End Shift & Logout"
-          >
-            <LogOut className="h-4 w-4" />
-            <span>End Shift</span>
+          <Button variant="destructive" onClick={onEndShift}>
+            <LogOut />
+            End Shift
           </Button>
         )}
       </div>

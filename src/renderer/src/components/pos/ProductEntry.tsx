@@ -1,31 +1,41 @@
 import { useState, useRef, useEffect } from 'react'
-import { Search, AlertTriangle } from 'lucide-react'
-import { Input } from '@renderer/components/ui/input'
-import { Button } from '@renderer/components/ui/button'
+import { toast } from 'sonner'
+import { ListIcon } from 'lucide-react'
+import { InputGroupButton } from '@renderer/components/ui/input-group'
+import { SearchCombobox } from '@renderer/components/common/search-combobox'
+import { ProductOption } from '@renderer/components/common/product-option'
 import { usePOSStore } from '@renderer/stores/posStore'
 import { SearchModal } from './SearchModal'
 import type { Product } from '@renderer/lib/types'
 import { daysUntil } from '../../../../shared/dates'
-import { useSettingsStore } from '@renderer/stores/settingsStore'
-import { formatCurrency } from '@renderer/lib/calculations'
 
 interface ProductEntryProps {
   searchOpen?: boolean
   onSearchOpenChange?: (open: boolean) => void
 }
 
+const SUGGESTION_LIMIT = 8
+
+/** Expiry notice for a product that was just added; local calendar days (L9). */
+function warnIfExpiring(product: Product): void {
+  if (!product.nearest_expiry) return
+  const days = daysUntil(product.nearest_expiry) ?? 0
+  if (days <= 0) {
+    toast.error(`${product.name} is EXPIRED`, { description: `Expiry ${product.nearest_expiry}` })
+  } else if (days <= 30) {
+    toast.warning(`${product.name} expires in ${days} day${days === 1 ? '' : 's'}`, {
+      description: `Expiry ${product.nearest_expiry}`
+    })
+  }
+}
+
 export function ProductEntry({
   searchOpen: externalSearchOpen,
   onSearchOpenChange
 }: ProductEntryProps = {}): React.JSX.Element {
-  const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
-  const [barcode, setBarcode] = useState('')
+  const [query, setQuery] = useState('')
   const [internalSearchOpen, setInternalSearchOpen] = useState(false)
   const [modalQuery, setModalQuery] = useState('')
-  const [error, setError] = useState('')
-  const [expiryWarning, setExpiryWarning] = useState('')
-  const [suggestions, setSuggestions] = useState<Product[]>([])
-  const [showSuggestions, setShowSuggestions] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const addItem = usePOSStore((state) => state.addItem)
 
@@ -38,235 +48,94 @@ export function ProductEntry({
     inputRef.current?.focus()
   }, [])
 
-  // Debounced inline suggestions while typing
-  useEffect(() => {
-    if (barcode.trim().length < 2) {
-      setSuggestions([])
-      setShowSuggestions(false)
-      return
-    }
-    // M3: the response was applied unconditionally, so a search that was still
-    // in flight when the box was cleared — or when the next character was typed —
-    // reopened a dropdown belonging to the PREVIOUS query. On a touchscreen the
-    // cashier's next tap then landed on a suggestion for something they were no
-    // longer searching for, adding the wrong medicine to the basket.
-    let cancelled = false
-    const timer = setTimeout(async () => {
-      try {
-        const results = await window.electron.searchProducts(barcode.trim())
-        if (cancelled) return
-        setSuggestions(results.slice(0, 6))
-        setShowSuggestions(results.length > 0)
-      } catch {
-        if (!cancelled) setSuggestions([])
-      }
-    }, 250)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [barcode])
-
-  const handleSuggestionSelect = (product: Product) => {
-    setShowSuggestions(false)
-    setSuggestions([])
-    setBarcode('')
-    setError('')
-    setExpiryWarning('')
-
-    if (!product.total_stock || product.total_stock === 0) {
-      setError('No stock available')
+  /** Every path into the cart goes through here: tap, scan, or the full search. */
+  const addToCart = (product: Product): void => {
+    setQuery('')
+    if (!product.total_stock || product.total_stock <= 0) {
+      toast.error(`${product.name} has no stock`)
       inputRef.current?.focus()
       return
     }
-
-    if (product.nearest_expiry) {
-      // Local calendar days, so "expires today" is reachable (L9).
-      const days = daysUntil(product.nearest_expiry) ?? 0
-      if (days <= 0) {
-        setExpiryWarning(`⚠ ${product.name} is EXPIRED (${product.nearest_expiry})`)
-      } else if (days <= 30) {
-        setExpiryWarning(
-          `⚠ ${product.name} expires in ${days} day${days === 1 ? '' : 's'} (${product.nearest_expiry})`
-        )
-      }
-    }
-
+    warnIfExpiring(product)
     addItem(product, 1)
     inputRef.current?.focus()
   }
 
-  const handleBarcodeSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!barcode.trim()) return
-
-    setError('')
-    setExpiryWarning('')
-    setShowSuggestions(false)
-    setSuggestions([])
-
+  /**
+   * Enter without choosing a row: a scanner, or a typed code. Exact barcode is
+   * the fast path; otherwise the ranked search decides — one hit (or an exact
+   * SKU/barcode at rank 0) goes straight in, several open the full search list.
+   */
+  const handleSubmit = async (typed: string): Promise<void> => {
     try {
-      // First try exact barcode match (fast path for barcode scanners)
-      let product = await window.electron.getProductByBarcode(barcode.trim())
-
-      // Fallback: search by name/SKU so staff can also type product names
-      if (!product) {
-        const matches = await window.electron.searchProducts(barcode.trim())
-        if (matches.length === 0) {
-          setError('Product not found')
-          setBarcode('')
-          return
-        }
-        if (matches.length > 1) {
-          // Multiple matches — open search modal pre-filled with the query
-          setModalQuery(barcode.trim())
-          setBarcode('')
-          setSearchOpen(true)
-          return
-        }
-        product = matches[0]
-      }
-
-      if (!product) {
-        setError('Product not found')
-        setBarcode('')
+      const exact = await window.electron.getProductByBarcode(typed)
+      if (exact) {
+        addToCart(exact)
         return
       }
-
-      // Check stock
-      if (!product.total_stock || product.total_stock === 0) {
-        setError('No stock available')
-        setBarcode('')
+      const matches: (Product & { search_rank?: number })[] =
+        await window.electron.searchProducts(typed, SUGGESTION_LIMIT)
+      if (matches.length === 0) {
+        toast.error(`Nothing matches "${typed}"`)
+        setQuery('')
         return
       }
-
-      // Check near-expiry
-      if (product.nearest_expiry) {
-        const days = daysUntil(product.nearest_expiry) ?? 0
-        if (days <= 0) {
-          setExpiryWarning(`⚠ ${product.name} is EXPIRED (${product.nearest_expiry})`)
-        } else if (days <= 30) {
-          setExpiryWarning(
-            `⚠ ${product.name} expires in ${days} day${days === 1 ? '' : 's'} (${product.nearest_expiry})`
-          )
-        }
+      if (matches.length === 1 || matches[0].search_rank === 0) {
+        addToCart(matches[0])
+        return
       }
-
-      // Add to cart
-      addItem(product, 1)
-
-      // Clear and refocus
-      setBarcode('')
-      inputRef.current?.focus()
-    } catch (err: any) {
-      setError(err.message || 'Error loading product')
+      setModalQuery(typed)
+      setQuery('')
+      setSearchOpen(true)
+    } catch (err) {
+      toast.error((err as Error)?.message || 'Could not look that up')
     }
   }
 
   return (
     <>
-      <form onSubmit={handleBarcodeSubmit} className="space-y-3">
-        <div className="flex gap-2">
-          <div className="relative flex-1">
-            <Input
-              ref={inputRef}
-              type="text"
-              value={barcode}
-              onChange={(e) => setBarcode(e.target.value)}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-              onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-              onClick={() => inputRef.current?.focus()}
-              placeholder="Scan or enter barcode..."
-              className="h-12 text-base"
-              style={{ touchAction: 'manipulation' }}
-              autoComplete="off"
-            />
-            {showSuggestions && suggestions.length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-1 z-50 bg-popover border rounded-lg shadow-lg max-h-72 overflow-y-auto">
-                {suggestions.map((product) => {
-                  const outOfStock = !product.total_stock || product.total_stock === 0
-                  return (
-                    <button
-                      key={product.id}
-                      type="button"
-                      disabled={outOfStock}
-                      onPointerDown={() => handleSuggestionSelect(product)}
-                      className="w-full px-4 py-2.5 text-left flex items-center justify-between gap-3 hover:bg-muted/60 active:bg-muted disabled:opacity-50 disabled:cursor-not-allowed border-b last:border-b-0"
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{product.name}</p>
-                        {product.generic_name && (
-                          <p className="text-xs text-muted-foreground truncate">
-                            {product.generic_name}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-sm font-semibold">
-                          {formatCurrency(product.unit_price, currencySymbol)}
-                        </p>
-                        <p
-                          className={`text-xs ${outOfStock ? 'text-destructive' : product.total_stock! < 10 ? 'text-amber-600' : 'text-green-600'}`}
-                        >
-                          {product.total_stock || 0} in stock
-                        </p>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-          <Button
-            type="button"
-            variant="outline"
+      <SearchCombobox<Product>
+        size="lg"
+        inputRef={inputRef}
+        query={query}
+        onQueryChange={setQuery}
+        fetchItems={(q) => window.electron.searchProducts(q, SUGGESTION_LIMIT)}
+        getKey={(p) => p.id}
+        renderItem={(p, q) => <ProductOption product={p} query={q} />}
+        isItemDisabled={(p) => !p.total_stock || p.total_stock <= 0}
+        onSelect={addToCart}
+        onSubmit={(q) => void handleSubmit(q)}
+        placeholder="Scan a barcode or type a product name"
+        emptyText="No products match"
+        footer={(items) =>
+          items.length >= SUGGESTION_LIMIT ? 'Keep typing to narrow, or open the full list.' : null
+        }
+        trailing={
+          <InputGroupButton
+            size="sm"
+            variant="secondary"
+            className="h-10 gap-1.5 px-3"
             onClick={() => {
-              setShowSuggestions(false)
-              setModalQuery('')
+              setModalQuery(query)
               setSearchOpen(true)
             }}
-            className="h-12 w-12 shrink-0"
           >
-            <Search className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {error && <p className="text-base text-destructive">{error}</p>}
-        {expiryWarning && (
-          <p className="text-base text-orange-600 flex items-center gap-1">
-            <AlertTriangle className="h-5 w-5 shrink-0" />
-            {expiryWarning}
-          </p>
-        )}
-      </form>
+            <ListIcon className="size-5" />
+            Browse
+          </InputGroupButton>
+        }
+      />
 
       <SearchModal
         open={searchOpen}
-        onClose={() => setSearchOpen(false)}
-        initialQuery={modalQuery}
-        onSelect={(product) => {
-          setError('')
-          setExpiryWarning('')
-
-          // Block 0-stock products
-          if (!product.total_stock || product.total_stock === 0) {
-            setError('No stock available')
-            setSearchOpen(false)
-            return
-          }
-
-          // Check near-expiry when selecting via search
-          if (product.nearest_expiry) {
-            const days = daysUntil(product.nearest_expiry) ?? 0
-            if (days <= 0) {
-              setExpiryWarning(`⚠ ${product.name} is EXPIRED (${product.nearest_expiry})`)
-            } else if (days <= 30) {
-              setExpiryWarning(`⚠ ${product.name} expires in ${days} day${days === 1 ? '' : 's'}`)
-            }
-          }
-          addItem(product, 1)
+        onClose={() => {
           setSearchOpen(false)
           inputRef.current?.focus()
+        }}
+        initialQuery={modalQuery}
+        onSelect={(product) => {
+          setSearchOpen(false)
+          addToCart(product)
         }}
       />
     </>
