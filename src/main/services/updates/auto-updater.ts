@@ -5,7 +5,17 @@ import { logInfo, logError } from '../logging/logger'
 import { confirmClose, runShutdownCleanup } from '../../shutdown'
 import { getDatabase } from '../database'
 
-const UPDATE_REPO = 'Rivi9/pharmapos'
+/**
+ * Squirrel reads `RELEASES` from here and downloads the `.nupkg` it names from
+ * the same place. GitHub redirects `latest/download/<asset>` to that asset on
+ * the newest published (non-draft, non-pre-release) release.
+ *
+ * This used to be update.electronjs.org, which answered "No updates found" for
+ * this repo even with a valid full release published — and that service is a
+ * third party we cannot debug. Reading the release straight from GitHub leaves
+ * nothing between the till and the release.
+ */
+const UPDATE_FEED_URL = 'https://github.com/Rivi9/PharmaPOS/releases/latest/download'
 
 let mainWindow: BrowserWindow | null = null
 let feedConfigured = false
@@ -22,9 +32,9 @@ let pendingManualCheck: Promise<UpdateCheckResult> | null = null
 /**
  * Automatic checks are opt-in: an absent setting means off.
  *
- * They used to run unconditionally every hour against update.electronjs.org.
- * Until that service is set up for this repo every check fails, and each
- * failure put an "Update failed" card on the till.
+ * They used to run unconditionally every hour against update.electronjs.org,
+ * which failed every time for this repo, and each failure put an
+ * "Update failed" card on the till.
  */
 function autoUpdateEnabled(): boolean {
   try {
@@ -87,8 +97,9 @@ export function initializeAutoUpdater(window: BrowserWindow): void {
   // Wire up GitHub releases as the update source (Squirrel protocol)
   updateElectronApp({
     updateSource: {
-      type: UpdateSourceType.ElectronPublicUpdateService,
-      repo: UPDATE_REPO
+      // On Windows update-electron-app hands baseUrl to Squirrel unchanged.
+      type: UpdateSourceType.StaticStorage,
+      baseUrl: UPDATE_FEED_URL
     },
     updateInterval: '1 hour',
     notifyUser: false // handled via IPC above
@@ -102,10 +113,7 @@ export function initializeAutoUpdater(window: BrowserWindow): void {
  */
 function ensureFeedURL(): void {
   if (feedConfigured) return
-  const platform = `${process.platform}-${process.arch}`
-  autoUpdater.setFeedURL({
-    url: `https://update.electronjs.org/${UPDATE_REPO}/${platform}/${app.getVersion()}`
-  })
+  autoUpdater.setFeedURL({ url: UPDATE_FEED_URL })
   feedConfigured = true
 }
 
