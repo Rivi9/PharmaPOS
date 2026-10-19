@@ -42,15 +42,69 @@ export function tokenize(query: string): string[] {
 const wordBoundaries = (expr: string): string =>
   `replace(replace(replace(replace(${expr}, '(', ' '), ')', ' '), '-', ' '), '/', ' ')`
 
-const HAYSTACK = wordBoundaries(
-  `(' ' || p.name || ' ' || COALESCE(p.generic_name, '') || ' ' || COALESCE(p.sku, '') || ' ' || COALESCE(p.barcode, ''))`
-)
-const NAME_WORDS = wordBoundaries(`(' ' || p.name)`)
-const GENERIC_WORDS = wordBoundaries(`(' ' || COALESCE(p.generic_name, ''))`)
+/**
+ * Substring filter text. No boundary normalisation here: a substring match does
+ * not care about punctuation, and the replace() chain is the most expensive part
+ * of the query, so it is only computed for rows that already matched.
+ */
+const haystack = (a: string): string =>
+  `(' ' || ${a}.name || ' ' || COALESCE(${a}.generic_name, '') || ' ' || COALESCE(${a}.sku, '') || ' ' || COALESCE(${a}.barcode, ''))`
 
 /** Sellable stock: positive, unexpired batches (matches deductStockFEFO). */
 export const SELLABLE_BATCH = `b.product_id = p.id AND b.quantity > 0
   AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))`
+
+interface Parsed {
+  raw: string
+  tokens: string[]
+  phrase: string
+}
+
+function parse(query: string): Parsed | null {
+  const raw = query.trim()
+  const tokens = tokenize(raw)
+  if (tokens.length === 0) return null
+  return { raw, tokens, phrase: tokens.join(' ') }
+}
+
+function filterSql(a: string, { raw, tokens }: Parsed): { sql: string; params: unknown[] } {
+  return {
+    sql: `(${a}.barcode = ? OR ${tokens.map(() => `${haystack(a)} LIKE ?`).join(' AND ')})`,
+    params: [raw, ...tokens.map((t) => `%${t}%`)]
+  }
+}
+
+/**
+ * Rank CASE over columns: id/name/generic/sku/barcode of alias `a`, plus the
+ * boundary-normalised `nameWords`, `genericWords`, `allWords` expressions.
+ */
+function rankSql(
+  a: string,
+  words: { nameWords: string; genericWords: string; allWords: string },
+  { raw, tokens, phrase }: Parsed
+): { sql: string; params: unknown[] } {
+  const sql = `CASE
+      WHEN ${a}.barcode = ? OR ${a}.sku = ? COLLATE NOCASE THEN 0
+      WHEN ${a}.name LIKE ? THEN 1
+      WHEN ${a}.generic_name LIKE ? THEN 2
+      WHEN ${words.nameWords} LIKE ? THEN 3
+      WHEN ${words.genericWords} LIKE ? THEN 4
+      WHEN ${tokens.map(() => `${words.nameWords} LIKE ?`).join(' AND ')} THEN 5
+      WHEN ${tokens.map(() => `${words.allWords} LIKE ?`).join(' AND ')} THEN 6
+      ELSE 7
+    END`
+  const params = [
+    raw,
+    raw,
+    `${phrase}%`,
+    `${phrase}%`,
+    `% ${phrase}%`,
+    `% ${phrase}%`,
+    ...tokens.map((t) => `% ${t}%`),
+    ...tokens.map((t) => `% ${t}%`)
+  ]
+  return { sql, params }
+}
 
 export interface ProductSearchSql {
   /** Boolean SQL over alias `p` (products). */
@@ -63,54 +117,81 @@ export interface ProductSearchSql {
 
 /** WHERE + rank fragments for callers that build their own statement (inventory). */
 export function productSearchSql(query: string): ProductSearchSql | null {
-  const raw = query.trim()
-  const tokens = tokenize(raw)
-  if (tokens.length === 0) return null
-  const phrase = tokens.join(' ')
-
-  const where = `(p.barcode = ? OR ${tokens.map(() => `${HAYSTACK} LIKE ?`).join(' AND ')})`
-  const whereParams = [raw, ...tokens.map((t) => `%${t}%`)]
-
-  const rank = `CASE
-      WHEN p.barcode = ? OR p.sku = ? COLLATE NOCASE THEN 0
-      WHEN p.name LIKE ? THEN 1
-      WHEN p.generic_name LIKE ? THEN 2
-      WHEN ${NAME_WORDS} LIKE ? THEN 3
-      WHEN ${GENERIC_WORDS} LIKE ? THEN 4
-      WHEN ${tokens.map(() => `${NAME_WORDS} LIKE ?`).join(' AND ')} THEN 5
-      WHEN ${tokens.map(() => `${HAYSTACK} LIKE ?`).join(' AND ')} THEN 6
-      ELSE 7
-    END`
-  const rankParams = [
-    raw,
-    raw,
-    `${phrase}%`,
-    `${phrase}%`,
-    `% ${phrase}%`,
-    `% ${phrase}%`,
-    ...tokens.map((t) => `% ${t}%`),
-    ...tokens.map((t) => `% ${t}%`)
-  ]
-  return { where, whereParams, rank, rankParams }
+  const parsed = parse(query)
+  if (!parsed) return null
+  const filter = filterSql('p', parsed)
+  const rank = rankSql(
+    'p',
+    {
+      nameWords: wordBoundaries(`(' ' || p.name)`),
+      genericWords: wordBoundaries(`(' ' || COALESCE(p.generic_name, ''))`),
+      allWords: wordBoundaries(haystack('p'))
+    },
+    parsed
+  )
+  return { where: filter.sql, whereParams: filter.params, rank: rank.sql, rankParams: rank.params }
 }
 
 /**
  * The till search: ranked active products with sellable stock, FEFO batch price
  * and nearest expiry. Returns null for a blank query.
+ *
+ * Three stages, so a one-letter query over a 10k catalogue stays cheap:
+ *  1. `cand` — plain substring filter; boundary-normalised text computed once
+ *     per matching row (MATERIALIZED stops SQLite re-evaluating it per use).
+ *  2. `pool` — rank and keep the best `limit * 4` by rank, then shorter name.
+ *  3. stock, batch price and expiry for the pool only; in-stock rows are moved
+ *     ahead within their rank. An in-stock row can only be missed when more
+ *     than `limit * 4` equally-ranked, shorter-named rows are all out of stock.
  */
 export function productSearchQuery(
   query: string,
   { limit = 20 }: { limit?: number } = {}
 ): { sql: string; params: unknown[] } | null {
-  const frag = productSearchSql(query)
-  if (!frag) return null
+  const parsed = parse(query)
+  if (!parsed) return null
+  const filter = filterSql('p', parsed)
+  const rank = rankSql(
+    'c',
+    { nameWords: 'c.name_words', genericWords: 'c.generic_words', allWords: 'c.all_words' },
+    parsed
+  )
+  const pool = Math.max(limit * 4, 40)
 
-  // Inner query ranks and picks the rows; only those get the batch-price and
-  // expiry subqueries. Stock is needed for ordering so it is computed for every
-  // match, but that is one index range per product.
   const sql = `
+    WITH cand AS MATERIALIZED (
+      SELECT
+        p.id, p.name, p.generic_name, p.sku, p.barcode,
+        ${wordBoundaries(`(' ' || p.name)`)} AS name_words,
+        ${wordBoundaries(`(' ' || COALESCE(p.generic_name, ''))`)} AS generic_words,
+        ${wordBoundaries(haystack('p'))} AS all_words
+      FROM products p
+      WHERE p.is_active = 1 AND ${filter.sql}
+    ),
+    pool AS (
+      SELECT c.id, ${rank.sql} AS search_rank
+      FROM cand c
+      ORDER BY search_rank ASC, length(c.name) ASC, c.name ASC
+      LIMIT ?
+    ),
+    stocked AS (
+      SELECT
+        pool.id,
+        pool.search_rank,
+        COALESCE((SELECT SUM(b.quantity) FROM stock_batches b
+                  WHERE b.product_id = pool.id AND b.quantity > 0
+                    AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))), 0) AS total_stock
+      FROM pool
+    ),
+    picked AS (
+      SELECT s.*, p.name AS sort_name
+      FROM stocked s JOIN products p ON p.id = s.id
+      ORDER BY s.search_rank ASC, (s.total_stock > 0) DESC, length(p.name) ASC, p.name ASC
+      LIMIT ?
+    )
     SELECT
       p.*,
+      m.search_rank,
       m.total_stock,
       COALESCE((
         SELECT b.selling_price FROM stock_batches b
@@ -125,18 +206,9 @@ export function productSearchQuery(
         WHERE b.product_id = p.id AND b.quantity > 0
           AND b.expiry_date IS NOT NULL AND b.expiry_date <> ''
       ) as nearest_expiry
-    FROM (
-      SELECT
-        p.id,
-        ${frag.rank} AS search_rank,
-        COALESCE((SELECT SUM(b.quantity) FROM stock_batches b WHERE ${SELLABLE_BATCH}), 0) AS total_stock
-      FROM products p
-      WHERE p.is_active = 1 AND ${frag.where}
-      ORDER BY search_rank ASC, (total_stock > 0) DESC, length(p.name) ASC, p.name ASC
-      LIMIT ?
-    ) m
+    FROM picked m
     JOIN products p ON p.id = m.id
     ORDER BY m.search_rank ASC, (m.total_stock > 0) DESC, length(p.name) ASC, p.name ASC
   `
-  return { sql, params: [...frag.rankParams, ...frag.whereParams, limit] }
+  return { sql, params: [...filter.params, ...rank.params, pool, limit] }
 }

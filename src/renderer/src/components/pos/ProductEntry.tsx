@@ -99,6 +99,8 @@ export function ProductEntry({
         inputRef={inputRef}
         query={query}
         onQueryChange={setQuery}
+        // Two letters: one letter matches most of a catalogue and ranks nothing.
+        minChars={2}
         fetchItems={(q) => window.electron.searchProducts(q, SUGGESTION_LIMIT)}
         getKey={(p) => p.id}
         renderItem={(p, q) => <ProductOption product={p} query={q} />}
