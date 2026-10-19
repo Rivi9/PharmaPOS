@@ -21,8 +21,8 @@
 
 ### Logging In
 
-1. Select your user from the dropdown
-2. Enter your PIN (quick login) or password
+1. Tap your name on the sign-in screen
+2. Enter your PIN (quick login), or tap **Use Password**
 3. Click **Login**
 
 ### Starting a Shift
@@ -44,32 +44,49 @@ Before you can process sales, you must start a shift:
 2. Product is added automatically
 3. Scanner clears and is ready for next item
 
-**Stock Warnings:**
+**Stock warnings** pop up at the top of the screen and clear themselves:
 
-- "Product not found" - Check barcode or use search
-- "Only X available" - Insufficient stock
-- "No stock available" - Product out of stock
+- "Nothing matches …" - Check the barcode, or type the name instead
+- "Only X … in stock" - You asked for more than is on the shelf
+- "… has no stock" - Product is out of stock
+- "… expires in N days" / "… is EXPIRED" - check the pack before handing it over
 
 ### Method 2: Quick Items (Touch-Friendly)
 
 The Quick Items grid shows your 8 best-selling products:
 
-1. Click any product tile to add 1 unit
-2. **Stock indicators** (colored dots):
-   - 🟢 Green: Good stock (10+)
-   - 🟠 Amber: Low stock (< 10)
-   - 🔴 Red: Out of stock
+1. Tap any product tile to add 1 unit
+2. **Stock badge** on each tile:
+   - Green "N in stock": good stock (10+)
+   - Amber "N left": low stock (< 10)
+   - Red "Out of stock": the tile is greyed out and cannot be tapped
 
 **Note:** Quick items update daily based on sales
 
-### Method 3: Product Search (When Needed)
+### Method 3: Type to Search
 
-Use when barcode doesn't scan or customer doesn't know product name:
+The same box the scanner uses also searches by name. Type **two or more
+letters** and suggestions appear underneath:
 
-1. Click the **Search icon** (🔍) or press **F2**
-2. Type product name, generic name, SKU, or barcode
-3. Results appear as you type
-4. Click a product to add it
+- Words can be **partial and in any order**: `azi 500`, `500 azithro` and
+  `para syr` all work. Each word can match the name, generic name, SKU or
+  barcode.
+- The best matches come first: names that **start** with what you typed, then
+  names with a word starting with it, then anything containing it. In-stock
+  products come before out-of-stock ones.
+- **Tap** a suggestion to add it. You can scroll the list with your finger
+  without adding anything; only a tap adds.
+- On a keyboard: **↓ / ↑** to move, **Enter** to add the highlighted row.
+  Enter without using the arrows looks up exactly what you typed (this is what
+  a barcode scanner does).
+- **Browse** (or **F2**) opens the full list with up to 50 results.
+
+---
+
+## Appearance
+
+Settings → **Appearance** switches this till between **Light**, **Dark** and
+**System** (follow Windows). It is saved on this computer only.
 
 ---
 
@@ -80,20 +97,21 @@ Use when barcode doesn't scan or customer doesn't know product name:
 Each cart item shows:
 
 - Product name and generic name
-- Quantity controls (**-** / **+** buttons)
+- Quantity controls (**−** / **+** buttons)
 - Manual quantity input (type directly)
 - Unit price and line total
-- Remove button (**×**)
+- Remove button (bin icon)
 
 **To change quantity:**
 
-1. Click **+** or **-** buttons
-2. Or type directly in the quantity box
-3. Line total updates automatically
+1. Tap **+** or **−**
+2. Or tap the quantity box and type: the cursor always goes to the end, and
+   the number keypad opens on a touch keyboard
+3. Line total updates automatically; you cannot go above the stock on hand
 
 ### Removing Items
 
-- Click the **×** button on any item
+- Tap the bin icon on any item
 
 ### Discounts
 
@@ -122,7 +140,7 @@ Each cart item shows:
 
 Check that all items and quantities are correct
 
-### 2. Click "Pay Now" (F9)
+### 2. Tap "Pay Rs. …" (F9)
 
 Payment modal opens showing:
 
@@ -319,7 +337,7 @@ If cart items persist after sale:
 2. **Use keyboard shortcuts** - F9 is fastest way to payment
 3. **Keep scanner pointed at products** while bagging
 4. **Hold sales liberally** during rushes - it's faster than making people wait
-5. **Let autocomplete work** in search - don't type full names
+5. **Let the suggestions work** - two or three letters of each word is usually enough (`azi 500`)
 
 ---
 
