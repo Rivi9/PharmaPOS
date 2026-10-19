@@ -32,9 +32,12 @@ export function UpdateNotification(): React.JSX.Element | null {
     const handleUpdateStatus = (_event: any, status: { event: string; data: any }) => {
       switch (status.event) {
         case 'update-available':
+          // Squirrel starts downloading as soon as it finds an update, so this
+          // means "downloading", not "ready to download".
           setUpdateAvailable(true)
           setUpdateInfo(status.data)
           setUpdateError('')
+          setDownloading(true)
           break
 
         case 'download-progress':
@@ -91,9 +94,13 @@ export function UpdateNotification(): React.JSX.Element | null {
             {updateAvailable ? 'Update Available' : 'Update'}
           </CardTitle>
           <CardDescription>
-            {updateInfo?.version
-              ? `Version ${updateInfo.version} is ready to install`
-              : 'Checking for a newer version'}
+            {updateDownloaded
+              ? updateInfo?.version
+                ? `Version ${updateInfo.version} is ready to install`
+                : 'A new version is ready to install'
+              : downloading
+                ? 'Downloading a new version in the background'
+                : 'A new version is available'}
           </CardDescription>
         </CardHeader>
 
@@ -120,6 +127,12 @@ export function UpdateNotification(): React.JSX.Element | null {
                     {formatBytes(downloadProgress.bytesPerSecond)}/s
                   </p>
                 </div>
+              ) : downloading ? (
+                // Squirrel reports no progress. Offering "Download Update" here
+                // only started a second check while the first was downloading.
+                <p className="text-sm text-muted-foreground">
+                  Downloading… you can keep using the till.
+                </p>
               ) : (
                 <Button
                   onClick={() => {
