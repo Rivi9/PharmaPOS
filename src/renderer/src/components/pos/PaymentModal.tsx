@@ -1,10 +1,27 @@
 import { useState, useEffect, useRef } from 'react'
-import { CreditCard, Banknote } from 'lucide-react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
+import { CreditCard, Banknote, CircleAlert, CircleCheck, UserCheck } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from '@renderer/components/ui/dialog'
 import { Input } from '@renderer/components/ui/input'
 import { Button } from '@renderer/components/ui/button'
-import { Label } from '@renderer/components/ui/label'
+import { Field, FieldLabel } from '@renderer/components/ui/field'
+import { Alert, AlertDescription } from '@renderer/components/ui/alert'
+import {
+  Item,
+  ItemContent,
+  ItemDescription,
+  ItemMedia,
+  ItemTitle
+} from '@renderer/components/ui/item'
+import { Spinner } from '@renderer/components/ui/spinner'
 import { CashNumpad } from '@renderer/components/ui/cash-numpad'
+import { NumberInput } from '@renderer/components/common/number-input'
+import { cn } from '@renderer/lib/utils'
 import { usePOSStore } from '@renderer/stores/posStore'
 import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
@@ -28,8 +45,24 @@ interface PurchaseHistoryEntry {
   items: { productName: string; quantity: number; lineTotal: number }[]
 }
 
-// Common cash denominations for quick-select
-const QUICK_AMOUNTS = [100, 500, 1000, 2000, 5000]
+/**
+ * Quick-tender amounts for this total: the next round 100, 500, 1,000 and 5,000
+ * above it, plus the 5,000 after that, deduplicated, first three. These used to
+ * be fixed denominations (100 … 5,000), so a Rs. 1,520 sale offered "100" and
+ * "500" — buttons that could only ever produce an "Insufficient cash" error.
+ */
+function quickTenderAmounts(total: number): number[] {
+  if (!(total > 0)) return []
+  const roundUp = (step: number): number => Math.ceil(total / step) * step
+  const candidates = [
+    roundUp(100),
+    roundUp(500),
+    roundUp(1000),
+    roundUp(5000),
+    roundUp(5000) + 5000
+  ]
+  return [...new Set(candidates)].filter((a) => a > total + 0.005).slice(0, 3)
+}
 
 export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): React.JSX.Element {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
@@ -102,7 +135,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   const cardAmountNum = parseFloat(cardAmount) || 0
   const change = paymentMethod === 'cash' ? calculateChange(cashReceivedNum, total) : 0
 
-  const handlePaymentMethodChange = (method: PaymentMethod) => {
+  const handlePaymentMethodChange = (method: PaymentMethod): void => {
     setPaymentMethod(method)
     setError('')
     setCashReceived('')
@@ -113,7 +146,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
     }
   }
 
-  const updateCash = (value: string) => {
+  const updateCash = (value: string): void => {
     setCashReceived(value)
     setError('')
     if (paymentMethod === 'mixed') {
@@ -145,7 +178,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
     return true
   }
 
-  const handleComplete = async () => {
+  const handleComplete = async (): Promise<void> => {
     // In-flight latch. `processing` only disables the button, and the numpad's
     // global Enter handler bypasses the button entirely — so key-repeat or a
     // double tap re-entered here during the stock-recheck await and committed
@@ -255,8 +288,8 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
       setPurchaseHistory([])
 
       onComplete(result.sale_id, result.receipt_number)
-    } catch (err: any) {
-      setError(err.message || 'Failed to complete sale')
+    } catch (err) {
+      setError((err as Error)?.message || 'Failed to complete sale')
     } finally {
       setProcessing(false)
       // Release the latch on EVERY exit, not just the happy path. It was only
@@ -268,211 +301,301 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   }
 
   const showCashEntry = paymentMethod === 'cash' || paymentMethod === 'mixed'
+  const quickAmounts = quickTenderAmounts(total)
+  // Same half-cent tolerance as validatePayment, so the panel never shows
+  // "Short Rs. 0.00" for a tender that Complete Sale would accept.
+  const cashCovers = isAtLeast(cashReceivedNum, total)
+  const itemCount = items.reduce((n, item) => n + item.quantity, 0)
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       {/* A mis-tap on the overlay used to discard a keyed-in payment silently —
           payment is dismissed only via the explicit Cancel button. */}
       <DialogContent
-        className="max-w-lg flex flex-col gap-0 p-0 overflow-hidden"
+        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl"
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <DialogHeader className="shrink-0 px-6 pt-6 pb-3">
-          <DialogTitle className="text-xl">
-            Complete Sale — {formatCurrency(total, currencySymbol)}
-          </DialogTitle>
+        <DialogHeader className="shrink-0 flex-row items-end justify-between gap-4 border-b px-6 pt-5 pb-4 pr-16">
+          <div className="space-y-1">
+            <DialogTitle className="text-2xl font-semibold">Complete Sale</DialogTitle>
+            <DialogDescription className="text-base">
+              {itemCount} {itemCount === 1 ? 'item' : 'items'}
+              {discountAmount > 0 && ` · ${formatCurrency(discountAmount, currencySymbol)} off`}
+            </DialogDescription>
+          </div>
+          <div className="text-right">
+            <p className="text-sm font-medium text-muted-foreground">Total due</p>
+            <p className="text-4xl font-bold tracking-tight tabular-nums text-primary">
+              {formatCurrency(total, currencySymbol)}
+            </p>
+          </div>
         </DialogHeader>
 
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-6 pb-4 space-y-4">
-          {/* Payment Method — large touch buttons */}
-          <div className="flex justify-center items-center w-full gap-3">
-            <Button
-              variant={paymentMethod === 'cash' ? 'default' : 'outline'}
-              onClick={() => handlePaymentMethodChange('cash')}
-              className="h-16 grow flex flex-col items-center gap-1"
+        <div
+          className={cn(
+            'grid min-h-0 flex-1 gap-6 overflow-y-auto overscroll-contain p-6',
+            'md:grid-cols-[minmax(0,1fr)_20rem]'
+          )}
+        >
+          {/* Left: method, tender, change, customer */}
+          <div className="min-w-0 space-y-5">
+            {/* Payment Method — large touch buttons. Kept first in the DOM: Radix
+                focuses the first tabbable element, and it must be a button, not the
+                cash field (see the scanner guard in CashNumpad). */}
+            <div
+              role="group"
+              aria-label="Payment method"
+              className={cn('grid gap-3', cardEnabled ? 'grid-cols-2' : 'grid-cols-1')}
             >
-              <Banknote className="h-6 w-6" />
-              <span>Cash</span>
-            </Button>
-            {cardEnabled && (
               <Button
-                variant={paymentMethod === 'card' ? 'default' : 'outline'}
-                onClick={() => handlePaymentMethodChange('card')}
+                variant={paymentMethod === 'cash' ? 'default' : 'outline'}
+                aria-pressed={paymentMethod === 'cash'}
+                onClick={() => handlePaymentMethodChange('cash')}
+                className="h-16 text-lg"
+              >
+                <Banknote className="size-6" />
+                Cash
+              </Button>
+              {cardEnabled && (
+                <Button
+                  variant={paymentMethod === 'card' ? 'default' : 'outline'}
+                  aria-pressed={paymentMethod === 'card'}
+                  onClick={() => handlePaymentMethodChange('card')}
+                  className="h-16 text-lg"
+                >
+                  <CreditCard className="size-6" />
+                  Card
+                </Button>
+              )}
+              {/* <Button
+                variant={paymentMethod === 'mixed' ? 'default' : 'outline'}
+                onClick={() => handlePaymentMethodChange('mixed')}
                 className="h-16 grow flex flex-col items-center gap-1"
               >
-                <CreditCard className="h-6 w-6" />
-                <span>Card</span>
-              </Button>
-            )}
-            {/* <Button
-              variant={paymentMethod === 'mixed' ? 'default' : 'outline'}
-              onClick={() => handlePaymentMethodChange('mixed')}
-              className="h-16 grow flex flex-col items-center gap-1"
-            >
-              <Split className="h-6 w-6" />
-              <span>Mixed</span>
-            </Button> */}
-          </div>
+                <Split className="h-6 w-6" />
+                <span>Mixed</span>
+              </Button> */}
+            </div>
 
-          {/* Cash entry section */}
-          {showCashEntry && (
-            <div className="space-y-3">
-              <Label className="text-base">Cash Received</Label>
+            {/* Cash entry section */}
+            {showCashEntry && (
+              <div className="space-y-3">
+                <Field>
+                  <FieldLabel htmlFor="cash-received" className="text-base">
+                    Cash Received
+                  </FieldLabel>
+                  <NumberInput
+                    id="cash-received"
+                    decimal
+                    value={cashReceived}
+                    onValueChange={updateCash}
+                    placeholder="0.00"
+                    className="h-16 pr-4 text-right text-3xl font-bold"
+                  />
+                </Field>
 
-              {/* Cash display */}
-              <Input
-                id="cash-received"
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                value={cashReceived}
-                onChange={(e) => updateCash(e.target.value)}
-                placeholder="0.00"
-                className="h-14 text-2xl font-bold text-right pr-4"
-              />
-
-              {/* Quick preset amounts */}
-              <div className="grid grid-cols-5 gap-2">
-                <Button
-                  variant="outline"
-                  className="h-11 font-medium"
-                  onClick={() => updateCash(total.toFixed(2))}
-                >
-                  Exact
-                </Button>
-                {QUICK_AMOUNTS.map((amount) => (
+                {/* Quick tender: exact, then the next round amounts above the total */}
+                <div className="grid grid-cols-4 gap-2">
                   <Button
-                    key={amount}
-                    variant="outline"
-                    className="h-11 font-medium"
-                    onClick={() => updateCash(String(amount))}
+                    variant="secondary"
+                    size="lg"
+                    className="text-base font-semibold"
+                    onClick={() => updateCash(total.toFixed(2))}
                   >
-                    {amount >= 1000 ? `${amount / 1000}K` : amount}
+                    Exact
                   </Button>
-                ))}
+                  {quickAmounts.map((amount) => (
+                    <Button
+                      key={amount}
+                      variant="outline"
+                      size="lg"
+                      className="px-2 text-base font-semibold tabular-nums"
+                      onClick={() => updateCash(String(amount))}
+                    >
+                      {amount.toLocaleString('en-US')}
+                    </Button>
+                  ))}
+                </div>
+
+                {/* Change display — always present so the layout never jumps */}
+                {paymentMethod === 'cash' && (
+                  <div
+                    aria-live="polite"
+                    className={cn(
+                      'flex items-center justify-between gap-4 rounded-xl px-5 py-4',
+                      cashReceivedNum <= 0
+                        ? 'bg-muted/50 text-muted-foreground'
+                        : cashCovers
+                          ? 'bg-success-muted text-success'
+                          : 'bg-destructive/10 text-destructive'
+                    )}
+                  >
+                    <span className="text-lg font-semibold">
+                      {cashReceivedNum > 0 && !cashCovers ? 'Short' : 'Change due'}
+                    </span>
+                    <span className="truncate text-5xl font-bold tracking-tight tabular-nums">
+                      {cashReceivedNum > 0 && !cashCovers
+                        ? formatCurrency(total - cashReceivedNum, currencySymbol)
+                        : formatCurrency(change, currencySymbol)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Mixed payment — card amount (auto-calculated) */}
+            {paymentMethod === 'mixed' && (
+              <Field>
+                <FieldLabel htmlFor="card-amount" className="text-base">
+                  Card Amount (auto)
+                </FieldLabel>
+                <NumberInput
+                  id="card-amount"
+                  decimal
+                  value={cardAmount}
+                  onValueChange={setCardAmount}
+                  className="text-lg"
+                  placeholder="0.00"
+                />
+              </Field>
+            )}
+
+            {/* Customer Info */}
+            <div className="space-y-3 border-t pt-4">
+              <p className="text-base font-medium text-muted-foreground">Customer (Optional)</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="customer-phone">Phone</FieldLabel>
+                  <Input
+                    id="customer-phone"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="off"
+                    placeholder="Phone number"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="customer-name">Name</FieldLabel>
+                  <Input
+                    id="customer-name"
+                    autoComplete="off"
+                    placeholder="Customer name"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                  />
+                </Field>
               </div>
 
-              {/* Touch Numpad */}
-              <CashNumpad
-                value={cashReceived}
-                onChange={updateCash}
-                onSubmit={handleComplete}
-                buttonClassName="h-14 text-xl"
-              />
+              {foundCustomer && (
+                <Item variant="muted" size="sm" className="bg-success-muted">
+                  <ItemMedia variant="icon" className="text-success">
+                    <UserCheck className="size-5" />
+                  </ItemMedia>
+                  <ItemContent>
+                    <ItemTitle className="text-base">{foundCustomer.name}</ItemTitle>
+                    <ItemDescription>
+                      Returning customer
+                      {purchaseHistory.length > 0 &&
+                        ` · ${purchaseHistory.length} recent ${purchaseHistory.length === 1 ? 'purchase' : 'purchases'}`}
+                    </ItemDescription>
+                  </ItemContent>
+                </Item>
+              )}
 
-              {/* Change display */}
-              {paymentMethod === 'cash' && cashReceivedNum > 0 && (
-                <div
-                  className={`p-3 rounded-lg text-center text-lg font-bold ${
-                    cashReceivedNum >= total
-                      ? 'bg-green-50 text-green-700'
-                      : 'bg-red-50 text-red-700'
-                  }`}
-                >
-                  {cashReceivedNum >= total
-                    ? `Change: ${formatCurrency(change, currencySymbol)}`
-                    : `Short: ${formatCurrency(total - cashReceivedNum, currencySymbol)}`}
+              {purchaseHistory.length > 0 && (
+                <div className="max-h-48 overflow-y-auto overscroll-contain rounded-xl border">
+                  <p className="sticky top-0 border-b bg-card px-3 py-2 text-sm font-semibold text-muted-foreground">
+                    Purchase History
+                  </p>
+                  <div className="divide-y">
+                    {purchaseHistory.map((sale) => (
+                      <div key={sale.id} className="px-3 py-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">
+                            {new Date(sale.createdAt).toLocaleDateString()}
+                          </span>
+                          <span className="font-medium tabular-nums">
+                            {formatCurrency(sale.total, currencySymbol)}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 text-sm text-muted-foreground">
+                          {sale.items.map((item, i) => (
+                            <span key={i}>
+                              {item.productName} &times; {item.quantity}
+                              {i < sale.items.length - 1 ? ', ' : ''}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
-          )}
-
-          {/* Mixed payment — card amount (auto-calculated) */}
-          {paymentMethod === 'mixed' && (
-            <div className="space-y-2">
-              <Label className="text-base">Card Amount (auto)</Label>
-              <Input
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                value={cardAmount}
-                onChange={(e) => setCardAmount(e.target.value)}
-                className="h-12 text-lg"
-                placeholder="0.00"
-              />
-            </div>
-          )}
-
-          {/* Customer Info */}
-          <div className="space-y-3 border-t pt-3">
-            <Label className="text-muted-foreground">Customer (Optional)</Label>
-            <Input
-              type="tel"
-              inputMode="tel"
-              placeholder="Phone number"
-              value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
-              className="h-12 text-base"
-            />
-
-            {foundCustomer && (
-              <p className="text-sm font-medium text-green-600">
-                Customer found: {foundCustomer.name}
-              </p>
-            )}
-
-            <Input
-              placeholder="Customer name"
-              value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
-              className="h-12 text-base"
-            />
-
-            {purchaseHistory.length > 0 && (
-              <div className="border rounded-lg max-h-48 overflow-y-auto">
-                <p className="text-xs font-semibold px-3 pt-2 pb-1 text-muted-foreground border-b">
-                  Purchase History
-                </p>
-                <div className="divide-y">
-                  {purchaseHistory.map((sale) => (
-                    <div key={sale.id} className="px-3 py-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">
-                          {new Date(sale.createdAt).toLocaleDateString()}
-                        </span>
-                        <span className="font-medium">
-                          {formatCurrency(sale.total, currencySymbol)}
-                        </span>
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {sale.items.map((item, i) => (
-                          <span key={i}>
-                            {item.productName} &times; {item.quantity}
-                            {i < sale.items.length - 1 ? ', ' : ''}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
-          {error && <p className="text-base text-destructive font-medium">{error}</p>}
+          {/* Right: numpad for cash, terminal prompt for card. The numpad only
+              mounts for cash entry — its global Enter handler is what submits, so
+              a card sale is never committed by a stray keypress. */}
+          {showCashEntry ? (
+            <CashNumpad
+              value={cashReceived}
+              onChange={updateCash}
+              onSubmit={handleComplete}
+              className="content-start"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed bg-muted/40 p-6 text-center">
+              <div className="flex size-14 items-center justify-center rounded-full bg-accent text-accent-foreground">
+                <CreditCard className="size-7" />
+              </div>
+              <p className="text-lg font-semibold">
+                Charge {formatCurrency(total, currencySymbol)} on the card terminal
+              </p>
+              <p className="text-base text-muted-foreground">
+                Tap Complete Sale once the terminal shows the payment approved.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Action row — outside the scroll region. "Complete Sale" used to start
             ~215px below the fold on every sale, and the only thing under the
             finger in the scroll region was the numpad: a drag inside Chromium's
             ~8px touch slop registers as a click, injecting a stray digit into the
-            amount being confirmed. */}
-        <div className="shrink-0 flex gap-3 border-t bg-background p-4">
-          <Button
-            variant="outline"
-            onClick={onClose}
-            disabled={processing}
-            className="flex-1 h-14 text-base"
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={handleComplete}
-            disabled={processing}
-            className="flex-1 h-14 text-lg font-bold"
-          >
-            {processing ? 'Processing...' : 'Complete Sale'}
-          </Button>
+            amount being confirmed. The error lives here too, so a refusal is
+            always on screen next to the button that caused it. */}
+        <div className="shrink-0 space-y-3 border-t bg-background p-4">
+          {error && (
+            <Alert variant="destructive" className="bg-destructive/10">
+              <CircleAlert />
+              <AlertDescription className="text-base font-medium text-destructive">
+                {error}
+              </AlertDescription>
+            </Alert>
+          )}
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              size="xl"
+              onClick={onClose}
+              disabled={processing}
+              className="flex-1 font-medium"
+            >
+              Cancel
+            </Button>
+            <Button
+              size="xl"
+              onClick={handleComplete}
+              disabled={processing}
+              className="flex-[2] font-bold"
+            >
+              {processing ? <Spinner className="size-6" /> : <CircleCheck />}
+              {processing ? 'Processing...' : 'Complete Sale'}
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

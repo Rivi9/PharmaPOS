@@ -1,7 +1,23 @@
 import { useEffect, useState } from 'react'
-import { Copy, X, Printer } from 'lucide-react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
+import { Copy, X, Printer, TriangleAlert, PrinterCheck, FileX } from 'lucide-react'
+import { toast } from 'sonner'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle
+} from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
+import { Alert, AlertDescription, AlertTitle } from '@renderer/components/ui/alert'
+import { Spinner } from '@renderer/components/ui/spinner'
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle
+} from '@renderer/components/ui/empty'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { buildReceipt, receiptToPlainText } from '../../../../shared/receipt'
 
@@ -51,24 +67,29 @@ export function ReceiptPreview({
   const settings = useSettingsStore((state) => state.settings)
 
   useEffect(() => {
-    if (open && saleId) {
-      loadReceipt()
+    if (!open || !saleId) return
+    let cancelled = false
+    setLoading(true)
+    // The previous sale's receipt and print notices are cleared too: a failed
+    // load used to leave the LAST customer's receipt on screen under this
+    // sale's receipt number, one tap away from being printed.
+    setReceipt(null)
+    setPrintError('')
+    setPrintWarning('')
+    setHasPrinted(false)
+    window.electron
+      .getReceipt(saleId)
+      .then((data: ReceiptData) => {
+        if (!cancelled) setReceipt(data)
+      })
+      .catch((err: unknown) => console.error('Failed to load receipt:', err))
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
     }
   }, [open, saleId])
-
-  const loadReceipt = async () => {
-    setLoading(true)
-    setPrintError('')
-    setHasPrinted(false)
-    try {
-      const data = await window.electron.getReceipt(saleId)
-      setReceipt(data)
-    } catch (err) {
-      console.error('Failed to load receipt:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   // Built from the SAME shared layout the printer uses, so the preview is
   // literally the document that comes out of the printer.
@@ -97,12 +118,15 @@ export function ReceiptPreview({
     )
   }
 
-  const handleCopyToClipboard = () => {
+  const handleCopyToClipboard = (): void => {
     const text = formatReceiptText()
-    navigator.clipboard.writeText(text)
+    navigator.clipboard
+      .writeText(text)
+      .then(() => toast.success('Receipt copied'))
+      .catch(() => toast.error('Could not copy the receipt'))
   }
 
-  const handlePrint = async () => {
+  const handlePrint = async (): Promise<void> => {
     if (!receipt) return
     setPrinting(true)
     setPrintError('')
@@ -128,8 +152,8 @@ export function ReceiptPreview({
       // in the customer's hand either way, and the operator needs to know why.
       const warning = (result as { warning?: string })?.warning
       setPrintWarning(warning ?? '')
-    } catch (err: any) {
-      setPrintError(err?.message || 'Printer did not respond. Check power and cable.')
+    } catch (err) {
+      setPrintError((err as Error)?.message || 'Printer did not respond. Check power and cable.')
     } finally {
       setPrinting(false)
     }
@@ -137,62 +161,90 @@ export function ReceiptPreview({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md flex flex-col" style={{ maxHeight: '90vh' }}>
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle>Receipt - {receiptNumber}</DialogTitle>
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-4 sm:max-w-lg">
+        <DialogHeader className="shrink-0">
+          <DialogTitle className="text-2xl font-semibold">Receipt - {receiptNumber}</DialogTitle>
+          <DialogDescription className="text-base">
+            Exactly what the receipt printer produces.
+          </DialogDescription>
         </DialogHeader>
 
-        {loading && <div className="p-8 text-center text-muted-foreground">Loading receipt...</div>}
+        {loading && (
+          <div className="flex items-center justify-center gap-3 p-8 text-base text-muted-foreground">
+            <Spinner className="size-5" />
+            Loading receipt...
+          </div>
+        )}
+
+        {!loading && !receipt && (
+          <Empty className="border">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <FileX />
+              </EmptyMedia>
+              <EmptyTitle>Receipt could not be loaded</EmptyTitle>
+              <EmptyDescription>
+                The sale is saved. Only the preview failed to load.
+              </EmptyDescription>
+            </EmptyHeader>
+            <Button size="lg" onClick={onClose}>
+              Close
+            </Button>
+          </Empty>
+        )}
 
         {!loading && receipt && (
-          <div className="flex flex-col gap-4 flex-1 min-h-0">
-            {/* Receipt Display */}
-            <div className="border rounded-lg p-4 bg-white text-black overflow-auto flex-1 min-h-0">
-              <pre className="font-mono text-xs whitespace-pre">{formatReceiptText()}</pre>
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
+            {/* Receipt Display — a slip of paper on the muted backdrop */}
+            <div className="min-h-0 flex-1 overflow-auto rounded-xl bg-muted/60 p-4">
+              <div className="mx-auto w-fit rounded-md border bg-background px-4 py-5 text-foreground shadow-sm">
+                <pre className="font-mono text-sm leading-snug whitespace-pre">
+                  {formatReceiptText()}
+                </pre>
+              </div>
             </div>
 
             {printWarning && (
-              <div className="flex-shrink-0 rounded-lg border border-amber-400/50 bg-amber-50 p-3">
-                <p className="text-sm font-medium text-amber-900">Printed, but not exactly</p>
-                <p className="text-xs text-amber-800 mt-1">{printWarning}</p>
-              </div>
+              <Alert className="shrink-0 border-warning/30 bg-warning-muted text-warning">
+                <TriangleAlert />
+                <AlertTitle className="text-base">Printed, but not exactly</AlertTitle>
+                <AlertDescription className="text-warning">{printWarning}</AlertDescription>
+              </Alert>
             )}
 
             {printError && (
-              <div className="flex-shrink-0 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
-                <p className="text-sm font-medium text-destructive">Not printed: {printError}</p>
-                <p className="text-xs text-muted-foreground mt-1">
+              <Alert variant="destructive" className="shrink-0 bg-destructive/10">
+                <Printer />
+                <AlertTitle className="text-base">Not printed: {printError}</AlertTitle>
+                <AlertDescription>
                   The sale is saved. Fix the printer and tap Print again.
-                </p>
-              </div>
+                </AlertDescription>
+              </Alert>
             )}
 
             {/* Actions */}
-            <div className="flex gap-2 flex-shrink-0">
-              <Button
-                variant="outline"
-                onClick={handleCopyToClipboard}
-                className="flex-1 flex items-center gap-2"
-              >
-                <Copy className="h-4 w-4" />
+            <div className="grid shrink-0 grid-cols-3 gap-3">
+              <Button variant="outline" size="lg" onClick={handleCopyToClipboard}>
+                <Copy />
                 Copy
               </Button>
-              <Button
-                variant="outline"
-                onClick={handlePrint}
-                disabled={printing}
-                className="flex-1 flex items-center gap-2"
-              >
-                <Printer className="h-4 w-4" />
+              <Button variant="outline" size="lg" onClick={handlePrint} disabled={printing}>
+                {printing ? (
+                  <Spinner className="size-5" />
+                ) : hasPrinted ? (
+                  <PrinterCheck />
+                ) : (
+                  <Printer />
+                )}
                 {printing ? 'Printing...' : hasPrinted ? 'Reprint' : 'Print'}
               </Button>
-              <Button onClick={onClose} className="flex-1 flex items-center gap-2">
-                <X className="h-4 w-4" />
+              <Button size="lg" onClick={onClose}>
+                <X />
                 Close
               </Button>
             </div>
 
-            <p className="text-xs text-center text-muted-foreground flex-shrink-0">
+            <p className="shrink-0 text-center text-sm text-muted-foreground">
               Business info is configured in Settings
             </p>
           </div>

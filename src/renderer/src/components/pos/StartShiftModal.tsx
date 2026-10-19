@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
-import { LogIn } from 'lucide-react'
+import { CircleAlert, LogIn } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
+import { Badge } from '@renderer/components/ui/badge'
+import { Alert, AlertDescription } from '@renderer/components/ui/alert'
+import { Spinner } from '@renderer/components/ui/spinner'
 import { CashNumpad } from '@renderer/components/ui/cash-numpad'
 import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useAuthStore } from '@renderer/stores/authStore'
@@ -32,7 +35,7 @@ export function StartShiftModal(): React.JSX.Element {
 
   const cashAmount = parseFloat(openingCash) || 0
 
-  const handleStartShift = async () => {
+  const handleStartShift = async (): Promise<void> => {
     if (!user) return
     setError('')
     setLoading(true)
@@ -58,57 +61,80 @@ export function StartShiftModal(): React.JSX.Element {
   })
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
 
+  const initials = (user?.full_name ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase())
+    .join('')
+
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <div className="w-full max-w-sm space-y-6">
+    <div className="min-h-screen bg-canvas flex items-center justify-center p-4 sm:p-6">
+      <div className="grid w-full max-w-3xl overflow-hidden rounded-2xl border bg-card shadow-xs md:grid-cols-[1fr_minmax(0,22rem)]">
         {/* Greeting */}
-        <div className="text-center space-y-1">
-          <p className="text-sm text-muted-foreground">{dateStr}</p>
-          <p className="text-2xl font-bold text-primary">{timeStr}</p>
-          <p className="text-lg font-semibold mt-2">{user?.full_name}</p>
-          <p className="text-sm text-muted-foreground capitalize">{user?.role}</p>
-        </div>
-
-        {/* Opening cash display */}
-        <div className="border rounded-xl p-4 bg-muted/30 text-center space-y-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">Opening Cash</p>
-          <p className="text-4xl font-bold font-mono tracking-tight">
-            {currencySymbol}&nbsp;{openingCash || '0.00'}
-          </p>
-          {cashAmount > 0 && (
-            <p className="text-sm text-muted-foreground">
-              {formatCurrency(cashAmount, currencySymbol)}
+        <div className="flex flex-col items-center justify-center gap-6 bg-accent/40 p-6 text-center md:p-8">
+          <div className="space-y-1">
+            <p className="text-base text-muted-foreground">{dateStr}</p>
+            <p className="text-5xl font-semibold tracking-tight tabular-nums text-primary">
+              {timeStr}
             </p>
-          )}
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <div
+              aria-hidden
+              className="flex size-16 items-center justify-center rounded-full bg-primary text-2xl font-semibold text-primary-foreground"
+            >
+              {initials || '?'}
+            </div>
+            <p className="text-xl font-semibold">{user?.full_name}</p>
+            {user?.role && (
+              <Badge variant="secondary" className="h-6 px-3 text-sm capitalize">
+                {user.role}
+              </Badge>
+            )}
+          </div>
+          <p className="max-w-xs text-base text-muted-foreground">
+            Count the cash float in the drawer and enter it to open your shift.
+          </p>
         </div>
 
-        {/* Numpad */}
-        <CashNumpad
-          value={openingCash}
-          onChange={setOpeningCash}
-          onSubmit={handleStartShift}
-          buttonClassName="h-14 text-xl"
-        />
+        {/* Entry */}
+        <div className="flex flex-col gap-4 p-6">
+          {/* Opening cash display */}
+          <div className="rounded-xl border bg-muted/40 p-4 text-center">
+            <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
+              Opening Cash
+            </p>
+            <p className="mt-1 truncate font-mono text-4xl font-bold tracking-tight tabular-nums">
+              {currencySymbol}&nbsp;{openingCash || '0.00'}
+            </p>
+            <p className="mt-1 h-5 text-sm text-muted-foreground">
+              {cashAmount > 0 ? formatCurrency(cashAmount, currencySymbol) : '\u00a0'}
+            </p>
+          </div>
 
-        {error && (
-          <p className="rounded-md bg-destructive/10 p-3 text-center text-sm font-medium text-destructive">
-            {error}
+          {/* Numpad */}
+          <CashNumpad value={openingCash} onChange={setOpeningCash} onSubmit={handleStartShift} />
+
+          {error && (
+            <Alert variant="destructive" className="bg-destructive/10">
+              <CircleAlert />
+              <AlertDescription className="text-base font-medium text-destructive">
+                {error}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Start shift */}
+          <Button size="xl" className="w-full" onClick={handleStartShift} disabled={loading}>
+            {loading ? <Spinner className="size-6" /> : <LogIn />}
+            {loading ? 'Starting Shift…' : 'Start Shift'}
+          </Button>
+
+          <p className="text-center text-sm text-muted-foreground">
+            You can enter 0 if no cash float is needed
           </p>
-        )}
-
-        {/* Start shift */}
-        <Button
-          className="w-full h-14 text-lg font-bold"
-          onClick={handleStartShift}
-          disabled={loading}
-        >
-          <LogIn className="mr-2 h-5 w-5" />
-          {loading ? 'Starting Shift…' : 'Start Shift'}
-        </Button>
-
-        <p className="text-center text-xs text-muted-foreground">
-          You can enter 0 if no cash float is needed
-        </p>
+        </div>
       </div>
     </div>
   )

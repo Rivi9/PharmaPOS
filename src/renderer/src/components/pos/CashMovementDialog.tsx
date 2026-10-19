@@ -7,10 +7,14 @@ import {
   DialogHeader,
   DialogTitle
 } from '@renderer/components/ui/dialog'
+import { toast } from 'sonner'
 import { Button } from '@renderer/components/ui/button'
-import { Label } from '@renderer/components/ui/label'
 import { Input } from '@renderer/components/ui/input'
+import { Field, FieldDescription, FieldError, FieldLabel } from '@renderer/components/ui/field'
+import { Spinner } from '@renderer/components/ui/spinner'
 import { CashNumpad } from '@renderer/components/ui/cash-numpad'
+import { formatCurrency } from '@renderer/lib/calculations'
+import { cn } from '@renderer/lib/utils'
 import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useAuthStore } from '@renderer/stores/authStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
@@ -75,6 +79,9 @@ export function CashMovementDialog({
         setError(result.error || 'Could not record the cash movement')
         return
       }
+      toast.success(
+        `${type === 'in' ? 'Cash in' : 'Cash out'} of ${formatCurrency(value, currencySymbol)} recorded`
+      )
       onRecorded?.()
       onClose()
     } catch (err) {
@@ -86,63 +93,97 @@ export function CashMovementDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Cash In / Out</DialogTitle>
-          <DialogDescription>
+      {/* Header and action row fixed, middle scrolls — same layout as End Shift,
+          so the Record button can never be pushed below a 768px-tall screen. */}
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+        <DialogHeader className="shrink-0 border-b px-6 pt-6 pb-4">
+          <DialogTitle className="text-2xl font-semibold">Cash In / Out</DialogTitle>
+          <DialogDescription className="text-base">
             Record money added to or taken from the drawer so the end-of-shift count balances.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="flex gap-3">
-            <Button
-              variant={type === 'in' ? 'default' : 'outline'}
-              className="h-14 flex-1 flex items-center gap-2"
-              onClick={() => setType('in')}
+        <div className="grid min-h-0 flex-1 gap-6 overflow-y-auto overscroll-contain p-6 md:grid-cols-2">
+          <div className="space-y-5">
+            <div className="grid grid-cols-2 gap-3" role="group" aria-label="Movement type">
+              <Button
+                variant={type === 'in' ? 'default' : 'outline'}
+                aria-pressed={type === 'in'}
+                className="h-16 flex-col gap-1 text-base"
+                onClick={() => setType('in')}
+              >
+                <ArrowDownCircle className="size-6" />
+                Cash In
+              </Button>
+              <Button
+                variant={type === 'out' ? 'default' : 'outline'}
+                aria-pressed={type === 'out'}
+                className="h-16 flex-col gap-1 text-base"
+                onClick={() => setType('out')}
+              >
+                <ArrowUpCircle className="size-6" />
+                Cash Out
+              </Button>
+            </div>
+
+            <Field data-invalid={!!error && !reason.trim()}>
+              <FieldLabel htmlFor="cash-reason">Reason</FieldLabel>
+              <Input
+                id="cash-reason"
+                placeholder="e.g. float top-up, supplier payment, bank drop"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                aria-invalid={!!error && !reason.trim()}
+              />
+              <FieldDescription>Shown on the shift reconciliation.</FieldDescription>
+            </Field>
+
+            <FieldError className="text-base font-medium">{error || null}</FieldError>
+          </div>
+
+          <div className="space-y-3">
+            <div
+              className={cn(
+                'rounded-xl border p-3 text-center',
+                type === 'in' ? 'bg-success-muted' : 'bg-warning-muted'
+              )}
             >
-              <ArrowDownCircle className="h-5 w-5" />
-              Cash In
-            </Button>
-            <Button
-              variant={type === 'out' ? 'default' : 'outline'}
-              className="h-14 flex-1 flex items-center gap-2"
-              onClick={() => setType('out')}
-            >
-              <ArrowUpCircle className="h-5 w-5" />
-              Cash Out
-            </Button>
+              <p className="text-sm font-medium text-muted-foreground">
+                {type === 'in' ? 'Adding to drawer' : 'Taking from drawer'}
+              </p>
+              <p
+                className={cn(
+                  'truncate font-mono text-4xl font-bold tabular-nums',
+                  type === 'in' ? 'text-success' : 'text-warning'
+                )}
+              >
+                {currencySymbol}&nbsp;{amount || '0.00'}
+              </p>
+            </div>
+
+            <CashNumpad value={amount} onChange={setAmount} />
           </div>
+        </div>
 
-          <div className="border rounded-lg p-3 text-center bg-muted/20">
-            <p className="text-3xl font-bold font-mono">
-              {currencySymbol}&nbsp;{amount || '0.00'}
-            </p>
-          </div>
-
-          <CashNumpad value={amount} onChange={setAmount} buttonClassName="h-12" />
-
-          <div className="space-y-2">
-            <Label htmlFor="cash-reason">Reason</Label>
-            <Input
-              id="cash-reason"
-              placeholder="e.g. float top-up, supplier payment, bank drop"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              className="h-12"
-            />
-          </div>
-
-          {error && <p className="text-sm text-destructive font-medium">{error}</p>}
-
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex-1 h-12" onClick={onClose} disabled={saving}>
-              Cancel
-            </Button>
-            <Button className="flex-1 h-12 font-semibold" onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving…' : 'Record'}
-            </Button>
-          </div>
+        <div className="shrink-0 flex gap-3 border-t bg-background p-4">
+          <Button
+            variant="outline"
+            size="lg"
+            className="flex-1"
+            onClick={onClose}
+            disabled={saving}
+          >
+            Cancel
+          </Button>
+          <Button
+            size="lg"
+            className="flex-[2] font-semibold"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving && <Spinner className="size-5" />}
+            {saving ? 'Saving…' : 'Record'}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
