@@ -88,51 +88,61 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleNumber, handleDelete, handleClear, handleSubmit])
 
+  const keyClass = 'h-16 w-full rounded-xl text-2xl font-semibold tabular-nums'
+
   return (
-    <div className="flex flex-col items-center gap-4 select-none">
+    <div className="flex w-full max-w-xs flex-col items-center gap-6 select-none">
       {/* PIN Display */}
-      <div className="flex gap-2 mb-2">
+      <div
+        className="flex h-6 items-center gap-4"
+        role="status"
+        aria-label={`${pin.length} of ${maxLength} digits entered`}
+      >
         {Array.from({ length: maxLength }).map((_, i) => (
-          <div
+          <span
             key={i}
-            className="w-4 h-4 rounded-full border-2 border-primary"
-            style={{ backgroundColor: i < pin.length ? 'var(--color-primary)' : 'transparent' }}
+            data-filled={i < pin.length}
+            className="size-4 rounded-full border-2 border-primary bg-transparent transition-all duration-100 data-[filled=true]:scale-110 data-[filled=true]:bg-primary"
           />
         ))}
       </div>
 
       {/* Number Pad */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid w-full grid-cols-3 gap-3">
         {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
           <Button
             key={num}
             variant="outline"
-            size="lg"
-            className="w-16 h-16 text-xl font-semibold"
+            className={keyClass}
             onClick={() => handleNumber(num)}
           >
             {num}
           </Button>
         ))}
-        <Button variant="outline" size="lg" className="w-16 h-16" onClick={handleClear}>
+        <Button
+          variant="ghost"
+          className={`${keyClass} text-lg text-muted-foreground`}
+          onClick={handleClear}
+          aria-label="Clear"
+        >
           C
         </Button>
-        <Button
-          variant="outline"
-          size="lg"
-          className="w-16 h-16 text-xl font-semibold"
-          onClick={() => handleNumber('0')}
-        >
+        <Button variant="outline" className={keyClass} onClick={() => handleNumber('0')}>
           0
         </Button>
-        <Button variant="outline" size="lg" className="w-16 h-16" onClick={handleDelete}>
-          <Delete className="w-5 h-5" />
+        <Button
+          variant="ghost"
+          className={`${keyClass} text-muted-foreground`}
+          onClick={handleDelete}
+          aria-label="Delete last digit"
+        >
+          <Delete className="size-6" />
         </Button>
       </div>
 
       {/* Submit */}
-      <Button className="w-full mt-2 h-12" size="lg" onClick={handleSubmit} disabled={pin.length === 0}>
-        <CornerDownLeft className="w-4 h-4 mr-2" />
+      <Button className="w-full" size="xl" onClick={handleSubmit} disabled={pin.length === 0}>
+        <CornerDownLeft />
         Login
       </Button>
     </div>

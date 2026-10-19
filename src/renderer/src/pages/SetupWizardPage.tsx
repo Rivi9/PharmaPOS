@@ -1,16 +1,98 @@
 import { useState } from 'react'
 import {
+  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  Cross,
+  Info,
+  Store,
+  User
+} from 'lucide-react'
+import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle
 } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Label } from '@renderer/components/ui/label'
-import { CheckCircle2, Store, User } from 'lucide-react'
+import { Alert, AlertDescription } from '@renderer/components/ui/alert'
+import { Spinner } from '@renderer/components/ui/spinner'
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel
+} from '@renderer/components/ui/field'
+import { cn } from '@renderer/lib/utils'
 import { ipcErrorMessage } from '@renderer/lib/ipc-error'
+
+const STEPS = [
+  { title: 'Business', icon: Store },
+  { title: 'Admin account', icon: User },
+  { title: 'Review', icon: CheckCircle2 }
+] as const
+
+/** Numbered step indicator. Purely visual — the steps are not clickable, so a
+ *  later step can never be reached without passing the earlier step's checks. */
+function StepIndicator({ current }: { current: number }): React.JSX.Element {
+  return (
+    <ol className="flex items-center gap-2" aria-label={`Step ${current} of ${STEPS.length}`}>
+      {STEPS.map((step, i) => {
+        const n = i + 1
+        const done = n < current
+        const active = n === current
+        return (
+          <li
+            key={step.title}
+            className={cn('flex items-center gap-2', n < STEPS.length && 'flex-1')}
+            aria-current={active ? 'step' : undefined}
+          >
+            <span
+              className={cn(
+                'grid size-10 shrink-0 place-items-center rounded-full border-2 text-base font-semibold tabular-nums transition-colors',
+                done && 'border-primary bg-primary text-primary-foreground',
+                active && 'border-primary bg-accent text-accent-foreground',
+                !done && !active && 'border-border bg-card text-muted-foreground'
+              )}
+            >
+              {done ? <Check className="size-5" /> : n}
+            </span>
+            <span
+              className={cn(
+                'hidden text-sm font-medium whitespace-nowrap sm:inline',
+                active ? 'text-foreground' : 'text-muted-foreground'
+              )}
+            >
+              {step.title}
+            </span>
+            {n < STEPS.length && (
+              <span
+                className={cn(
+                  'h-0.5 flex-1 rounded-full transition-colors',
+                  done ? 'bg-primary' : 'bg-border'
+                )}
+              />
+            )}
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+function Required(): React.JSX.Element {
+  return (
+    <span aria-hidden="true" className="text-destructive">
+      *
+    </span>
+  )
+}
 
 export function SetupWizardPage(): React.JSX.Element {
   const [currentStep, setCurrentStep] = useState(1)
@@ -45,13 +127,13 @@ export function SetupWizardPage(): React.JSX.Element {
     pw.length < 8 ||
     passwordProblem !== null
 
-  const handleNext = () => {
+  const handleNext = (): void => {
     if (currentStep < 3) {
       setCurrentStep(currentStep + 1)
     }
   }
 
-  const handleBack = () => {
+  const handleBack = (): void => {
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1)
     }
@@ -77,198 +159,250 @@ export function SetupWizardPage(): React.JSX.Element {
     }
   }
 
+  const StepIcon = STEPS[currentStep - 1].icon
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-6">
-      <Card className="w-full max-w-2xl">
-        <CardHeader>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex gap-2">
-              {[1, 2, 3].map((step) => (
-                <div
-                  key={step}
-                  className={`h-2 w-16 rounded-full ${
-                    step <= currentStep ? 'bg-primary' : 'bg-muted'
-                  }`}
-                />
-              ))}
+    <div className="flex min-h-screen items-center justify-center bg-canvas p-6">
+      <Card className="w-full max-w-2xl gap-0 rounded-2xl py-0 text-base">
+        <CardHeader className="gap-6 border-b p-6 [.border-b]:pb-6">
+          <div className="flex items-center gap-4">
+            <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary text-primary-foreground shadow-xs">
+              <Cross className="size-7" />
+            </span>
+            <div className="min-w-0">
+              <CardTitle className="text-2xl font-semibold">Welcome to PharmaPOS</CardTitle>
+              <CardDescription className="gap-1 text-base">
+                Let&apos;s set up your pharmacy management system
+              </CardDescription>
             </div>
-            <span className="text-sm text-muted-foreground">Step {currentStep} of 3</span>
           </div>
-          <CardTitle className="text-2xl">Welcome to PharmaPOS</CardTitle>
-          <CardDescription>Let's set up your pharmacy management system</CardDescription>
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <StepIndicator current={currentStep} />
+            </div>
+            <span className="shrink-0 text-sm text-muted-foreground">
+              Step {currentStep} of {STEPS.length}
+            </span>
+          </div>
         </CardHeader>
 
-        <CardContent>
+        <CardContent className="flex flex-col gap-6 p-6">
+          <div className="flex items-center gap-3">
+            <span className="grid size-10 place-items-center rounded-lg bg-accent text-accent-foreground">
+              <StepIcon className="size-5" />
+            </span>
+            <h2 className="text-xl font-semibold">
+              {currentStep === 1
+                ? 'Business Information'
+                : currentStep === 2
+                  ? 'Create Admin Account'
+                  : 'Review & Complete'}
+            </h2>
+          </div>
+
           {/* Step 1: Business Information */}
           {currentStep === 1 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 mb-4">
-                <Store className="h-5 w-5 text-primary" />
-                <h3 className="text-lg font-medium">Business Information</h3>
-              </div>
-
-              <div>
-                <Label htmlFor="businessName">Business Name *</Label>
+            <FieldGroup className="gap-5">
+              <Field>
+                <FieldLabel htmlFor="businessName" className="gap-1 text-base">
+                  Business Name <Required />
+                </FieldLabel>
                 <Input
                   id="businessName"
                   value={formData.businessName}
                   onChange={(e) => setFormData({ ...formData, businessName: e.target.value })}
                   placeholder="My Pharmacy"
+                  autoFocus
                   required
                 />
-              </div>
+              </Field>
 
-              <div>
-                <Label htmlFor="businessAddress">Address</Label>
+              <Field>
+                <FieldLabel htmlFor="businessAddress" className="gap-1 text-base">
+                  Address
+                </FieldLabel>
                 <Input
                   id="businessAddress"
                   value={formData.businessAddress}
                   onChange={(e) => setFormData({ ...formData, businessAddress: e.target.value })}
                   placeholder="123 Main Street, City"
                 />
-              </div>
+              </Field>
 
-              <div>
-                <Label htmlFor="businessPhone">Phone Number</Label>
-                <Input
-                  id="businessPhone"
-                  value={formData.businessPhone}
-                  onChange={(e) => setFormData({ ...formData, businessPhone: e.target.value })}
-                  placeholder="+1 234 567 8900"
-                />
-              </div>
+              <div className="grid gap-5 sm:grid-cols-[1fr_12rem]">
+                <Field>
+                  <FieldLabel htmlFor="businessPhone" className="gap-1 text-base">
+                    Phone Number
+                  </FieldLabel>
+                  <Input
+                    id="businessPhone"
+                    type="tel"
+                    value={formData.businessPhone}
+                    onChange={(e) => setFormData({ ...formData, businessPhone: e.target.value })}
+                    placeholder="+1 234 567 8900"
+                  />
+                </Field>
 
-              <div>
-                <Label htmlFor="currency">Currency Symbol</Label>
-                <Input
-                  id="currency"
-                  value={formData.currency}
-                  onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
-                  placeholder="Rs."
-                />
+                <Field>
+                  <FieldLabel htmlFor="currency" className="gap-1 text-base">
+                    Currency Symbol
+                  </FieldLabel>
+                  <Input
+                    id="currency"
+                    value={formData.currency}
+                    onChange={(e) => setFormData({ ...formData, currency: e.target.value })}
+                    placeholder="Rs."
+                  />
+                </Field>
               </div>
-            </div>
+            </FieldGroup>
           )}
 
           {/* Step 2: Admin Account */}
           {currentStep === 2 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 mb-4">
-                <User className="h-5 w-5 text-primary" />
-                <h3 className="text-lg font-medium">Create Admin Account</h3>
-              </div>
-
-              <div>
-                <Label htmlFor="adminFullName">Full Name *</Label>
+            <FieldGroup className="gap-5">
+              <Field>
+                <FieldLabel htmlFor="adminFullName" className="gap-1 text-base">
+                  Full Name <Required />
+                </FieldLabel>
                 <Input
                   id="adminFullName"
                   value={formData.adminFullName}
                   onChange={(e) => setFormData({ ...formData, adminFullName: e.target.value })}
                   placeholder="John Doe"
+                  autoFocus
                   required
                 />
-              </div>
+              </Field>
 
-              <div>
-                <Label htmlFor="adminUsername">Username *</Label>
+              <Field>
+                <FieldLabel htmlFor="adminUsername" className="gap-1 text-base">
+                  Username <Required />
+                </FieldLabel>
                 <Input
                   id="adminUsername"
                   value={formData.adminUsername}
                   onChange={(e) => setFormData({ ...formData, adminUsername: e.target.value })}
                   placeholder="admin"
+                  autoComplete="off"
                   required
                 />
-              </div>
+              </Field>
 
-              <div>
-                <Label htmlFor="adminPassword">Password *</Label>
+              <Field data-invalid={passwordProblem ? true : undefined}>
+                <FieldLabel htmlFor="adminPassword" className="gap-1 text-base">
+                  Password <Required />
+                </FieldLabel>
                 <Input
                   id="adminPassword"
                   type="password"
                   value={formData.adminPassword}
                   onChange={(e) => setFormData({ ...formData, adminPassword: e.target.value })}
                   placeholder="Enter a strong password"
+                  autoComplete="new-password"
+                  aria-invalid={passwordProblem ? true : undefined}
+                  aria-describedby="adminPassword-hint"
                   required
                 />
                 {/* This line used to be copy only — nothing checked it, here or
-                    in the main process. It now reflects the real rule. */}
-                <p
-                  className={
-                    passwordProblem
-                      ? 'text-xs text-destructive font-medium mt-1'
-                      : 'text-xs text-muted-foreground mt-1'
-                  }
-                >
-                  {passwordProblem ?? 'At least 8 characters, and not the same as the username'}
-                </p>
-              </div>
-            </div>
+                    in the main process. It now reflects the real rule. Exactly one
+                    of the two is rendered, so the rule text appears once. */}
+                {passwordProblem ? (
+                  <FieldError id="adminPassword-hint" className="font-medium">
+                    {passwordProblem}
+                  </FieldError>
+                ) : (
+                  <FieldDescription id="adminPassword-hint">
+                    At least 8 characters, and not the same as the username
+                  </FieldDescription>
+                )}
+              </Field>
+            </FieldGroup>
           )}
 
           {/* Step 3: Review & Complete */}
           {currentStep === 3 && (
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 mb-4">
-                <CheckCircle2 className="h-5 w-5 text-primary" />
-                <h3 className="text-lg font-medium">Review & Complete</h3>
-              </div>
-
-              <div className="bg-muted p-4 rounded-lg space-y-2">
-                <div>
-                  <p className="text-sm font-medium">Business Name</p>
-                  <p className="text-sm text-muted-foreground">{formData.businessName}</p>
+            <div className="flex flex-col gap-4">
+              <dl className="divide-y rounded-xl border bg-muted/40">
+                <div className="flex flex-col gap-0.5 px-4 py-3">
+                  <dt className="text-sm text-muted-foreground">Business Name</dt>
+                  <dd className="font-medium">{formData.businessName}</dd>
                 </div>
                 {formData.businessAddress && (
-                  <div>
-                    <p className="text-sm font-medium">Address</p>
-                    <p className="text-sm text-muted-foreground">{formData.businessAddress}</p>
+                  <div className="flex flex-col gap-0.5 px-4 py-3">
+                    <dt className="text-sm text-muted-foreground">Address</dt>
+                    <dd className="font-medium">{formData.businessAddress}</dd>
                   </div>
                 )}
-                <div>
-                  <p className="text-sm font-medium">Admin User</p>
-                  <p className="text-sm text-muted-foreground">
-                    {formData.adminFullName} (@{formData.adminUsername})
-                  </p>
+                {formData.businessPhone && (
+                  <div className="flex flex-col gap-0.5 px-4 py-3">
+                    <dt className="text-sm text-muted-foreground">Phone Number</dt>
+                    <dd className="font-medium">{formData.businessPhone}</dd>
+                  </div>
+                )}
+                <div className="flex flex-col gap-0.5 px-4 py-3">
+                  <dt className="text-sm text-muted-foreground">Currency Symbol</dt>
+                  <dd className="font-medium">{formData.currency}</dd>
                 </div>
-              </div>
+                <div className="flex flex-col gap-0.5 px-4 py-3">
+                  <dt className="text-sm text-muted-foreground">Admin User</dt>
+                  <dd className="font-medium">
+                    {formData.adminFullName}{' '}
+                    <span className="font-normal text-muted-foreground">
+                      (@{formData.adminUsername})
+                    </span>
+                  </dd>
+                </div>
+              </dl>
 
-              <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg">
-                <p className="text-sm text-blue-900">
-                  <strong>Ready to start!</strong> Click "Complete Setup" to initialize your
-                  pharmacy management system.
+              <div className="flex items-start gap-3 rounded-xl bg-info-muted p-4 text-info">
+                <Info className="mt-0.5 size-5 shrink-0" />
+                <p>
+                  <strong>Ready to start!</strong> Click &quot;Complete Setup&quot; to initialize
+                  your pharmacy management system.
                 </p>
               </div>
             </div>
           )}
 
           {setupError && (
-            <p className="mt-4 rounded-md bg-destructive/10 p-3 text-sm font-medium text-destructive">
-              {setupError}
-            </p>
+            <Alert variant="destructive" className="gap-1 text-base">
+              <AlertCircle />
+              <AlertDescription>{setupError}</AlertDescription>
+            </Alert>
           )}
-
-          {/* Navigation Buttons */}
-          <div className="flex gap-2 mt-6">
-            {currentStep > 1 && (
-              <Button variant="outline" onClick={handleBack}>
-                Back
-              </Button>
-            )}
-            {currentStep < 3 ? (
-              <Button
-                onClick={handleNext}
-                disabled={currentStep === 1 ? !formData.businessName : adminStepIncomplete}
-                className="ml-auto"
-              >
-                Next
-              </Button>
-            ) : (
-              <Button onClick={handleComplete} disabled={isSubmitting} className="ml-auto">
-                {isSubmitting ? 'Setting up…' : 'Complete Setup'}
-              </Button>
-            )}
-          </div>
         </CardContent>
+
+        {/* Navigation Buttons */}
+        <CardFooter className="gap-3 border-t bg-muted/30 p-6 [.border-t]:pt-6">
+          {currentStep > 1 && (
+            <Button variant="outline" size="lg" onClick={handleBack} disabled={isSubmitting}>
+              <ArrowLeft />
+              Back
+            </Button>
+          )}
+          {currentStep < 3 ? (
+            <Button
+              size="lg"
+              onClick={handleNext}
+              disabled={currentStep === 1 ? !formData.businessName : adminStepIncomplete}
+              className="ml-auto min-w-40"
+            >
+              Next
+              <ArrowRight />
+            </Button>
+          ) : (
+            <Button
+              size="lg"
+              onClick={handleComplete}
+              disabled={isSubmitting}
+              className="ml-auto min-w-48"
+            >
+              {isSubmitting ? <Spinner className="size-5" aria-hidden="true" /> : <Check />}
+              {isSubmitting ? 'Setting up…' : 'Complete Setup'}
+            </Button>
+          )}
+        </CardFooter>
       </Card>
     </div>
   )
