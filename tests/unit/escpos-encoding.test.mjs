@@ -17,10 +17,14 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'pharmapos-escpos-test-'))
 const outFile = path.join(work, 'escpos.js')
 
+// bin/esbuild is a JS shim on Windows but the native binary on macOS/Linux.
+const ESBUILD = path.join(ROOT, 'node_modules/esbuild/bin/esbuild')
+const esbuildIsJs = fs.readFileSync(ESBUILD).subarray(0, 2).toString() === '#!'
+
 execFileSync(
-  process.execPath,
+  esbuildIsJs ? process.execPath : ESBUILD,
   [
-    path.join(ROOT, 'node_modules/esbuild/bin/esbuild'),
+    ...(esbuildIsJs ? [ESBUILD] : []),
     path.join(ROOT, 'src/main/services/printer/escpos-builder.ts'),
     '--bundle',
     '--platform=node',
