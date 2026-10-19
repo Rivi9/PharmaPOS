@@ -1,5 +1,6 @@
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import fs from 'fs'
+import { createRequire } from 'module'
 import os from 'os'
 import path from 'path'
 
@@ -12,13 +13,14 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../..')
  * fuse disabled, so Playwright cannot attach to it — `_electron.launch()` fails
  * with a bare "Process failed to launch!". The dev binary runs the same
  * `.vite/build` output, so this tests the real bundle either way.
+ *
+ * Resolved through the `electron` package rather than a hardcoded
+ * `node_modules/electron/dist/...` path: since Electron 42, `npm ci` no longer
+ * downloads the binary, and requiring the package downloads it on first use
+ * and returns its path.
  */
 function electronBinary(): string {
-  return process.platform === 'win32'
-    ? path.join(PROJECT_ROOT, 'node_modules/electron/dist/electron.exe')
-    : process.platform === 'darwin'
-      ? path.join(PROJECT_ROOT, 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron')
-      : path.join(PROJECT_ROOT, 'node_modules/electron/dist/electron')
+  return createRequire(path.join(PROJECT_ROOT, 'package.json'))('electron') as string
 }
 
 export interface LaunchedApp {
