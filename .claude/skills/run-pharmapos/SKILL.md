@@ -245,7 +245,7 @@ Opens a real window against the **live** database. Only for hands-on use on a ma
 
 ## Troubleshooting
 
-- **`Process failed to launch!`** → `unset ELECTRON_RUN_AS_NODE`, then confirm `.vite/build/index.js` exists (`npx electron-forge package`). Do not point the driver at the packaged exe.
+- **`Process failed to launch!`** → `unset ELECTRON_RUN_AS_NODE`, then confirm `.vite/build/index.cjs` exists (`npx electron-forge package`). Do not point the driver at the packaged exe.
 - **`TypeError: Cannot read properties of undefined (reading 'isPackaged')`** → Electron is running as Node. Same fix.
 - **`The module … better_sqlite3.node was compiled against a different Node.js version`** → you are requiring `better-sqlite3` from a plain-Node process. Use `node:sqlite`.
 - **`Worker teardown timeout` / `Test timeout … while running "afterEach" hook`, but the assertions passed** → something quit the app without releasing the close guard.

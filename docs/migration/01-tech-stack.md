@@ -7,7 +7,7 @@
 | Desktop shell | Electron | ^39.2.6 |
 | Language | TypeScript | ^5.9.3 |
 | UI framework | React + React DOM | ^19.2.1 |
-| Styling | Tailwind CSS (v4, via `@tailwindcss/vite`) | ^4.1.18 |
+| Styling | Tailwind CSS (v4, via `@tailwindcss/vite`) | ^4.3.3 |
 | UI primitives | Radix UI (`alert-dialog`, `dialog`, `label`, `select`, `slot`, `tabs`) + shadcn-style local components | — |
 | Icons | lucide-react | ^0.562.0 |
 | State management | Zustand | ^5.0.10 |
@@ -41,12 +41,12 @@
 
 ## Build & Packaging Pipeline
 
-- **Orchestrator**: Electron Forge (`@electron-forge/cli` ^7.11.1)
+- **Orchestrator**: Electron Forge (`@electron-forge/cli` ^8.0.1) with Vite 8 (Rolldown)
 - **Bundler**: `@electron-forge/plugin-vite` with three separate Vite configs:
-  - `vite.main.config.ts` — main process; externals: `better-sqlite3`, `serialport`, `usb`
-  - `vite.preload.config.ts` — preload; external `better-sqlite3`; output filename forced to `preload.js`
+  - `vite.main.config.ts` — main process; externals: `better-sqlite3`, `serialport`, `usb`, plus `moment` (Rolldown resolves its ESM build for a CommonJS `require`) and `@aws-sdk/client-s3` (an optional require inside `unzipper`, never called)
+  - `vite.preload.config.ts` — preload; external `better-sqlite3`; output filename forced to `preload.cjs` (Forge 8 emits CommonJS bundles as `.cjs`)
   - `vite.renderer.config.ts` — renderer; root `src/renderer`, plugins `@vitejs/plugin-react` + `@tailwindcss/vite`, alias `@renderer` → `src/renderer/src`, outDir forced to project-root `.vite/renderer/main_window` (packaged main loads `app.asar/.vite/renderer/main_window/index.html`)
-- **Entry point**: `"main": ".vite/build/index.js"`
+- **Entry point**: `"main": ".vite/build/index.cjs"`
 - **Renderer URL loading** (main process) uses Forge-injected globals `MAIN_WINDOW_VITE_DEV_SERVER_URL` / `MAIN_WINDOW_VITE_NAME` (dev server in dev, bundled HTML in production).
 
 ### forge.config.ts (key facts)
