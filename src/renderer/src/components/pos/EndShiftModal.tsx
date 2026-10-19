@@ -46,6 +46,8 @@ export function EndShiftModal({
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [countError, setCountError] = useState('')
+  /** Set when the shift closed but its report did not print; sign-out waits for an OK. */
+  const [printWarning, setPrintWarning] = useState('')
   const [computedExpectedCash, setComputedExpectedCash] = useState<number | null>(null)
   const [cashMovements, setCashMovements] = useState<{ cashIn: number; cashOut: number }>({
     cashIn: 0,
@@ -69,6 +71,7 @@ export function EndShiftModal({
     setClosingCash('')
     setNotes('')
     setCountError('')
+    setPrintWarning('')
   }, [open])
 
   useEffect(() => {
@@ -100,8 +103,15 @@ export function EndShiftModal({
   const expectedCash = computedExpectedCash ?? 0
   const cashDifference = closingCashNum - expectedCash
 
+  const finishSignOut = (): void => {
+    setPrintWarning('')
+    setCurrentShift(null)
+    logout()
+    onShiftEnded?.()
+  }
+
   const handleEndShift = async (fromKeyboard = false) => {
-    if (!currentShift || loading) return
+    if (!currentShift || loading || printWarning) return
     // The numpad binds a bare Enter to this. Without a guard one stray keypress
     // — a scanner suffix, a leaning elbow — closed the shift with a Rs. 0 count
     // and logged the whole drawer as a shortage. Only Enter is guarded: tapping
@@ -122,7 +132,10 @@ export function EndShiftModal({
       // ever called it, so the report handed over with the drawer was never
       // produced. Printed before signing out, while the figures are still in
       // scope. A printer fault must not trap the cashier in a closed shift, so
-      // the failure is reported and the sign-out continues.
+      // the failure is reported and the sign-out continues once acknowledged.
+      // It used to be set and then unmounted in the same tick by the sign-out,
+      // so nobody ever saw it.
+      let warning = ''
       try {
         const printed = await window.electron.printer.printShiftReport({
           shift_id: currentShift.id,
@@ -131,29 +144,22 @@ export function EndShiftModal({
           ended_at: new Date().toISOString(),
           opening_cash: openingCash,
           closing_cash: closingCashNum,
-          expected_cash: expectedCash,
-          total_sales: todaySalesTotal,
-          // Cash actually taken: the expected drawer less the opening float and
-          // the mid-shift movements. Same basis as the Cash Sales tile.
-          cash_sales: Math.max(
-            0,
-            expectedCash - openingCash - cashMovements.cashIn + cashMovements.cashOut
-          ),
-          card_sales: 0,
-          transaction_count: 0
+          expected_cash: expectedCash
+          // Sales totals are not passed: printShiftReport computes them from the
+          // shift's own sales rows. The zeros that used to be sent were ignored.
         })
         if (printed && (printed as { success?: boolean }).success === false) {
-          setCountError(
-            `Shift closed, but the report did not print: ${(printed as { error?: string }).error ?? 'printer did not respond'}`
-          )
+          warning = `Shift closed, but the report did not print: ${(printed as { error?: string }).error ?? 'printer did not respond'}`
         }
       } catch {
-        setCountError('Shift closed, but the report did not print.')
+        warning = 'Shift closed, but the report did not print.'
       }
 
-      setCurrentShift(null)
-      logout()
-      onShiftEnded?.()
+      if (warning) {
+        setPrintWarning(warning)
+        return
+      }
+      finishSignOut()
     } catch (error) {
       // The handler now rejects on an already-closed or someone-else's shift
       // rather than reporting success. Without this the button just stopped
@@ -167,7 +173,7 @@ export function EndShiftModal({
   if (!currentShift) return <></>
 
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={printWarning ? finishSignOut : onClose}>
       {/* Three regions, not one scrolling blob: header and action row are fixed,
           only the middle scrolls. `sticky bottom-0` with negative margins was the
           first attempt and was wrong — the row floated mid-dialog with the Notes
@@ -316,20 +322,32 @@ export function EndShiftModal({
             1366×768 till this row used to fall off the screen entirely, and with
             outside-interaction prevented and the X clipped, the shift could not
             be closed by touch at all. */}
-        <div className="shrink-0 flex gap-3 border-t bg-background p-4">
-          <Button variant="outline" onClick={onClose} disabled={loading} className="flex-1 h-12">
-            Cancel
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={() => handleEndShift()}
-            disabled={loading}
-            className="flex-1 h-12 font-semibold"
-          >
-            <LogOut className="mr-2 h-4 w-4" />
-            {loading ? 'Closing…' : 'End Shift & Logout'}
-          </Button>
-        </div>
+        {printWarning ? (
+          // The shift is already closed — Cancel would leave the till on a closed
+          // shift, so the only way out is signing out.
+          <div className="shrink-0 space-y-3 border-t bg-background p-4">
+            <p className="text-sm text-destructive font-medium">{printWarning}</p>
+            <Button onClick={finishSignOut} className="w-full h-12 font-semibold">
+              <LogOut className="mr-2 h-4 w-4" />
+              OK, sign out
+            </Button>
+          </div>
+        ) : (
+          <div className="shrink-0 flex gap-3 border-t bg-background p-4">
+            <Button variant="outline" onClick={onClose} disabled={loading} className="flex-1 h-12">
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => handleEndShift()}
+              disabled={loading}
+              className="flex-1 h-12 font-semibold"
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              {loading ? 'Closing…' : 'End Shift & Logout'}
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )
