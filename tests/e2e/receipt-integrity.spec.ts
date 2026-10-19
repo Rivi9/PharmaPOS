@@ -26,10 +26,10 @@ test.describe('receipts are a permanent record', () => {
     const product = seedProduct(ctx.dbPath, { name: 'Amoxil 500mg', unitPrice: 30 })
     await startShift(ctx.page, '0')
 
-    const barcode = ctx.page.getByPlaceholder(/Scan or enter barcode/i)
+    const barcode = ctx.page.getByPlaceholder(/Scan a barcode/i)
     await barcode.fill(product.barcode)
     await barcode.press('Enter')
-    await ctx.page.getByRole('button', { name: /Pay Now/i }).click()
+    await ctx.page.getByRole('button', { name: /^Pay /i }).click()
     await ctx.page.locator('#cash-received').fill('50')
     await ctx.page.getByRole('button', { name: /^Complete Sale$/ }).click()
 
@@ -66,10 +66,10 @@ test.describe('receipts are a permanent record', () => {
     const product = seedProduct(ctx.dbPath, { name: 'Ceftriaxone 1g', unitPrice: 400 })
     await startShift(ctx.page, '0')
 
-    const barcode = ctx.page.getByPlaceholder(/Scan or enter barcode/i)
+    const barcode = ctx.page.getByPlaceholder(/Scan a barcode/i)
     await barcode.fill(product.barcode)
     await barcode.press('Enter')
-    await ctx.page.getByRole('button', { name: /Pay Now/i }).click()
+    await ctx.page.getByRole('button', { name: /^Pay /i }).click()
     await ctx.page.locator('#cash-received').fill('500')
     await ctx.page.getByRole('button', { name: /^Complete Sale$/ }).click()
 

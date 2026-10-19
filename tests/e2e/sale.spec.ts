@@ -29,7 +29,7 @@ test.describe('cash sale, end to end', () => {
 
     await startShift(ctx.page, '5000')
 
-    const barcode = ctx.page.getByPlaceholder(/Scan or enter barcode/i)
+    const barcode = ctx.page.getByPlaceholder(/Scan a barcode/i)
     await barcode.fill(product.barcode)
     await barcode.press('Enter')
 
@@ -37,7 +37,7 @@ test.describe('cash sale, end to end', () => {
 
     // `Pay Now` on the cart opens the payment modal; `Complete Sale` lives INSIDE
     // it (and also in its title, hence the button-role match).
-    await ctx.page.getByRole('button', { name: /Pay Now/i }).click()
+    await ctx.page.getByRole('button', { name: /^Pay /i }).click()
     await ctx.page.locator('#cash-received').fill('100')
     await ctx.page.getByRole('button', { name: /^Complete Sale$/ }).click()
 

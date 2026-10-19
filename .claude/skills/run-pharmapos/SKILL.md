@@ -24,6 +24,22 @@ npm --version     # 11.6.2
 
 `node:sqlite` is required because the project's `better-sqlite3` is compiled against **Electron's** ABI and cannot be `require`d from a plain-Node process. The driver and the E2E fixtures both use `node:sqlite` for database access.
 
+### macOS (dev machine)
+
+The app also runs on macOS (verified on Apple Silicon, Node 26, Electron 44): `better-sqlite3`, `usb` and `serialport` all build for darwin-arm64, and the printer / pole display report "no device". Install **only inside a `.worktrees/<name>` worktree**, never in the main checkout — `node_modules` plus the Electron download is ~1 GB and deleting the worktree removes it.
+
+```bash
+git worktree add .worktrees/<name> -b <branch> origin/main && cd .worktrees/<name>
+npm ci
+# `npx electron-rebuild` crashes under Node 26 (old yargs: "require is not
+# defined in ES module scope"), so call @electron/rebuild's API directly.
+# Without this the driver's dev Electron loads a Node-ABI better-sqlite3.
+node -e "require('@electron/rebuild').rebuild({buildPath:process.cwd(),electronVersion:require('electron/package.json').version,force:true}).then(()=>console.log('ok'))"
+npx electron-forge package
+```
+
+Then the driver commands below work unchanged; screenshots land in `$TMPDIR/pharmapos-shots`.
+
 ## Build
 
 `.vite/build` must be current or you will drive **the previous commit's code** — see Gotchas.
@@ -78,9 +94,11 @@ SHOT_DIR=/tmp/shots node .claude/skills/run-pharmapos/driver.mjs boot ss:home qu
 | `login` | sign in as the wizard admin |
 | `shift[:float]` | key the opening float on the numpad and open the shift |
 | `seed[:barcode:price:qty]` | insert a sellable product **and a stock batch** |
+| `rxseed` | seed 16 products with the shop's real names (the `azi` cluster, one out of stock, one expiring) |
+| `type:<text>` | type into Product Entry **without** Enter, to see the suggestion dropdown |
 | `bigseed[:count]` | seed a large catalogue (default 10,000 products, 2 batches each) for perf work |
 | `scan:<barcode>` | type a barcode into Product Entry and press Enter |
-| `pay:<cash>` | Pay Now → fill cash → Complete Sale |
+| `pay:<cash>` | Pay → fill cash → Complete Sale |
 | `ss[:name]` | screenshot |
 | `click:<css>` | DOM `.click()` on a selector |
 | `clicktext:<text>` | click a button by its visible text — most of this UI has no stable ids |
@@ -108,7 +126,7 @@ SHOT_DIR=/tmp/shots node .claude/skills/run-pharmapos/driver.mjs boot "clicktext
 Quote the argument — the text contains a space. Same for the payment modal:
 
 ```bash
-SHOT_DIR=/tmp/shots node .claude/skills/run-pharmapos/driver.mjs boot scan:PARA500 "clicktext:Pay Now" ss:payment quit
+SHOT_DIR=/tmp/shots node .claude/skills/run-pharmapos/driver.mjs boot scan:PARA500 "clicktext:Pay Rs. 25.00" ss:payment quit
 ```
 
 ### Reproducing a bug against real data
