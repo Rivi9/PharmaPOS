@@ -226,6 +226,13 @@ export function EndShiftModal({
       <DialogContent
         className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl"
         onInteractOutside={(e) => e.preventDefault()}
+        // Radix focuses the first field, which in this layout is Notes — and the
+        // numpad ignores the keyboard while a text field has focus, so a typed
+        // count went into the notes. Focus the dialog itself instead.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ;(e.currentTarget as HTMLElement | null)?.focus()
+        }}
       >
         <DialogHeader className="shrink-0 border-b px-6 pt-6 pb-4">
           <DialogTitle className="flex items-center gap-2 text-2xl font-semibold">
