@@ -47,7 +47,10 @@ export function CartItem({
             {item.product.generic_name ? ` · ${item.product.generic_name}` : ''}
           </span>
           {days !== null && days <= 0 && (
-            <Badge variant="outline" className="border-destructive/30 bg-destructive/10 text-destructive">
+            <Badge
+              variant="outline"
+              className="border-destructive/30 bg-destructive/10 text-destructive"
+            >
               Expired
             </Badge>
           )}
@@ -65,7 +68,9 @@ export function CartItem({
         max={maxStock}
         onChange={(qty) => onUpdateQuantity(index, qty)}
         onExceedMax={() =>
-          toast.warning(`Only ${maxStock} ${item.product.name} in stock`, { id: `limit-${item.product.id}` })
+          toast.warning(`Only ${maxStock} ${item.product.name} in stock`, {
+            id: `limit-${item.product.id}`
+          })
         }
         aria-label={`Quantity of ${item.product.name}`}
       />

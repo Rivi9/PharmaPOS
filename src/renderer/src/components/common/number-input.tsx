@@ -16,8 +16,10 @@ import { cn } from '@renderer/lib/utils'
  *
  * The value is a string, like a native input; parse it at the call site.
  */
-export interface NumberInputProps
-  extends Omit<React.ComponentProps<'input'>, 'type' | 'inputMode' | 'onChange' | 'value'> {
+export interface NumberInputProps extends Omit<
+  React.ComponentProps<'input'>,
+  'type' | 'inputMode' | 'onChange' | 'value'
+> {
   value: string | number
   onValueChange: (value: string) => void
   /** Allow one decimal point (money, fractional stock). */
@@ -40,7 +42,16 @@ function caretToEnd(el: HTMLInputElement): void {
 
 export const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
   function NumberInput(
-    { value, onValueChange, decimal = false, allowNegative = false, className, onFocus, onPointerUp, ...props },
+    {
+      value,
+      onValueChange,
+      decimal = false,
+      allowNegative = false,
+      className,
+      onFocus,
+      onPointerUp,
+      ...props
+    },
     ref
   ) {
     const pattern = React.useMemo(

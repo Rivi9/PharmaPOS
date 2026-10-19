@@ -46,16 +46,16 @@ export function CartActions({
     externalClearConfirmOpen !== undefined ? externalClearConfirmOpen : internalClearConfirmOpen
   const setClearConfirmOpen = onClearConfirmOpenChange || setInternalClearConfirmOpen
 
-  const handleClearClick = () => {
+  const handleClearClick = (): void => {
     setClearConfirmOpen(true)
   }
 
-  const handleClearConfirm = () => {
+  const handleClearConfirm = (): void => {
     onClear()
     setClearConfirmOpen(false)
   }
 
-  const handleRecallClick = () => {
+  const handleRecallClick = (): void => {
     if (hasItems) {
       setRecallConfirmOpen(true)
     } else {
@@ -63,7 +63,7 @@ export function CartActions({
     }
   }
 
-  const handleRecallConfirm = () => {
+  const handleRecallConfirm = (): void => {
     onRecall()
     setRecallConfirmOpen(false)
   }

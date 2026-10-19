@@ -268,7 +268,13 @@ export function SearchCombobox<T>({
 }
 
 /** Bold the parts of `text` that start with a search word, as the ranking does. */
-export function HighlightMatch({ text, query }: { text: string; query: string }): React.JSX.Element {
+export function HighlightMatch({
+  text,
+  query
+}: {
+  text: string
+  query: string
+}): React.JSX.Element {
   const tokens = tokenize(query)
   if (!tokens.length || !text) return <>{text}</>
   const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))

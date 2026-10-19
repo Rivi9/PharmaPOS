@@ -73,8 +73,10 @@ export function ProductEntry({
         addToCart(exact)
         return
       }
-      const matches: (Product & { search_rank?: number })[] =
-        await window.electron.searchProducts(typed, SUGGESTION_LIMIT)
+      const matches: (Product & { search_rank?: number })[] = await window.electron.searchProducts(
+        typed,
+        SUGGESTION_LIMIT
+      )
       if (matches.length === 0) {
         toast.error(`Nothing matches "${typed}"`)
         setQuery('')

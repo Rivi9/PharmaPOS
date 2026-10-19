@@ -262,7 +262,15 @@ const COMMANDS = {
       ['Azithromycin 250mg', 'Azithromycin', 'AZT250', '4790004', 48, 30, 400],
       ['Azithromycin 500mg', 'Azithromycin', 'AZT500', '4790005', 85, 240, 12],
       ['Azithromycin Syrup', 'Azithromycin', 'AZTSYR', '4790006', 640, 36, 400],
-      ['Burna Cream- (Silver Sulfardiazine)', 'Silver Sulfadiazine', 'BRN01', '4790007', 380, 8, 400],
+      [
+        'Burna Cream- (Silver Sulfardiazine)',
+        'Silver Sulfadiazine',
+        'BRN01',
+        '4790007',
+        380,
+        8,
+        400
+      ],
       ['Clofazimine', 'Clofazimine', 'CLF01', '4790008', 120, 4, 400],
       ['Diazide 40mg', 'Gliclazide', 'DZD40', '4790009', 14, 90, 400],
       ['Gliclazide 80mg', 'Gliclazide', 'GLZ80', '4790010', 18, 120, 400],

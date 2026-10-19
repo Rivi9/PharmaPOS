@@ -39,19 +39,19 @@ export function POSPage(): React.JSX.Element {
   const lastRejection = usePOSStore((state) => state.lastRejection)
   const clearRejection = usePOSStore((state) => state.clearRejection)
 
-  const handlePaymentComplete = (saleId: string, receiptNumber: string) => {
+  const handlePaymentComplete = (saleId: string, receiptNumber: string): void => {
     setCompletedSale({ saleId, receiptNumber })
     setPaymentModalOpen(false)
     setReceiptPreviewOpen(true)
     setQuickItemsRefreshKey((k) => k + 1)
   }
 
-  const handleReceiptClose = () => {
+  const handleReceiptClose = (): void => {
     setReceiptPreviewOpen(false)
     setCompletedSale(null)
   }
 
-  const handlePayment = () => {
+  const handlePayment = (): void => {
     if (items.length > 0) {
       setPaymentModalOpen(true)
     }

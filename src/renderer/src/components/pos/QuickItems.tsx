@@ -25,19 +25,18 @@ export function QuickItems({ refreshTrigger }: QuickItemsProps = {}): React.JSX.
 
   // Load quick items on mount and whenever a sale completes (refreshTrigger changes)
   useEffect(() => {
-    loadQuickItems()
-  }, [refreshTrigger])
-
-  const loadQuickItems = async () => {
-    try {
-      const items = await window.electron.getQuickItems()
-      setQuickItems(items)
-    } catch (err) {
-      console.error('Failed to load quick items:', err)
+    const loadQuickItems = async (): Promise<void> => {
+      try {
+        const items = await window.electron.getQuickItems()
+        setQuickItems(items)
+      } catch (err) {
+        console.error('Failed to load quick items:', err)
+      }
     }
-  }
+    void loadQuickItems()
+  }, [refreshTrigger, setQuickItems])
 
-  const handleQuickAdd = (product: (typeof quickItems)[0]) => {
+  const handleQuickAdd = (product: (typeof quickItems)[0]): void => {
     if (!product.total_stock || product.total_stock === 0) {
       return // Silently ignore out-of-stock items
     }

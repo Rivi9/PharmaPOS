@@ -80,7 +80,10 @@ catalogue.forEach(([name, generic, sku, barcode, stock], i) => {
 const search = (q, limit = 20) => {
   const built = productSearchQuery(q, { limit })
   if (!built) return []
-  return db.prepare(built.sql).all(...built.params).map((r) => r.name)
+  return db
+    .prepare(built.sql)
+    .all(...built.params)
+    .map((r) => r.name)
 }
 
 let pass = 0
@@ -92,23 +95,30 @@ const check = (name, actual, expected) => {
     console.log(`  ok   ${name}`)
   } else {
     failures.push(name)
-    console.log(`  FAIL ${name}\n       got  ${JSON.stringify(actual)}\n       want ${JSON.stringify(expected)}`)
+    console.log(
+      `  FAIL ${name}\n       got  ${JSON.stringify(actual)}\n       want ${JSON.stringify(expected)}`
+    )
   }
 }
 
 console.log('\nTokenising')
-check('lower-cases and splits on whitespace', tokenize('  Azithromycin   500 '), ['azithromycin', '500'])
+check('lower-cases and splits on whitespace', tokenize('  Azithromycin   500 '), [
+  'azithromycin',
+  '500'
+])
 check('LIKE wildcards are not search terms', tokenize('%_ para%'), ['para'])
 check('blank query has no tokens', tokenize('   '), [])
 check('no query is built for a blank search', productSearchQuery('  ', { limit: 5 }), null)
 
 console.log('\n"azi": names that start with it come before names that merely contain it')
 const azi = search('azi')
-check(
-  'first five are the Azi… products, in stock first, shortest name first',
-  azi.slice(0, 5),
-  ['Azigen Syr', 'Azigen 500mg', 'Azithromycin 250mg', 'Azithromycin 500mg', 'Azithromycin Syrup']
-)
+check('first five are the Azi… products, in stock first, shortest name first', azi.slice(0, 5), [
+  'Azigen Syr',
+  'Azigen 500mg',
+  'Azithromycin 250mg',
+  'Azithromycin 500mg',
+  'Azithromycin Syrup'
+])
 check('the out-of-stock Azi… product follows the in-stock ones', azi[5], 'Azileb Syr200')
 check(
   'mid-word matches (…diazine, Clofazimine, Gliclazide) rank below',
@@ -125,13 +135,20 @@ check(
 )
 check('"para 500" finds Paracetamol 500mg first', search('para 500')[0], 'Paracetamol 500mg')
 check('word order does not matter', search('500 para')[0], 'Paracetamol 500mg')
-check('a generic name finds its brands', search('paracetamol').sort(), ['Panadol 500mg', 'Paracetamol 500mg'])
+check('a generic name finds its brands', search('paracetamol').sort(), [
+  'Panadol 500mg',
+  'Paracetamol 500mg'
+])
 check('a word that matches nothing empties the list', search('azithromycin 999'), [])
 
 console.log('\nCodes')
 check('exact barcode ranks first', search('4790005')[0], 'Azithromycin 500mg')
 check('exact SKU ranks first, case-insensitive', search('amx500')[0], 'Amoxicillin 500mg')
-check('word start after punctuation counts: "silver"', search('silver')[0], 'Burna Cream- (Silver Sulfardiazine)')
+check(
+  'word start after punctuation counts: "silver"',
+  search('silver')[0],
+  'Burna Cream- (Silver Sulfardiazine)'
+)
 
 console.log('\nLimit')
 check('limit caps the rows', search('a', 3).length, 3)

@@ -49,7 +49,10 @@ export function Header({ user, onEndShift, onSettings }: HeaderProps): React.JSX
 
         {currentShift && (
           <div className="hidden items-center gap-2 sm:flex">
-            <Badge variant="outline" className="h-8 gap-1.5 border-transparent bg-accent px-3 text-sm text-accent-foreground">
+            <Badge
+              variant="outline"
+              className="h-8 gap-1.5 border-transparent bg-accent px-3 text-sm text-accent-foreground"
+            >
               <Clock className="size-4" />
               Shift since {shiftStartTime(currentShift.started_at)}
             </Badge>
@@ -64,7 +67,9 @@ export function Header({ user, onEndShift, onSettings }: HeaderProps): React.JSX
         {user && (
           <div className="hidden items-center gap-2.5 pr-1 sm:flex">
             <Avatar className="size-9">
-              <AvatarFallback className="bg-secondary text-sm font-semibold">{initials}</AvatarFallback>
+              <AvatarFallback className="bg-secondary text-sm font-semibold">
+                {initials}
+              </AvatarFallback>
             </Avatar>
             <div className="leading-tight">
               <p className="text-sm font-medium">{user.full_name}</p>

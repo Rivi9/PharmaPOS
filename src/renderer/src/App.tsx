@@ -39,7 +39,7 @@ function AppScreens(): React.JSX.Element {
   }, [currentShift])
 
   useEffect(() => {
-    const checkFirstRun = async () => {
+    const checkFirstRun = async (): Promise<void> => {
       const firstRun = await window.electron.setup.isFirstRun()
       setIsFirstRun(firstRun)
     }
@@ -76,7 +76,7 @@ function AppScreens(): React.JSX.Element {
   // Register once on mount (empty deps) — the ref ensures we always read the current shift.
   // Main process sends APP_CLOSE_REQUESTED; we show EndShift or confirm close immediately.
   useEffect(() => {
-    const handler = () => {
+    const handler = (): void => {
       if (currentShiftRef.current) {
         setCloseWindowOnEnd(true)
         setEndShiftOpen(true)
@@ -91,12 +91,12 @@ function AppScreens(): React.JSX.Element {
     }
   }, []) // empty: register once, never re-register
 
-  const handleEndShiftClose = () => {
+  const handleEndShiftClose = (): void => {
     setEndShiftOpen(false)
     setCloseWindowOnEnd(false)
   }
 
-  const handleShiftEnded = () => {
+  const handleShiftEnded = (): void => {
     if (closeWindowOnEnd) {
       window.electron.ipcRenderer.send('app:confirm-close')
     }
