@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -6,12 +6,16 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle
 } from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Label } from '@renderer/components/ui/label'
+import { Textarea } from '@renderer/components/ui/textarea'
+import { Field, FieldError, FieldGroup, FieldLabel } from '@renderer/components/ui/field'
+import { Alert, AlertDescription } from '@renderer/components/ui/alert'
+import { Spinner } from '@renderer/components/ui/spinner'
 import {
   Select,
   SelectContent,
@@ -43,7 +47,7 @@ export function CategoryFormDialog({
   onSubmit,
   category,
   categories
-}: CategoryFormDialogProps) {
+}: CategoryFormDialogProps): React.JSX.Element {
   const {
     register,
     handleSubmit,
@@ -67,13 +71,23 @@ export function CategoryFormDialog({
     }
   }, [category, reset])
 
-  const handleFormSubmit = async (data: CategoryFormData) => {
+  const [submitError, setSubmitError] = useState('')
+
+  const handleFormSubmit = async (data: CategoryFormData): Promise<void> => {
+    setSubmitError('')
     // Convert "none" back to undefined for submission
     const submitData = {
       ...data,
       parent_id: data.parent_id === 'none' ? undefined : data.parent_id
     }
-    await onSubmit(submitData)
+    try {
+      await onSubmit(submitData)
+    } catch (err) {
+      // Same rule as the product form: a refused save (duplicate name) keeps
+      // the input and says why, instead of an unhandled rejection and nothing.
+      setSubmitError((err as Error)?.message || 'Could not save')
+      return
+    }
     reset()
   }
 
@@ -84,55 +98,66 @@ export function CategoryFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>{category ? 'Edit Category' : 'Add New Category'}</DialogTitle>
-          <DialogDescription>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader className="pr-10">
+          <DialogTitle className="text-xl font-semibold">
+            {category ? 'Edit Category' : 'Add New Category'}
+          </DialogTitle>
+          <DialogDescription className="text-base">
             {category
               ? 'Update category details and hierarchy.'
               : 'Create a new category to organize your products.'}
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">
-              Category Name <span className="text-red-500">*</span>
-            </Label>
-            <Input id="name" {...register('name')} />
-            {errors.name && <p className="text-sm text-red-500">{errors.name.message}</p>}
-          </div>
+        <form onSubmit={handleSubmit(handleFormSubmit)} className="flex flex-col gap-6" noValidate>
+          <FieldGroup className="gap-5">
+            <Field data-invalid={!!errors.name}>
+              <FieldLabel htmlFor="name">
+                Category Name <span className="text-destructive">*</span>
+              </FieldLabel>
+              <Input id="name" aria-invalid={!!errors.name} {...register('name')} />
+              <FieldError errors={[errors.name]} />
+            </Field>
 
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Input id="description" {...register('description')} />
-          </div>
+            <Field>
+              <FieldLabel htmlFor="description">Description</FieldLabel>
+              <Textarea id="description" rows={2} {...register('description')} />
+            </Field>
 
-          <div className="space-y-2">
-            <Label htmlFor="parent_id">Parent Category (Optional)</Label>
-            <Select value={parentId} onValueChange={(value) => setValue('parent_id', value)}>
-              <SelectTrigger>
-                <SelectValue placeholder="None (Top level)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">None (Top level)</SelectItem>
-                {availableParents.map((cat) => (
-                  <SelectItem key={cat.id} value={cat.id}>
-                    {cat.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            <Field>
+              <FieldLabel htmlFor="parent_id">Parent Category (Optional)</FieldLabel>
+              <Select value={parentId} onValueChange={(value) => setValue('parent_id', value)}>
+                <SelectTrigger id="parent_id" className="w-full">
+                  <SelectValue placeholder="None (Top level)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None (Top level)</SelectItem>
+                  {availableParents.map((cat) => (
+                    <SelectItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
 
-          <div className="flex justify-end gap-2 pt-4">
-            <Button type="button" variant="outline" onClick={onClose}>
+            {submitError && (
+              <Alert variant="destructive">
+                <AlertDescription className="text-base font-medium">{submitError}</AlertDescription>
+              </Alert>
+            )}
+          </FieldGroup>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" size="lg" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button type="submit" size="lg" className="min-w-44" disabled={isSubmitting}>
+              {isSubmitting && <Spinner className="size-5" />}
               {isSubmitting ? 'Saving...' : category ? 'Update Category' : 'Create Category'}
             </Button>
-          </div>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
