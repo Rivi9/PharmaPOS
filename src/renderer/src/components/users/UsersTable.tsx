@@ -1,34 +1,74 @@
 import { useState } from 'react'
-import { Card, CardContent } from '@renderer/components/ui/card'
+import { toast } from 'sonner'
+import { Pencil, UserX, UserCheck, KeyRound, Users } from 'lucide-react'
+import { Badge } from '@renderer/components/ui/badge'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Label } from '@renderer/components/ui/label'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
-import { Pencil, UserX, UserCheck, Key } from 'lucide-react'
+import { Skeleton } from '@renderer/components/ui/skeleton'
+import { Field, FieldError, FieldLabel } from '@renderer/components/ui/field'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@renderer/components/ui/dialog'
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle
+} from '@renderer/components/ui/empty'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from '@renderer/components/ui/table'
 import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
 import { useConfirm } from '@renderer/hooks/useConfirm'
 import { ipcErrorMessage } from '@renderer/lib/ipc-error'
+import { cn } from '@renderer/lib/utils'
 import type { User } from '@renderer/pages/UsersPage'
 
 interface UsersTableProps {
   users: User[]
   userId: string
+  isLoading?: boolean
   onEdit: (user: User) => void
   onRefresh: () => void
+}
+
+const ROLE_LABELS: Record<User['role'], string> = {
+  admin: 'Admin',
+  manager: 'Manager',
+  cashier: 'Cashier'
+}
+
+const ROLE_BADGE: Record<User['role'], string> = {
+  admin: 'bg-primary/10 text-primary',
+  manager: 'bg-info-muted text-info',
+  cashier: 'bg-muted text-muted-foreground'
 }
 
 export function UsersTable({
   users,
   userId,
+  isLoading,
   onEdit,
   onRefresh
 }: UsersTableProps): React.JSX.Element {
   const [changePwUser, setChangePwUser] = useState<User | null>(null)
   const [newPassword, setNewPassword] = useState('')
   const [pwError, setPwError] = useState('')
+  const [pwSaving, setPwSaving] = useState(false)
   const { confirm, notify, confirmProps } = useConfirm()
 
-  const handleToggleActive = async (user: User) => {
+  const handleToggleActive = async (user: User): Promise<void> => {
     const ok = await confirm({
       title: user.is_active ? `Deactivate ${user.full_name}?` : `Reactivate ${user.full_name}?`,
       description: user.is_active
@@ -44,100 +84,180 @@ export function UsersTable({
       await notify('Could not update the user', ipcErrorMessage(error))
       return
     }
+    toast.success(
+      user.is_active ? `${user.full_name} deactivated` : `${user.full_name} reactivated`
+    )
     onRefresh()
   }
 
-  const openChangePassword = (user: User) => {
+  const openChangePassword = (user: User): void => {
     setChangePwUser(user)
     setNewPassword('')
     setPwError('')
   }
 
-  const handleChangePasswordSubmit = async () => {
+  const handleChangePasswordSubmit = async (): Promise<void> => {
     if (!newPassword.trim()) {
       setPwError('Password cannot be empty')
       return
     }
+    setPwSaving(true)
     try {
       await window.electron.users.changePassword(userId, changePwUser!.id, newPassword)
+      toast.success(`Password updated for ${changePwUser!.full_name}`)
       setChangePwUser(null)
     } catch (error) {
+      // Inline so the operator can retype without reopening the dialog.
       setPwError(ipcErrorMessage(error, 'Could not change the password'))
+    } finally {
+      setPwSaving(false)
     }
   }
 
   return (
     <>
-      <Card>
-        <CardContent className="pt-6">
-          <div className="space-y-3">
-            {users.map((user) => (
-              <div
-                key={user.id}
-                className={`flex items-center justify-between p-4 rounded-lg border ${
-                  user.is_active ? '' : 'bg-muted/50'
-                }`}
-              >
-                <div className="flex-1">
-                  <p className="font-medium">{user.full_name}</p>
-                  <p className="text-sm text-muted-foreground">
-                    @{user.username} • {user.role}
-                    {user.pin_set && ' • PIN set'}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="icon" onClick={() => onEdit(user)}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button variant="ghost" size="icon" onClick={() => openChangePassword(user)}>
-                    <Key className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleToggleActive(user)}
-                    className={user.is_active ? 'text-destructive' : 'text-green-600'}
-                  >
-                    {user.is_active ? (
-                      <UserX className="h-4 w-4" />
-                    ) : (
-                      <UserCheck className="h-4 w-4" />
-                    )}
-                  </Button>
-                </div>
-              </div>
+      <div className="overflow-hidden rounded-2xl border bg-card shadow-xs">
+        {isLoading ? (
+          <div className="flex flex-col gap-3 p-4">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full" />
             ))}
           </div>
-        </CardContent>
-      </Card>
+        ) : users.length === 0 ? (
+          <Empty>
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Users />
+              </EmptyMedia>
+              <EmptyTitle>No users yet</EmptyTitle>
+              <EmptyDescription>Tap Add User to create the first account.</EmptyDescription>
+            </EmptyHeader>
+          </Empty>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="pl-4">Name</TableHead>
+                <TableHead>Role</TableHead>
+                <TableHead>PIN</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="pr-4 text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {users.map((user) => (
+                <TableRow key={user.id} className={cn(!user.is_active && 'bg-muted/40')}>
+                  <TableCell className="pl-4">
+                    <p className={cn('font-medium', !user.is_active && 'text-muted-foreground')}>
+                      {user.full_name}
+                    </p>
+                    <p className="text-sm text-muted-foreground">@{user.username}</p>
+                  </TableCell>
+                  <TableCell>
+                    <Badge className={cn('h-7 px-3 text-sm', ROLE_BADGE[user.role])}>
+                      {ROLE_LABELS[user.role] ?? user.role}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {user.pin_set ? 'PIN set' : '—'}
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      className={cn(
+                        'h-7 px-3 text-sm',
+                        user.is_active
+                          ? 'bg-success-muted text-success'
+                          : 'bg-muted text-muted-foreground'
+                      )}
+                    >
+                      {user.is_active ? 'Active' : 'Inactive'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="pr-4">
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" onClick={() => onEdit(user)}>
+                        <Pencil className="size-5" />
+                        Edit
+                      </Button>
+                      <Button variant="outline" onClick={() => openChangePassword(user)}>
+                        <KeyRound className="size-5" />
+                        Password
+                      </Button>
+                      {user.is_active ? (
+                        <Button
+                          variant="destructive"
+                          className="w-40"
+                          onClick={() => handleToggleActive(user)}
+                        >
+                          <UserX className="size-5" />
+                          Deactivate
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          className="w-40 text-success hover:text-success"
+                          onClick={() => handleToggleActive(user)}
+                        >
+                          <UserCheck className="size-5" />
+                          Reactivate
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
 
       <Dialog open={!!changePwUser} onOpenChange={() => setChangePwUser(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Change Password — {changePwUser?.full_name}</DialogTitle>
+            <DialogTitle className="text-xl">
+              Change Password — {changePwUser?.full_name}
+            </DialogTitle>
+            <DialogDescription className="text-base">
+              They will use the new password the next time they sign in.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="new-password">New Password</Label>
+          <form
+            className="flex flex-col gap-6"
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleChangePasswordSubmit()
+            }}
+          >
+            <Field data-invalid={!!pwError || undefined}>
+              <FieldLabel htmlFor="new-password">New Password</FieldLabel>
               <Input
                 id="new-password"
                 type="password"
                 value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleChangePasswordSubmit()}
+                onChange={(e) => {
+                  setNewPassword(e.target.value)
+                  if (pwError) setPwError('')
+                }}
+                aria-invalid={!!pwError || undefined}
                 autoFocus
               />
-              {pwError && <p className="text-xs text-destructive mt-1">{pwError}</p>}
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setChangePwUser(null)}>
+              <FieldError>{pwError}</FieldError>
+            </Field>
+            <DialogFooter className="gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                className="flex-1"
+                onClick={() => setChangePwUser(null)}
+              >
                 Cancel
               </Button>
-              <Button className="flex-1" onClick={handleChangePasswordSubmit}>
+              <Button type="submit" size="lg" className="flex-1" disabled={pwSaving}>
                 Update Password
               </Button>
-            </div>
-          </div>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

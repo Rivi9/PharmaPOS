@@ -1,8 +1,29 @@
 import { useEffect, useState } from 'react'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@renderer/components/ui/dialog'
+import { toast } from 'sonner'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@renderer/components/ui/dialog'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
-import { Label } from '@renderer/components/ui/label'
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel
+} from '@renderer/components/ui/field'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@renderer/components/ui/select'
 import { ipcErrorMessage } from '@renderer/lib/ipc-error'
 import type { User } from '@renderer/pages/UsersPage'
 
@@ -14,6 +35,12 @@ interface UserFormModalProps {
   onSuccess: () => void
 }
 
+const ROLE_OPTIONS: { value: User['role']; label: string; hint: string }[] = [
+  { value: 'cashier', label: 'Cashier', hint: 'Sells at the till' },
+  { value: 'manager', label: 'Manager', hint: 'Stock, reports and refunds' },
+  { value: 'admin', label: 'Admin', hint: 'Everything, including users and settings' }
+]
+
 export function UserFormModal({
   open,
   onClose,
@@ -22,6 +49,7 @@ export function UserFormModal({
   onSuccess
 }: UserFormModalProps): React.JSX.Element {
   const [formError, setFormError] = useState('')
+  const [isSaving, setIsSaving] = useState(false)
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -30,7 +58,11 @@ export function UserFormModal({
     pin_code: ''
   })
 
+  // Reset on every open, not only when `user` changes: opening "Add User" twice
+  // in a row would otherwise show the previous attempt's fields and error.
   useEffect(() => {
+    if (!open) return
+    setFormError('')
     if (user) {
       setFormData({
         username: user.username,
@@ -48,10 +80,11 @@ export function UserFormModal({
         pin_code: ''
       })
     }
-  }, [user])
+  }, [user, open])
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault()
+    setIsSaving(true)
     try {
       if (user) {
         // Only send the PIN when one was actually typed. The field is
@@ -72,101 +105,125 @@ export function UserFormModal({
       } else {
         await window.electron.users.create(userId, formData)
       }
+      toast.success(user ? `${formData.full_name} updated` : `${formData.full_name} created`)
       onSuccess()
       onClose()
     } catch (error) {
       // Inline, not alert(): the modal stays open so the operator can correct
       // the field rather than retyping the whole form.
       setFormError(ipcErrorMessage(error, 'Could not save the user'))
+    } finally {
+      setIsSaving(false)
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{user ? 'Edit User' : 'Create User'}</DialogTitle>
+          <DialogTitle className="text-xl">{user ? 'Edit User' : 'Create User'}</DialogTitle>
+          <DialogDescription className="text-base">
+            {user
+              ? 'Change their name, role or PIN. Use Password in the list to reset a password.'
+              : 'They sign in with the username and password set here.'}
+          </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label htmlFor="username">Username</Label>
-            <Input
-              id="username"
-              value={formData.username}
-              onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-              disabled={!!user}
-              required
-            />
-          </div>
-
-          {!user && (
-            <div>
-              <Label htmlFor="password">Password</Label>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+          <FieldGroup className="gap-5">
+            <Field data-disabled={!!user || undefined}>
+              <FieldLabel htmlFor="username">Username</FieldLabel>
               <Input
-                id="password"
-                type="password"
-                value={formData.password}
-                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                id="username"
+                value={formData.username}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                disabled={!!user}
+                autoComplete="off"
                 required
               />
-            </div>
-          )}
+            </Field>
 
-          <div>
-            <Label htmlFor="full_name">Full Name</Label>
-            <Input
-              id="full_name"
-              value={formData.full_name}
-              onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-              required
-            />
-          </div>
+            {!user && (
+              <Field>
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <Input
+                  id="password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  autoComplete="new-password"
+                  required
+                />
+              </Field>
+            )}
 
-          <div>
-            <Label htmlFor="role">Role</Label>
-            <select
-              id="role"
-              value={formData.role}
-              onChange={(e) =>
-                setFormData({
-                  ...formData,
-                  role: e.target.value as 'admin' | 'manager' | 'cashier'
-                })
-              }
-              className="w-full border rounded-md px-3 py-2"
-            >
-              <option value="cashier">Cashier</option>
-              <option value="manager">Manager</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
+            <Field>
+              <FieldLabel htmlFor="full_name">Full Name</FieldLabel>
+              <Input
+                id="full_name"
+                value={formData.full_name}
+                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                required
+              />
+            </Field>
 
-          <div>
-            <Label htmlFor="pin_code">PIN Code (optional)</Label>
-            <Input
-              id="pin_code"
-              type="password"
-              inputMode="numeric"
-              maxLength={6}
-              className="h-11"
-              placeholder={user ? 'Leave blank to keep the current PIN' : '4 to 6 digits'}
-              value={formData.pin_code}
-              onChange={(e) => {
-                setFormData({ ...formData, pin_code: e.target.value })
-                if (formError) setFormError('')
-              }}
-            />
-          </div>
+            <Field>
+              <FieldLabel htmlFor="role">Role</FieldLabel>
+              <Select
+                value={formData.role}
+                onValueChange={(value) =>
+                  setFormData({
+                    ...formData,
+                    role: value as 'admin' | 'manager' | 'cashier'
+                  })
+                }
+              >
+                <SelectTrigger id="role" className="w-full">
+                  <SelectValue>
+                    {ROLE_OPTIONS.find((o) => o.value === formData.role)?.label}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  {ROLE_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <span className="flex flex-col items-start">
+                        <span>{option.label}</span>
+                        <span className="text-sm text-muted-foreground">{option.hint}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
 
-          {formError && <p className="text-sm text-destructive font-medium">{formError}</p>}
+            <Field>
+              <FieldLabel htmlFor="pin_code">PIN Code (optional)</FieldLabel>
+              <Input
+                id="pin_code"
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder={user ? 'Leave blank to keep the current PIN' : '4 to 6 digits'}
+                value={formData.pin_code}
+                onChange={(e) => {
+                  setFormData({ ...formData, pin_code: e.target.value })
+                  if (formError) setFormError('')
+                }}
+              />
+              <FieldDescription>For quick sign-in at the till.</FieldDescription>
+            </Field>
+          </FieldGroup>
 
-          <div className="flex gap-2 pt-4">
-            <Button type="button" variant="outline" onClick={onClose}>
+          <FieldError className="font-medium">{formError}</FieldError>
+
+          <DialogFooter className="gap-3">
+            <Button type="button" variant="outline" size="lg" className="flex-1" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit">{user ? 'Update' : 'Create'} User</Button>
-          </div>
+            <Button type="submit" size="lg" className="flex-1" disabled={isSaving}>
+              {user ? 'Update' : 'Create'} User
+            </Button>
+          </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>

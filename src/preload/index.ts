@@ -268,14 +268,15 @@ const electronAPI = {
   },
 
   // Audit Log
+  // `_actorId` is kept for call-site compatibility but NOT sent: AuditQueryOptions
+  // treats `userId` as a row filter, so spreading the signed-in user's id into
+  // the options limited the "all actions" log (and its CSV export) to that
+  // user's own rows. The handler authorises from the session, not from this.
   audit: {
-    query: (userId: string, options: unknown) =>
-      ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_QUERY, { userId, ...(options as object) }),
-    exportCsv: (userId: string, options?: unknown) =>
-      ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_EXPORT_CSV, {
-        userId,
-        ...((options as object) ?? {})
-      })
+    query: (_actorId: string, options: unknown) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_QUERY, { ...((options as object) ?? {}) }),
+    exportCsv: (_actorId: string, options?: unknown) =>
+      ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_EXPORT_CSV, { ...((options as object) ?? {}) })
   },
 
   // Shifts - Extended
