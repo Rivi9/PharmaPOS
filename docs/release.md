@@ -18,4 +18,7 @@
   $env:GITHUB_TOKEN="ghp_your_token_here"
   npm run publish
 
-  Auto-update on existing installs: the app checks https://update.electronjs.org/Rivi9/pharmapos/win32-x64/{currentVersion} when Settings → Updates → Check for Updates is pressed (or every hour, if automatic checks are turned on in that tab) and triggers Squirrel when a newer version is published. 
+  The release is created as a DRAFT. Publish it as a full release (not a pre-release) — installs only see the release GitHub marks as Latest:
+  gh release edit vX.Y.Z --draft=false --prerelease=false --latest
+
+  Auto-update on existing installs: the app reads https://github.com/Rivi9/PharmaPOS/releases/latest/download/RELEASES when Settings → Updates → Check for Updates is pressed (or every hour, if automatic checks are turned on in that tab) and triggers Squirrel when a newer version is published. 

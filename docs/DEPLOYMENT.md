@@ -58,7 +58,7 @@ npm run publish
 
 ## Auto-Update Configuration
 
-Auto-updates work via `update-electron-app` + Squirrel.Windows + GitHub releases:
+Auto-updates work via `update-electron-app` + Squirrel.Windows + GitHub releases. Squirrel reads `RELEASES` and the `.nupkg` from `https://github.com/Rivi9/PharmaPOS/releases/latest/download`, i.e. the release GitHub marks as **Latest** (drafts and pre-releases are never offered):
 
 1. Checks run when someone presses **Settings → Updates → Check for Updates**. Hourly background checks are off by default; turn them on in the same tab (applies at next start)
 2. Squirrel downloads the update silently in the background
