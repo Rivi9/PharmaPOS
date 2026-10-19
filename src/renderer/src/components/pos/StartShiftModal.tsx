@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CircleAlert, LogIn } from 'lucide-react'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
@@ -35,8 +35,12 @@ export function StartShiftModal(): React.JSX.Element {
 
   const cashAmount = parseFloat(openingCash) || 0
 
+  // The numpad's Enter calls this directly, bypassing the disabled button, so a
+  // double Enter used to send two start requests.
+  const inFlight = useRef(false)
   const handleStartShift = async (): Promise<void> => {
-    if (!user) return
+    if (!user || inFlight.current) return
+    inFlight.current = true
     setError('')
     setLoading(true)
     try {
@@ -49,6 +53,7 @@ export function StartShiftModal(): React.JSX.Element {
       // forever, with the operator convinced the till was broken.
       setError(ipcErrorMessage(err, 'Could not start the shift'))
     } finally {
+      inFlight.current = false
       setLoading(false)
     }
   }
