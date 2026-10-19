@@ -1,4 +1,6 @@
 import { useMemo } from 'react'
+import { formatCurrency } from '@renderer/lib/calculations'
+import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table'
 import { Button } from '@renderer/components/ui/button'
 import { Badge } from '@renderer/components/ui/badge'
@@ -35,6 +37,7 @@ export function StockBatchesTable({
   loading,
   searching
 }: StockBatchesTableProps): React.JSX.Element {
+  const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
   const columns = useMemo(
     () => [
       columnHelper.accessor('product_name', {
@@ -61,7 +64,7 @@ export function StockBatchesTable({
       columnHelper.accessor('cost_price', {
         header: 'Cost Price',
         meta: { className: 'text-right tabular-nums' },
-        cell: (info) => `Rs. ${info.getValue().toFixed(2)}`
+        cell: (info) => formatCurrency(info.getValue(), currencySymbol)
       }),
       columnHelper.accessor('expiry_date', {
         header: 'Expiry Date',
@@ -157,7 +160,7 @@ export function StockBatchesTable({
         }
       })
     ],
-    [onEdit, onDelete, onViewHistory]
+    [onEdit, onDelete, onViewHistory, currencySymbol]
   )
 
   const table = useReactTable({

@@ -1,4 +1,6 @@
 import { useMemo } from 'react'
+import { formatCurrency } from '@renderer/lib/calculations'
+import { useSettingsStore } from '@renderer/stores/settingsStore'
 import {
   createColumnHelper,
   getCoreRowModel,
@@ -31,6 +33,7 @@ export function ProductsTable({
   loading,
   searching
 }: ProductsTableProps): React.JSX.Element {
+  const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
   const columns = useMemo(
     () => [
       columnHelper.accessor('name', {
@@ -77,7 +80,7 @@ export function ProductsTable({
       columnHelper.accessor('unit_price', {
         header: 'Unit Price',
         meta: { className: 'text-right tabular-nums' },
-        cell: (info) => `Rs. ${info.getValue().toFixed(2)}`
+        cell: (info) => formatCurrency(info.getValue(), currencySymbol)
       }),
       columnHelper.accessor('total_stock', {
         header: 'Stock',
@@ -148,7 +151,7 @@ export function ProductsTable({
           )
       })
     ],
-    [onEdit, onDelete, onReactivate]
+    [onEdit, onDelete, onReactivate, currencySymbol]
   )
 
   // Paginated: the table rendered every row, so a 10,000-product catalogue meant
