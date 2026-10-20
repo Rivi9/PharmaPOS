@@ -285,6 +285,59 @@ check(
   JSON.stringify(r.errors)
 )
 
+console.log('\nCost price — opening stock is never stored as costing nothing')
+reset()
+r = importProductRows([H, row({ cost: '' })])
+check(
+  'stock with a blank cost is a row error, not a silent 0 (it sold at "100% margin")',
+  r.imported === 0 &&
+    inv.__calls.batches.length === 0 &&
+    /Row 2 .*no cost price/i.test(r.errors[0] ?? ''),
+  JSON.stringify(r.errors)
+)
+reset()
+r = importProductRows([H, row({ cost: 0 })])
+check(
+  'stock with a cost of 0 is a row error',
+  r.imported === 0 && /cost price is 0/i.test(r.errors[0] ?? ''),
+  JSON.stringify(r.errors)
+)
+reset()
+r = importProductRows([H, row({ cost: -3 })])
+check(
+  'a negative cost is a row error',
+  r.imported === 0 && /cannot be negative/i.test(r.errors[0] ?? ''),
+  JSON.stringify(r.errors)
+)
+reset()
+r = importProductRows([
+  ['Name', 'Unit Price', 'Current Stock', 'Expiry Date'],
+  ['Aspirin', 12, 3, '2027-01-31'],
+  ['Ibuprofen', 15, 4, '2027-01-31'],
+  ['Catalogue only', 20, 0, '']
+])
+check(
+  'a sheet with no cost column and stock is refused, reported once',
+  r.imported === 0 &&
+    r.errors.length === 1 &&
+    /No "Cost Price" column.*2 rows have stock/.test(r.errors[0] ?? ''),
+  JSON.stringify(r.errors)
+)
+reset()
+r = importProductRows([H, row({ cost: '', stock: 0, expiry: '' })])
+check(
+  'a blank cost with no stock is allowed — no batch, the first receipt sets the cost',
+  r.imported === 1 && inv.__calls.batches.length === 0,
+  JSON.stringify(r.errors)
+)
+reset()
+r = importProductRows([H, row({ cost: 7.5 })])
+check(
+  'the batch carries the sheet cost',
+  r.imported === 1 && inv.__calls.batches[0]?.cost_price === 7.5,
+  JSON.stringify(inv.__calls.batches[0])
+)
+
 console.log('\nR1 — per-batch selling price')
 reset()
 r = importProductRows([H, row({ price: 25 })])
