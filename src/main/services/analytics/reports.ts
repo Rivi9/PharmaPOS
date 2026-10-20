@@ -242,7 +242,11 @@ export function generateInventoryValuation(): InventoryValuationData {
 
   // Batch price first, product price as the fallback: a batch bought at a
   // different cost must be valued at what it actually cost.
-  const UNIT_COST = 'COALESCE(sb.cost_price, p.cost_price, 0)'
+  //
+  // A 0 cost is "not recorded", not "free": COALESCE never fell through for it,
+  // so a batch received without a cost was valued at nothing. NULLIF lets it
+  // fall back to the product's last known cost.
+  const UNIT_COST = 'COALESCE(NULLIF(sb.cost_price, 0), NULLIF(p.cost_price, 0), 0)'
   const UNIT_VALUE = 'COALESCE(sb.selling_price, p.unit_price, 0)'
 
   const summary = db

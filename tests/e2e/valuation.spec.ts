@@ -115,6 +115,30 @@ test.describe('inventory valuation', () => {
     expect(row!.unit_price).toBeCloseTo(78.85, 2) // 10250 / 130
   })
 
+  test('a batch with no recorded cost is valued at the product cost, not at zero', async () => {
+    const { DatabaseSync } = await import('node:sqlite')
+    const db = new DatabaseSync(ctx.dbPath)
+    const now = new Date().toISOString()
+    const future = new Date(Date.now() + 300 * 864e5).toISOString().split('T')[0]
+    db.prepare(
+      `INSERT INTO products (id,name,unit_price,cost_price,reorder_level,reorder_qty,
+                             tax_rate,is_tax_inclusive,is_active,created_at,updated_at)
+       VALUES ('vp3','Zero Cost Batch',100,60,10,50,0,1,1,?,?)`
+    ).run(now, now)
+    db.prepare(
+      `INSERT INTO stock_batches (id,product_id,quantity,cost_price,expiry_date,received_date,created_at)
+       VALUES ('vb3','vp3',10,0,?,?,?)`
+    ).run(future, now, now)
+    db.close()
+
+    const data = (await ctx.page.evaluate(() =>
+      window.electron.analytics.reports.generateInventoryValuation('x')
+    )) as Valuation
+
+    // COALESCE(0, 60) is 0: the batch's unrecorded cost made 10 units worth nothing.
+    expect(data.total_cost).toBe(600)
+  })
+
   test('a product whose only stock is expired does not count as an asset', async () => {
     const { DatabaseSync } = await import('node:sqlite')
     const db = new DatabaseSync(ctx.dbPath)
