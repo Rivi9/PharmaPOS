@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type -- plain .mjs, no annotations */
 // Unit test for the sales ledger: discount apportioning, the product_sales_daily
 // rebuild, the Sales-Report arithmetic it shares, and migration 9's repair.
 //
