@@ -1,17 +1,35 @@
 import { getDatabase } from '../database'
 import { round2 } from '../../../shared/money'
+import { saleLedger, type LedgerEntry } from './ledger'
 
+/**
+ * Every money figure here is NET of VAT, after the sale discount and after
+ * refunds — the same basis as the dashboard and the P&L, which read the
+ * product_sales_daily rollup built from the same ledger — except where a field
+ * says `gross` (VAT included: what the customer paid) and `payment_methods`,
+ * which are amounts tendered.
+ */
 export interface SalesReportData {
   start_date: string
   end_date: string
+  /** Net sales: excluding VAT, after discounts and refunds. */
   total_sales: number
+  /** What the customers paid, VAT included, after refunds. */
+  total_gross_sales: number
+  /** VAT contained in the sales, after refunds. */
+  total_vat: number
+  /** Refunded against sales in the period, VAT included. */
+  total_refunded: number
   total_profit: number
   total_cost: number
   total_transactions: number
+  /** Units sold less units refunded. */
   total_items_sold: number
+  /** Net sales per transaction. */
   avg_transaction: number
   daily_breakdown: Array<{
     date: string
+    /** Net, like total_sales. */
     sales: number
     profit: number
     transactions: number
@@ -19,12 +37,14 @@ export interface SalesReportData {
   top_products: Array<{
     product_name: string
     quantity: number
+    /** Net, like total_sales. */
     revenue: number
     profit: number
   }>
   payment_methods: Array<{
     method: string
     count: number
+    /** Tendered, VAT included, after refunds. */
     amount: number
   }>
 }
@@ -80,119 +100,111 @@ export interface ProfitLossData {
 
 /**
  * Generate comprehensive sales report for date range
+ *
+ * Built from the sales ledger rather than from `sales.total`. The old SQL took
+ * the header total of every 'completed' sale, and a partly refunded sale stays
+ * 'completed' — so its refunds never left the report — while the summary was
+ * labelled gross, the profit net and the top products gross: three bases on one
+ * page, and none of them the P&L's. Dates are local (`date(created_at,
+ * 'localtime')`), matching the local dates the Reports panel sends.
  */
 export function generateSalesReport(startDate: string, endDate: string): SalesReportData {
   const db = getDatabase()
+  const { sales, entries } = saleLedger(db, { start: startDate, end: endDate })
 
-  // Summary metrics
-  const summary = db
-    .prepare(
-      `
-    SELECT
-      -- Gross: what was actually banked, VAT included.
-      COALESCE(SUM(total), 0) as total_sales,
-      COALESCE(SUM(tax_amount), 0) as total_vat,
-      -- Net revenue, the same basis the P&L uses, so the two reports reconcile.
-      ROUND(COALESCE(SUM(total - tax_amount), 0), 2) as total_net_sales,
-      -- Profit must be computed on NET revenue. Using the VAT-inclusive total
-      -- booked the pharmacy's VAT liability as profit.
-      ROUND(COALESCE(SUM((total - tax_amount) - (
-        SELECT COALESCE(SUM(si.cost_price * si.quantity), 0)
-        FROM sale_items si
-        WHERE si.sale_id = s.id
-      )), 0), 2) as total_profit,
-      COALESCE(SUM((
-        SELECT SUM(si.cost_price * si.quantity)
-        FROM sale_items si
-        WHERE si.sale_id = s.id
-      )), 0) as total_cost,
-      COUNT(*) as total_transactions,
-      COALESCE(SUM((
-        SELECT SUM(si.quantity)
-        FROM sale_items si
-        WHERE si.sale_id = s.id
-      )), 0) as total_items_sold
-    FROM sales s
-    WHERE date(s.created_at) BETWEEN ? AND ?
-      AND s.status = 'completed'
-  `
+  type Totals = { gross: number; tax: number; net: number; cost: number; profit: number }
+  const zero = (): Totals => ({ gross: 0, tax: 0, net: 0, cost: 0, profit: 0 })
+  const add = (t: Totals, e: LedgerEntry): void => {
+    t.gross += e.gross
+    t.tax += e.tax
+    t.net += e.net
+    t.cost += e.cost
+    t.profit += e.profit
+  }
+
+  const total = zero()
+  let refunded = 0
+  let itemsSold = 0
+  const byDay = new Map<string, Totals & { transactions: number }>()
+  const byProduct = new Map<string, Totals & { quantity: number }>()
+  const bySale = new Map<string, Totals>()
+
+  for (const sale of sales) {
+    const day = byDay.get(sale.date) ?? { ...zero(), transactions: 0 }
+    day.transactions++
+    byDay.set(sale.date, day)
+  }
+
+  for (const e of entries) {
+    add(total, e)
+    if (e.kind === 'refund') refunded -= e.gross
+    itemsSold += e.quantity
+
+    const day = byDay.get(e.date) ?? { ...zero(), transactions: 0 }
+    add(day, e)
+    byDay.set(e.date, day)
+
+    const product = byProduct.get(e.product_id) ?? { ...zero(), quantity: 0 }
+    add(product, e)
+    product.quantity += e.quantity
+    byProduct.set(e.product_id, product)
+
+    const sale = bySale.get(e.sale_id) ?? zero()
+    add(sale, e)
+    bySale.set(e.sale_id, sale)
+  }
+
+  const names = new Map(
+    (db.prepare('SELECT id, name FROM products').all() as Array<{ id: string; name: string }>).map(
+      (p) => [p.id, p.name]
     )
-    .get(startDate, endDate) as any
+  )
 
-  const avgTransaction =
-    summary.total_transactions > 0 ? summary.total_sales / summary.total_transactions : 0
+  const methods = new Map<string, { count: number; amount: number }>()
+  for (const sale of sales) {
+    const m = methods.get(sale.payment_method) ?? { count: 0, amount: 0 }
+    m.count++
+    m.amount += bySale.get(sale.id)?.gross ?? 0
+    methods.set(sale.payment_method, m)
+  }
 
-  // Daily breakdown
-  const dailyBreakdown = db
-    .prepare(
-      `
-    SELECT
-      date(s.created_at) as date,
-      COALESCE(SUM(s.total), 0) as sales,
-      ROUND(COALESCE(SUM((s.total - s.tax_amount) - (
-        SELECT COALESCE(SUM(si.cost_price * si.quantity), 0)
-        FROM sale_items si
-        WHERE si.sale_id = s.id
-      )), 0), 2) as profit,
-      COUNT(*) as transactions
-    FROM sales s
-    WHERE date(s.created_at) BETWEEN ? AND ?
-      AND s.status = 'completed'
-    GROUP BY date(s.created_at)
-    ORDER BY date ASC
-  `
-    )
-    .all(startDate, endDate) as any[]
-
-  // Top products
-  const topProducts = db
-    .prepare(
-      `
-    SELECT
-      p.name as product_name,
-      SUM(si.quantity) as quantity,
-      SUM(si.line_total) as revenue,
-      SUM(si.line_total - (si.cost_price * si.quantity)) as profit
-    FROM sale_items si
-    JOIN sales s ON si.sale_id = s.id
-    JOIN products p ON si.product_id = p.id
-    WHERE date(s.created_at) BETWEEN ? AND ?
-      AND s.status = 'completed'
-    GROUP BY p.id, p.name
-    ORDER BY revenue DESC
-    LIMIT 10
-  `
-    )
-    .all(startDate, endDate) as any[]
-
-  // Payment methods breakdown
-  const paymentMethods = db
-    .prepare(
-      `
-    SELECT
-      payment_method as method,
-      COUNT(*) as count,
-      SUM(total) as amount
-    FROM sales
-    WHERE date(created_at) BETWEEN ? AND ?
-      AND status = 'completed'
-    GROUP BY payment_method
-  `
-    )
-    .all(startDate, endDate) as any[]
+  const transactions = sales.length
+  const netSales = round2(total.net)
 
   return {
     start_date: startDate,
     end_date: endDate,
-    total_sales: summary.total_sales,
-    total_profit: summary.total_profit,
-    total_cost: summary.total_cost,
-    total_transactions: summary.total_transactions,
-    total_items_sold: summary.total_items_sold,
-    avg_transaction: avgTransaction,
-    daily_breakdown: dailyBreakdown,
-    top_products: topProducts,
-    payment_methods: paymentMethods
+    total_sales: netSales,
+    total_gross_sales: round2(total.gross),
+    total_vat: round2(total.tax),
+    total_refunded: round2(refunded),
+    total_profit: round2(total.profit),
+    total_cost: round2(total.cost),
+    total_transactions: transactions,
+    total_items_sold: itemsSold,
+    avg_transaction: transactions > 0 ? round2(netSales / transactions) : 0,
+    daily_breakdown: [...byDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, d]) => ({
+        date,
+        sales: round2(d.net),
+        profit: round2(d.profit),
+        transactions: d.transactions
+      })),
+    top_products: [...byProduct.entries()]
+      .map(([id, p]) => ({
+        product_name: names.get(id) ?? '(deleted product)',
+        quantity: p.quantity,
+        revenue: round2(p.net),
+        profit: round2(p.profit)
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10),
+    payment_methods: [...methods.entries()].map(([method, m]) => ({
+      method,
+      count: m.count,
+      amount: round2(m.amount)
+    }))
   }
 }
 
@@ -332,7 +344,7 @@ export function generateProfitLossReport(startDate: string, endDate: string): Pr
     WHERE psd.date BETWEEN ? AND ?
   `
     )
-    .get(startDate, endDate) as any
+    .get(startDate, endDate) as { total_revenue: number; total_cost: number; gross_profit: number }
 
   const grossMarginPercent =
     overall.total_revenue > 0 ? (overall.gross_profit / overall.total_revenue) * 100 : 0
@@ -358,7 +370,7 @@ export function generateProfitLossReport(startDate: string, endDate: string): Pr
     ORDER BY profit DESC
   `
     )
-    .all(startDate, endDate) as any[]
+    .all(startDate, endDate) as ProfitLossData['by_category']
 
   // By month (for trend)
   const byMonth = db
@@ -375,7 +387,7 @@ export function generateProfitLossReport(startDate: string, endDate: string): Pr
     ORDER BY month ASC
   `
     )
-    .all(startDate, endDate) as any[]
+    .all(startDate, endDate) as ProfitLossData['by_month']
 
   return {
     start_date: startDate,

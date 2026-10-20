@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/better-sqlite3'
 import type { BetterSQLite3Database } from 'drizzle-orm/better-sqlite3'
 import * as schema from './schema'
 import migrationSql from './migrations/0000_chilly_alice.sql?raw'
+import { repairSalesLedger } from './repair-sales-ledger'
 
 export type DB = BetterSQLite3Database<typeof schema>
 
@@ -22,7 +23,9 @@ export function getDb(): DB {
  * single table and, finding it, skipped everything — so a second migration file
  * would never have reached any deployed machine.
  */
-const MIGRATIONS: Array<{ version: number; sql: string }> = [
+type Sqlite = import('better-sqlite3').Database
+
+const MIGRATIONS: Array<{ version: number; sql: string; run?: (sqlite: Sqlite) => void }> = [
   {
     version: 2,
     sql: `
@@ -164,6 +167,27 @@ const MIGRATIONS: Array<{ version: number; sql: string }> = [
       SET quantity = CAST(ROUND(quantity) AS INTEGER)
       WHERE quantity <> CAST(ROUND(quantity) AS INTEGER);
     `
+  },
+  {
+    version: 9,
+    sql: `
+      -- The part of a refund paid out in cash. Every refund used to come out of
+      -- the expected drawer, so a card refund (reversed to the card, no cash
+      -- across the counter) reported the cashier short by its amount. Existing
+      -- rows follow the original tender: cash in full, card not at all, and a
+      -- mixed sale in proportion to the cash it was paid with.
+      ALTER TABLE sale_refunds ADD COLUMN cash_refunded real NOT NULL DEFAULT 0;
+      UPDATE sale_refunds
+      SET cash_refunded = COALESCE((
+        SELECT ROUND(sale_refunds.total_refunded * CASE s.payment_method
+          WHEN 'cash' THEN 1.0
+          WHEN 'mixed' THEN MAX(0.0, MIN(1.0,
+            (s.cash_received - COALESCE(s.change_given, 0)) / NULLIF(s.total, 0)))
+          ELSE 0.0 END, 2)
+        FROM sales s WHERE s.id = sale_refunds.sale_id
+      ), 0);
+    `,
+    run: repairSalesLedger
   }
 ]
 
@@ -196,6 +220,7 @@ export function initDb(sqlite: import('better-sqlite3').Database): DB {
     if (migration.version <= version) continue
     sqlite.transaction(() => {
       sqlite.exec(migration.sql)
+      migration.run?.(sqlite)
       sqlite.pragma(`user_version = ${migration.version}`)
     })()
     version = migration.version

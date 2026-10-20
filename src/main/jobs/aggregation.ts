@@ -11,17 +11,19 @@ import { aggregateDailySales } from '../services/analytics/aggregation'
 export function initializeAggregationJob(): void {
   // Run daily at 00:05
   schedule.scheduleJob('5 0 * * *', () => {
-    // product_sales_daily.date is written in UTC (createSale uses toISOString), so
-    // derive "yesterday" in UTC too. Mixing local getDate() with toISOString() here
-    // skewed the target by a day.
+    // product_sales_daily.date is the LOCAL calendar date (createSale keys it
+    // with localDateString), so "yesterday" is the local yesterday.
     const dateStr = localDateOffset(-1)
 
     console.log(`[Aggregation Job] Running daily aggregation for ${dateStr}`)
     try {
       aggregateDailySales(dateStr)
       console.log(`[Aggregation Job] Successfully aggregated sales for ${dateStr}`)
-    } catch (error: any) {
-      console.error(`[Aggregation Job] Failed to aggregate sales for ${dateStr}:`, error.message)
+    } catch (error) {
+      console.error(
+        `[Aggregation Job] Failed to aggregate sales for ${dateStr}:`,
+        (error as Error).message
+      )
     }
   })
 
@@ -36,8 +38,11 @@ export function runManualAggregation(date: string): void {
   try {
     aggregateDailySales(date)
     console.log(`[Manual Aggregation] Successfully aggregated sales for ${date}`)
-  } catch (error: any) {
-    console.error(`[Manual Aggregation] Failed to aggregate sales for ${date}:`, error.message)
+  } catch (error) {
+    console.error(
+      `[Manual Aggregation] Failed to aggregate sales for ${date}:`,
+      (error as Error).message
+    )
     throw error
   }
 }
@@ -60,8 +65,8 @@ export function backfillAggregation(startDate: string, endDate: string): void {
     try {
       aggregateDailySales(dateStr)
       successCount++
-    } catch (error: any) {
-      console.error(`[Backfill] Failed for ${dateStr}:`, error.message)
+    } catch (error) {
+      console.error(`[Backfill] Failed for ${dateStr}:`, (error as Error).message)
       errorCount++
     }
     current.setDate(current.getDate() + 1)

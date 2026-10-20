@@ -1,4 +1,5 @@
 import { getDatabase } from '../database'
+import { localDateOffset } from '../../../shared/dates'
 import type {
   DailySalesMetric,
   TopProduct,
@@ -16,6 +17,11 @@ export function getDailyMetrics(date: string): DailySalesMetric | null {
   // NEVER join product_sales_daily to sales: one row per product against one row
   // per sale is a cartesian product, and every SUM came back multiplied by the
   // day's transaction count. The transaction count is a scalar subquery instead.
+  //
+  // total_sales is NET: revenue excluding VAT, after discounts and refunds — the
+  // same figure the P&L and the Sales Report call net sales. Transactions are
+  // counted on the local date, which is how product_sales_daily is keyed;
+  // `date(created_at)` is the UTC date and moved 00:00–05:29 to the day before.
   const metrics = db
     .prepare(
       `
@@ -26,13 +32,13 @@ export function getDailyMetrics(date: string): DailySalesMetric | null {
       COALESCE(SUM(psd.cost), 0) as total_cost,
       (
         SELECT COUNT(*) FROM sales
-        WHERE date(created_at) = ? AND status = 'completed'
+        WHERE date(created_at, 'localtime') = ? AND status = 'completed'
       ) as transaction_count,
       COALESCE(SUM(psd.quantity_sold), 0) as items_sold,
       CASE
-        WHEN (SELECT COUNT(*) FROM sales WHERE date(created_at) = ? AND status = 'completed') > 0
+        WHEN (SELECT COUNT(*) FROM sales WHERE date(created_at, 'localtime') = ? AND status = 'completed') > 0
         THEN COALESCE(SUM(psd.revenue), 0) /
-             (SELECT COUNT(*) FROM sales WHERE date(created_at) = ? AND status = 'completed')
+             (SELECT COUNT(*) FROM sales WHERE date(created_at, 'localtime') = ? AND status = 'completed')
         ELSE 0
       END as avg_transaction
     FROM product_sales_daily psd
@@ -62,15 +68,15 @@ export function getPeriodMetrics(startDate: string, endDate: string): DailySales
       COALESCE(SUM(psd.cost), 0) as total_cost,
       (
         SELECT COUNT(*) FROM sales s
-        WHERE date(s.created_at) = psd.date AND s.status = 'completed'
+        WHERE date(s.created_at, 'localtime') = psd.date AND s.status = 'completed'
       ) as transaction_count,
       COALESCE(SUM(psd.quantity_sold), 0) as items_sold,
       CASE
         WHEN (SELECT COUNT(*) FROM sales s
-              WHERE date(s.created_at) = psd.date AND s.status = 'completed') > 0
+              WHERE date(s.created_at, 'localtime') = psd.date AND s.status = 'completed') > 0
         THEN COALESCE(SUM(psd.revenue), 0) /
              (SELECT COUNT(*) FROM sales s
-              WHERE date(s.created_at) = psd.date AND s.status = 'completed')
+              WHERE date(s.created_at, 'localtime') = psd.date AND s.status = 'completed')
         ELSE 0
       END as avg_transaction
     FROM product_sales_daily psd
@@ -204,9 +210,12 @@ export function getLowStockAlerts(): LowStockAlert[] {
 export function getExpiryAlerts(daysAhead: number = 30): ExpiryAlert[] {
   const db = getDatabase()
 
-  const cutoffDate = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split('T')[0]
+  // Local calendar days, both ends. The cutoff was the UTC date, and the count
+  // subtracted julianday('now') — the current UTC instant, a fractional day —
+  // then truncated with CAST, so from 05:30 local onwards every countdown was a
+  // day short ("expires tomorrow" read 0 days) and the window's last day was
+  // decided by the UTC calendar. Whole local dates on both sides now.
+  const cutoffDate = localDateOffset(daysAhead)
 
   const alerts = db
     .prepare(
@@ -217,7 +226,8 @@ export function getExpiryAlerts(daysAhead: number = 30): ExpiryAlert[] {
       sb.batch_number,
       sb.quantity,
       sb.expiry_date,
-      CAST(julianday(sb.expiry_date) - julianday('now') AS INTEGER) as days_until_expiry
+      CAST(ROUND(julianday(date(sb.expiry_date)) - julianday(date('now', 'localtime'))) AS INTEGER)
+        as days_until_expiry
     FROM stock_batches sb
     JOIN products p ON sb.product_id = p.id
     WHERE sb.expiry_date IS NOT NULL

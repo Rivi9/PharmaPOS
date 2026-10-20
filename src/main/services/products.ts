@@ -211,7 +211,7 @@ export function getQuickItems(): (Product & {
       ) as nearest_expiry,
       COALESCE((
         SELECT SUM(d.quantity_sold) FROM product_sales_daily d
-        WHERE d.product_id = p.id AND d.date >= date('now','-7 days')
+        WHERE d.product_id = p.id AND d.date >= date('now','localtime','-7 days')
       ), 0) as sales_7d
     FROM products p
     WHERE p.is_active = 1
