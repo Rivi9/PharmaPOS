@@ -3,9 +3,11 @@ import { getDb } from '../db/index'
 import { getDatabase } from './database'
 import { sales, saleItems, products, customers } from '../db/schema'
 import type { Sale, SaleItem, SaleRefund } from '../db/schema'
-import { round2, extractIncludedTax } from '../../shared/money'
+import { round2, basketLineTax } from '../../shared/money'
+import { localDateString } from '../../shared/dates'
 import { logAudit } from './audit'
 import { normalisePhone } from './customers'
+import { saleLineAmounts, refundLineAmounts } from './analytics/ledger'
 
 // Re-export types that may be consumed by other modules
 export type { Sale, SaleItem, SaleRefund }
@@ -173,8 +175,11 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
   return db.transaction(() => {
     const saleId = crypto.randomUUID()
     const receiptNumber = generateReceiptNumber()
-    const now = new Date().toISOString()
-    const today = now.split('T')[0]
+    const createdAt = new Date()
+    const now = createdAt.toISOString()
+    // The rollup is keyed by the LOCAL date, like every report that reads it. The
+    // UTC date filed a sale rung up at 02:00 in Colombo under the previous day.
+    const today = localDateString(createdAt)
 
     // Auto-link the customer by phone. Both sides go through normalisePhone so
     // "077 123 4567" typed at the till still matches "+94771234567" on file —
@@ -229,8 +234,19 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
       ) || 0
     let lineTaxTotal = 0
 
+    // The sale-level discount is split across the lines before any VAT is
+    // extracted (the cart does the same, through the same function). VAT is due
+    // on what the customer actually paid: extracting it from the pre-discount
+    // line totals stored 152.54 of VAT on a Rs. 1000 basket sold for 900 at 18%
+    // — 15.25 more than was collected — and booked the discount as revenue.
+    const basket = basketLineTax(
+      saleData.items.map((i) => i.line_total),
+      saleData.discount_amount,
+      vatRate
+    )
+
     // Insert sale items with per-item tax
-    for (const item of saleData.items) {
+    for (const [index, item] of saleData.items.entries()) {
       const itemId = crypto.randomUUID()
       const batches = deductStockFEFO(item.product_id, item.quantity)
 
@@ -260,7 +276,8 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
       // ADDED it, so sales.tax_amount and SUM(sale_items.tax_amount) never agreed
       // — a VAT return built from line items reported zero on VAT-charged sales.
       const taxRate = vatRate
-      const taxAmount = extractIncludedTax(item.line_total, taxRate)
+      const lineDiscount = basket.discounts[index]
+      const taxAmount = basket.taxes[index]
       lineTaxTotal = round2(lineTaxTotal + taxAmount)
 
       drizzleDb
@@ -279,7 +296,9 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
           costPrice,
           taxRate,
           taxAmount,
-          discountAmount: 0,
+          // This line's share of the sale-level discount; line_total stays the
+          // pre-discount amount the receipt prints against the line.
+          discountAmount: lineDiscount,
           lineTotal: item.line_total,
           createdAt: now
         })
@@ -314,10 +333,20 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
       // FIX 3: product_sales_daily upsert using composite PK (date, product_id).
       // Revenue is NET of VAT — VAT is money owed to the revenue authority, not
       // income. Storing the gross line total made the P&L disagree with the
-      // Sales Report by exactly the VAT for the period.
-      const netRevenue = round2(item.line_total - taxAmount)
-      const cost = round2(costPrice * item.quantity)
-      const profit = round2(netRevenue - cost)
+      // Sales Report by exactly the VAT for the period. It is also net of the
+      // line's discount share, and computed by the same ledger function the void,
+      // the refund and the rebuild use, so they reverse exactly what this adds.
+      const {
+        net: netRevenue,
+        cost,
+        profit
+      } = saleLineAmounts({
+        quantity: item.quantity,
+        line_total: item.line_total,
+        discount_amount: lineDiscount,
+        tax_amount: taxAmount,
+        cost_price: costPrice
+      })
 
       db.prepare(
         `
@@ -363,6 +392,57 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
 }
 
 /**
+ * The batches a sale line drew from, in the order FEFO dispensed them.
+ *
+ * `sale_items.batch_id` is only the FIRST batch (R2), so restocking a line that
+ * took 4 from batch A and 6 from B put all 10 back into A — A's count went up
+ * by 6 units it never held, B stayed 6 short, and expiry tracking lied about
+ * both. Sales from before sale_item_batches existed fall back to the single id.
+ */
+function lineBatches(
+  saleItemId: string,
+  fallbackBatchId: string | null,
+  quantity: number
+): Array<{ batch_id: string; quantity: number }> {
+  const rows = getDatabase()
+    .prepare(
+      `SELECT batch_id, quantity FROM sale_item_batches
+       WHERE sale_item_id = ? ORDER BY rowid`
+    )
+    .all(saleItemId) as Array<{ batch_id: string; quantity: number }>
+  if (rows.length > 0) return rows
+  return fallbackBatchId ? [{ batch_id: fallbackBatchId, quantity }] : []
+}
+
+/**
+ * Put `quantity` units of a line back on the shelf, into the batches they came
+ * from. Units are matched to batches in dispensing order, skipping the first
+ * `alreadyReturned` — the units earlier refunds of this line accounted for — so
+ * repeated partial refunds never return more to a batch than it gave.
+ */
+function returnToBatches(
+  batches: Array<{ batch_id: string; quantity: number }>,
+  alreadyReturned: number,
+  quantity: number
+): void {
+  const restock = getDatabase().prepare(
+    'UPDATE stock_batches SET quantity = quantity + ? WHERE id = ?'
+  )
+  let skip = alreadyReturned
+  let left = quantity
+  for (const batch of batches) {
+    if (left <= 0) break
+    const skipped = Math.min(skip, batch.quantity)
+    skip -= skipped
+    const take = Math.min(batch.quantity - skipped, left)
+    if (take > 0) {
+      restock.run(take, batch.batch_id)
+      left -= take
+    }
+  }
+}
+
+/**
  * Void a completed sale. Requires a non-empty reason.
  */
 export function voidSale(saleId: string, userId: string, reason: string): void {
@@ -372,41 +452,53 @@ export function voidSale(saleId: string, userId: string, reason: string): void {
 
   raw.transaction(() => {
     const sale = raw
-      .prepare('SELECT status, total, receipt_number FROM sales WHERE id = ?')
-      .get(saleId) as { status: string; total: number; receipt_number: string } | undefined
+      .prepare('SELECT status, total, receipt_number, created_at FROM sales WHERE id = ?')
+      .get(saleId) as
+      | { status: string; total: number; receipt_number: string; created_at: string }
+      | undefined
     if (!sale) throw new Error('Sale not found')
     if (sale.status !== 'completed') throw new Error(`Cannot void a ${sale.status} sale`)
 
+    // A partly refunded sale stays 'completed', but its refunds have already
+    // paid cash out, restocked units and reversed part of the rollup. Voiding it
+    // as well would do all three a second time for those units.
+    const refunded = raw
+      .prepare('SELECT COUNT(*) as n FROM sale_refunds WHERE sale_id = ?')
+      .get(saleId) as { n: number }
+    if (refunded.n > 0) {
+      throw new Error('This sale has refunds against it — refund the remaining items instead')
+    }
+
     const items = raw
       .prepare(
-        `SELECT product_id, batch_id, quantity, cost_price, line_total
-         FROM sale_items WHERE sale_id = ?`
+        `SELECT id, product_id, batch_id, quantity, cost_price, line_total,
+                discount_amount, tax_amount
+         FROM sale_items WHERE sale_id = ? ORDER BY rowid`
       )
       .all(saleId) as {
+      id: string
       product_id: string
       batch_id: string | null
       quantity: number
       cost_price: number
       line_total: number
+      discount_amount: number
+      tax_amount: number
     }[]
 
-    const saleDate = (
-      raw.prepare('SELECT created_at FROM sales WHERE id = ?').get(saleId) as {
-        created_at: string
-      }
-    ).created_at.split('T')[0]
+    // The same local date createSale filed the rollup under.
+    const saleDate = localDateString(new Date(sale.created_at))
 
     for (const item of items) {
       // Put the stock back where it came from, so expiry tracking stays truthful.
-      if (item.batch_id) {
-        raw
-          .prepare('UPDATE stock_batches SET quantity = quantity + ? WHERE id = ?')
-          .run(item.quantity, item.batch_id)
-      }
+      returnToBatches(lineBatches(item.id, item.batch_id, item.quantity), 0, item.quantity)
 
       // Reverse the daily rollup. Without this the P&L and dashboard kept counting
       // the voided sale forever, because product_sales_daily has no status column.
-      const cost = round2(item.cost_price * item.quantity)
+      // Exactly what createSale added: NET of VAT and of the discount share.
+      // Subtracting the gross line total over-reversed by the VAT, so voiding a
+      // sale pushed that day's P&L below what it would have been without it.
+      const { net, cost, profit } = saleLineAmounts(item)
       raw
         .prepare(
           `UPDATE product_sales_daily
@@ -416,14 +508,7 @@ export function voidSale(saleId: string, userId: string, reason: string): void {
                  profit = profit - ?
            WHERE date = ? AND product_id = ?`
         )
-        .run(
-          item.quantity,
-          item.line_total,
-          cost,
-          round2(item.line_total - cost),
-          saleDate,
-          item.product_id
-        )
+        .run(item.quantity, net, cost, profit, saleDate, item.product_id)
     }
 
     raw
@@ -473,11 +558,11 @@ export function computeShiftExpectedCash(shiftId: string, openingCash: number): 
 
   // Cash paid back out for refunds processed during this shift. Refunds were
   // invisible to the reconciliation, so the drawer expected money that had
-  // already been handed back across the counter.
+  // already been handed back across the counter. Only the CASH part: a card
+  // refund goes back to the card, and deducting it here reported the cashier
+  // short by every card refund of the shift.
   const refunds = db
-    .prepare(
-      `SELECT COALESCE(SUM(total_refunded), 0) as total FROM sale_refunds WHERE shift_id = ?`
-    )
+    .prepare(`SELECT COALESCE(SUM(cash_refunded), 0) as total FROM sale_refunds WHERE shift_id = ?`)
     .get(shiftId) as { total: number }
 
   return round2(openingCash + sales.total + movements.cash_in - movements.cash_out - refunds.total)
@@ -630,7 +715,7 @@ export function computeShiftCashSales(shiftId: string): number {
 /**
  * Get receipt data for display
  */
-export function getReceipt(saleId: string) {
+export function getReceipt(saleId: string): { sale: unknown; items: unknown[] } {
   const db = getDatabase()
 
   const sale = db
@@ -712,31 +797,49 @@ export function createRefund(
 
   return rawDb.transaction(() => {
     const sale = rawDb
-      .prepare('SELECT status, subtotal, total, receipt_number, created_at FROM sales WHERE id = ?')
+      .prepare(
+        `SELECT status, total, receipt_number, created_at, payment_method,
+                cash_received, change_given
+         FROM sales WHERE id = ?`
+      )
       .get(saleId) as
       | {
           status: string
-          subtotal: number
           total: number
           receipt_number: string
           created_at: string
+          payment_method: string
+          cash_received: number | null
+          change_given: number | null
         }
       | undefined
     if (!sale) throw new Error('Sale not found')
     if (sale.status === 'voided') throw new Error('Cannot refund a voided sale')
 
+    // The drawer that pays out is the one currently open, not the sale's shift.
+    // Required, as it is for a sale: a refund recorded with no shift was in no
+    // drawer's reconciliation, so the cash handed back surfaced as an
+    // unexplained shortage, and no shift report listed it.
+    const activeShift = rawDb
+      .prepare(`SELECT id FROM shifts WHERE user_id = ? AND status = 'active' LIMIT 1`)
+      .get(userId) as { id: string } | undefined
+    if (!activeShift) throw new Error('Start a shift before processing a refund')
+
     // What was actually sold, and what has already been sent back.
     const sold = rawDb
       .prepare(
-        `SELECT product_id, batch_id, quantity, unit_price, line_total, tax_amount, cost_price
-         FROM sale_items WHERE sale_id = ?`
+        `SELECT id, product_id, batch_id, quantity, unit_price, line_total, discount_amount,
+                tax_amount, cost_price
+         FROM sale_items WHERE sale_id = ? ORDER BY rowid`
       )
       .all(saleId) as Array<{
+      id: string
       product_id: string
       batch_id: string | null
       quantity: number
       unit_price: number
       line_total: number
+      discount_amount: number
       tax_amount: number
       cost_price: number
     }>
@@ -759,45 +862,54 @@ export function createRefund(
     // Validate against the original sale. The caller's items were previously
     // trusted verbatim, so a sale could be refunded repeatedly and for more
     // than was ever bought.
+    //
+    // Priced per line from the ledger: the line's own total less its share of
+    // the sale discount. That replaces scaling by total/subtotal, which was only
+    // right while the lines ignored the discount; createSale now stores the
+    // share on each line (and migration 9 backfilled older sales).
     let refundAmount = 0
     let taxRefunded = 0
+    const counted = new Map(alreadyRefunded)
     for (const item of items) {
       const soldLine = sold.find((s) => s.product_id === item.product_id)
       if (!soldLine) {
         throw new Error(`${item.product_name} was not part of this sale`)
       }
-      const remaining = soldLine.quantity - (alreadyRefunded.get(item.product_id) ?? 0)
+      // Counted across this request too, so the same product listed twice
+      // cannot together exceed what was sold.
+      const remaining = soldLine.quantity - (counted.get(item.product_id) ?? 0)
       if (item.quantity <= 0) throw new Error('Refund quantity must be greater than zero')
       if (item.quantity > remaining) {
         throw new Error(
           `Cannot refund ${item.quantity} of ${item.product_name} — only ${remaining} remain refundable`
         )
       }
+      counted.set(item.product_id, (counted.get(item.product_id) ?? 0) + item.quantity)
       // Price the refund from the ORIGINAL sale, never from the caller's payload.
-      const perUnit = soldLine.line_total / soldLine.quantity
-      const perUnitTax = soldLine.tax_amount / soldLine.quantity
-      refundAmount = round2(refundAmount + perUnit * item.quantity)
-      taxRefunded = round2(taxRefunded + perUnitTax * item.quantity)
+      const back = refundLineAmounts(soldLine, item.quantity)
+      refundAmount = round2(refundAmount + back.gross)
+      taxRefunded = round2(taxRefunded + back.tax)
     }
 
-    // A sale-level discount means the customer paid less than the sum of the
-    // line totals, so the refund is scaled by the same ratio.
-    if (sale.subtotal > 0 && sale.total !== sale.subtotal) {
-      const ratio = sale.total / sale.subtotal
-      refundAmount = round2(refundAmount * ratio)
-      taxRefunded = round2(taxRefunded * ratio)
-    }
-
-    // The drawer that pays out is the one currently open, not the sale's shift.
-    const activeShift = rawDb
-      .prepare(`SELECT id FROM shifts WHERE user_id = ? AND status = 'active' LIMIT 1`)
-      .get(userId) as { id: string } | undefined
+    // The refund goes back the way the sale was paid: cash from the drawer, card
+    // to the card, a mixed sale in proportion to the cash it was paid with.
+    const cashShare =
+      sale.payment_method === 'cash'
+        ? 1
+        : sale.payment_method === 'mixed' && sale.total > 0
+          ? Math.min(
+              Math.max(((sale.cash_received ?? 0) - (sale.change_given ?? 0)) / sale.total, 0),
+              1
+            )
+          : 0
+    const cashRefunded = round2(refundAmount * cashShare)
 
     rawDb
       .prepare(
         `INSERT INTO sale_refunds
-           (id, sale_id, user_id, items, total_refunded, tax_refunded, restock, reason, shift_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           (id, sale_id, user_id, items, total_refunded, tax_refunded, cash_refunded, restock,
+            reason, shift_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         refundId,
@@ -806,33 +918,37 @@ export function createRefund(
         JSON.stringify(items),
         refundAmount,
         taxRefunded,
+        cashRefunded,
         restock ? 1 : 0,
         reason.trim() || null,
-        activeShift?.id ?? null,
+        activeShift.id,
         now
       )
 
-    const saleDate = sale.created_at.split('T')[0]
+    // The same local date createSale filed the rollup under.
+    const saleDate = localDateString(new Date(sale.created_at))
 
+    const returnedSoFar = new Map(alreadyRefunded)
     for (const item of items) {
       const soldLine = sold.find((s) => s.product_id === item.product_id)!
 
       if (restock) {
-        // Back into the batch it came from, so expiry tracking stays truthful.
+        // Back into the batches it came from, so expiry tracking stays truthful.
         // The old code picked the most recently received batch instead, and then
         // wrote to products.stock_quantity — a column that does not exist, which
         // threw and rolled the entire refund back after cash had been handed over.
-        if (soldLine.batch_id) {
-          rawDb
-            .prepare('UPDATE stock_batches SET quantity = quantity + ? WHERE id = ?')
-            .run(item.quantity, soldLine.batch_id)
-        }
+        // It then used sale_items.batch_id, which is only the first batch a line
+        // drew from (R2): see lineBatches.
+        returnToBatches(
+          lineBatches(soldLine.id, soldLine.batch_id, soldLine.quantity),
+          returnedSoFar.get(item.product_id) ?? 0,
+          item.quantity
+        )
       }
+      returnedSoFar.set(item.product_id, (returnedSoFar.get(item.product_id) ?? 0) + item.quantity)
 
       // Reverse the daily rollup so reports stop counting refunded revenue.
-      const perUnitNet = (soldLine.line_total - soldLine.tax_amount) / soldLine.quantity
-      const netBack = round2(perUnitNet * item.quantity)
-      const costBack = round2(soldLine.cost_price * item.quantity)
+      const back = refundLineAmounts(soldLine, item.quantity)
       rawDb
         .prepare(
           `UPDATE product_sales_daily
@@ -842,14 +958,7 @@ export function createRefund(
                  profit = profit - ?
            WHERE date = ? AND product_id = ?`
         )
-        .run(
-          item.quantity,
-          netBack,
-          costBack,
-          round2(netBack - costBack),
-          saleDate,
-          item.product_id
-        )
+        .run(item.quantity, back.net, back.cost, back.profit, saleDate, item.product_id)
     }
 
     // Mark the sale refunded once nothing remains refundable, so it stops being
@@ -863,6 +972,9 @@ export function createRefund(
       rawDb.prepare(`UPDATE sales SET status = 'refunded' WHERE id = ?`).run(saleId)
     }
 
+    // The one audit entry for a refund, inside the transaction and with the
+    // amounts computed here. The IPC handler used to write a second entry with
+    // the renderer's own line totals — undiscounted, and whatever it chose to send.
     logAudit({
       userId,
       action: 'SALE_REFUNDED',
@@ -870,8 +982,11 @@ export function createRefund(
       entityId: saleId,
       details: {
         receipt_number: sale.receipt_number,
+        refund_id: refundId,
         refunded: refundAmount,
         tax_refunded: taxRefunded,
+        cash_refunded: cashRefunded,
+        shift_id: activeShift.id,
         restocked: restock,
         fully_refunded: totalRefundedQty >= totalSoldQty,
         reason: reason.trim() || null

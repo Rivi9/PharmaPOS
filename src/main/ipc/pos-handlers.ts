@@ -19,7 +19,6 @@ import {
 } from '../services/sales'
 import { getCustomerPurchaseHistory } from '../services/customers'
 import { getActiveShiftForUser } from '../services/shifts'
-import { logAudit } from '../services/audit'
 
 export function registerPOSHandlers(): void {
   // Product handlers
@@ -74,14 +73,11 @@ export function registerPOSHandlers(): void {
     return checkStockAvailability(productId)
   })
 
-  ipcMain.handle(
-    IPC_CHANNELS.STOCK_DEDUCT,
-    async (_event, _data: { productId: string; quantity: number }) => {
-      // Note: Stock deduction is handled by createSale with FEFO logic
-      // This handler is for manual stock checks if needed
-      throw new Error('Stock deduction should be done via createSale')
-    }
-  )
+  ipcMain.handle(IPC_CHANNELS.STOCK_DEDUCT, async () => {
+    // Note: Stock deduction is handled by createSale with FEFO logic
+    // This handler is for manual stock checks if needed
+    throw new Error('Stock deduction should be done via createSale')
+  })
 
   // Void sale — requires sales:void permission
   ipcMain.handle(IPC_CHANNELS.SALE_VOID, async (_event, { saleId, reason }) => {
@@ -92,26 +88,13 @@ export function registerPOSHandlers(): void {
 
   // Refund sale — requires sales:refund permission
   ipcMain.handle(IPC_CHANNELS.SALE_REFUND, async (_event, { saleId, items, reason, restock }) => {
-    return withPermission(_event, 'sales:refund', () => {
-      const result = createRefund(
-        saleId,
-        actingUserId(_event),
-        items,
-        reason ?? '',
-        restock ?? false
-      )
-      logAudit({
-        userId: actingUserId(_event),
-        action: 'SALE_REFUNDED',
-        entityType: 'sale',
-        entityId: saleId,
-        details: {
-          refund_id: result.refund_id,
-          total_refunded: items.reduce((s: number, i: any) => s + i.line_total, 0)
-        }
-      })
-      return result
-    })
+    // The SALE_REFUNDED audit entry is written once, inside createRefund's
+    // transaction, with the amount the server priced. This handler used to add a
+    // second one totalling the renderer's line_total values — undiscounted and
+    // caller-supplied — so every refund appeared twice with two different sums.
+    return withPermission(_event, 'sales:refund', () =>
+      createRefund(saleId, actingUserId(_event), items, reason ?? '', restock ?? false)
+    )
   })
 
   // Customer purchase history — no permission gate (cashier needs this)
