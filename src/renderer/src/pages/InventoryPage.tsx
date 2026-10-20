@@ -53,6 +53,16 @@ import { localDateString } from '../../../shared/dates'
  */
 const PAGE_SIZE = 50
 
+/** An imported row skipped because the product already exists (see inventory-import.ts). */
+interface SkippedImportRow {
+  row: number
+  name: string
+  matchedBy: 'barcode' | 'sku'
+  code: string
+  existingName: string
+  existingDiscontinued: boolean
+}
+
 /**
  * Server-side pager. The tables carry their own client-side pagination, but that
  * can only page what has been fetched — with the fetch now capped at one page,
@@ -488,6 +498,8 @@ export function InventoryPage(): React.JSX.Element {
   const [importResult, setImportResult] = useState<{
     imported: number
     batchesCreated?: number
+    skipped: SkippedImportRow[]
+    skippedCount: number
     errors: string[]
     errorsTruncated?: number
     totalRows?: number
@@ -506,6 +518,8 @@ export function InventoryPage(): React.JSX.Element {
         setImportResult({
           imported: result.imported,
           batchesCreated: result.batchesCreated,
+          skipped: result.skipped ?? [],
+          skippedCount: result.skippedCount ?? 0,
           errors: result.errors ?? [],
           errorsTruncated: result.errorsTruncated,
           totalRows: result.totalRows
@@ -842,7 +856,14 @@ export function InventoryPage(): React.JSX.Element {
           </DialogHeader>
           {importResult && (
             <div className="space-y-4">
-              {importResult.imported > 0 ? (
+              {importResult.imported === 0 &&
+              importResult.errors.length === 0 &&
+              importResult.skippedCount > 0 ? (
+                <p className="flex items-center gap-2 text-base font-medium">
+                  <CircleCheck className="size-5 shrink-0 text-muted-foreground" />
+                  Nothing new to import — every product in the sheet already exists.
+                </p>
+              ) : importResult.imported > 0 ? (
                 <p className="flex items-center gap-2 text-base font-medium text-success">
                   <CircleCheck className="size-5 shrink-0" />
                   <span>
@@ -868,6 +889,32 @@ export function InventoryPage(): React.JSX.Element {
                     import the sheet again.
                   </p>
                 </>
+              )}
+              {importResult.skippedCount > 0 && (
+                <div>
+                  <p className="mb-2 text-base font-medium">
+                    {importResult.skippedCount} row{importResult.skippedCount !== 1 ? 's' : ''}{' '}
+                    skipped — already in the catalogue, left unchanged and no stock added:
+                  </p>
+                  <ul
+                    aria-label="Skipped rows"
+                    className="max-h-48 space-y-1 overflow-y-auto overscroll-contain rounded-xl border bg-muted/40 p-3 text-sm text-muted-foreground"
+                  >
+                    {importResult.skipped.map((s) => (
+                      <li key={s.row}>
+                        Skipped — already exists (row {s.row}, {s.name},{' '}
+                        {s.matchedBy === 'barcode' ? 'barcode' : 'SKU'} {s.code}
+                        {s.existingName !== s.name ? ` — matches "${s.existingName}"` : ''}
+                        {s.existingDiscontinued ? ', discontinued' : ''})
+                      </li>
+                    ))}
+                  </ul>
+                  {importResult.skippedCount > importResult.skipped.length && (
+                    <p className="mt-2 text-sm font-medium text-muted-foreground">
+                      …and {importResult.skippedCount - importResult.skipped.length} more not shown.
+                    </p>
+                  )}
+                </div>
               )}
               {importResult.errors.length > 0 && (
                 <div>

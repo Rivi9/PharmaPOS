@@ -421,6 +421,32 @@ export function updateProduct(id: string, data: Partial<ProductData>): void {
   ).run(...values)
 }
 
+/**
+ * Every product's barcode and SKU — both UNIQUE, discontinued products
+ * included — so the import can recognise rows that already exist instead of
+ * hitting the constraint mid-transaction.
+ */
+export function listProductCodes(): {
+  id: string
+  name: string
+  barcode: string | null
+  sku: string | null
+  is_active: number
+}[] {
+  return getDatabase()
+    .prepare(
+      `SELECT id, name, barcode, sku, is_active FROM products
+       WHERE barcode IS NOT NULL OR sku IS NOT NULL`
+    )
+    .all() as {
+    id: string
+    name: string
+    barcode: string | null
+    sku: string | null
+    is_active: number
+  }[]
+}
+
 /** Bring a soft-deleted product back. Delete is a flag flip, so nothing is lost. */
 export function reactivateProduct(id: string): void {
   getDatabase()

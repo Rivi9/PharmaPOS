@@ -518,6 +518,7 @@ export function registerInventoryHandlers(): void {
           rows: outcome.totalRows,
           imported: outcome.imported,
           batches: outcome.batchesCreated,
+          skipped_existing: outcome.skippedCount,
           errors: outcome.errors.length + outcome.errorsTruncated
         }
       })

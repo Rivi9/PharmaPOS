@@ -25,9 +25,24 @@ import * as inventory from './inventory'
  * and the stock figures are wrong in a way no report reveals.
  */
 
+/** A row left alone because the product is already in the catalogue. */
+export interface SkippedRow {
+  row: number
+  name: string
+  /** Which code matched. Barcode is checked first, then SKU. */
+  matchedBy: 'barcode' | 'sku'
+  code: string
+  /** The product already holding that code, which is left untouched. */
+  existingName: string
+  existingDiscontinued: boolean
+}
+
 export interface ImportOutcome {
   imported: number
   batchesCreated: number
+  /** Rows matching an existing product. Capped — `skippedCount` is the total. */
+  skipped: SkippedRow[]
+  skippedCount: number
   /** Human-readable problems. Capped — see `errorsTruncated`. */
   errors: string[]
   errorsTruncated: number
@@ -195,6 +210,8 @@ export function importProductRows(sheetRows: unknown[][]): ImportOutcome {
   const empty: ImportOutcome = {
     imported: 0,
     batchesCreated: 0,
+    skipped: [],
+    skippedCount: 0,
     errors: [],
     errorsTruncated: 0,
     totalRows: 0
@@ -242,6 +259,22 @@ export function importProductRows(sheetRows: unknown[][]): ImportOutcome {
   let missingCostColumnRows = 0
   const parsed: ParsedRow[] = []
   const seenBarcodes = new Map<string, number>()
+  const seenSkus = new Map<string, number>()
+  const skipped: SkippedRow[] = []
+
+  // Barcode and SKU are both UNIQUE, discontinued products included. A row that
+  // matched an existing product used to fail inside the write transaction with a
+  // raw "UNIQUE constraint failed" and roll back the whole file — so re-importing
+  // a supplier sheet with ten new lines added was impossible. Such rows are now
+  // skipped and listed: the existing product is left exactly as it is, and no
+  // batch is added, since the sheet's stock figure cannot be told apart from
+  // stock already received.
+  const byBarcode = new Map<string, { name: string; is_active: number }>()
+  const bySku = new Map<string, { name: string; is_active: number }>()
+  for (const p of inventory.listProductCodes()) {
+    if (p.barcode) byBarcode.set(p.barcode, p)
+    if (p.sku) bySku.set(p.sku, p)
+  }
   const trackExpiryColumnPresent = has('track_expiry')
 
   for (let i = 0; i < dataRows.length; i++) {
@@ -254,6 +287,28 @@ export function importProductRows(sheetRows: unknown[][]): ImportOutcome {
     const name = str(row, 'name')
     if (!name) {
       errors.push(`Row ${rowNum}: no product name`)
+      continue
+    }
+
+    // Before any other validation: a skipped row's figures are never used, so a
+    // problem in them must not block the rest of the file.
+    const barcode = str(row, 'barcode')
+    const sku = str(row, 'sku')
+    const match =
+      barcode && byBarcode.has(barcode)
+        ? { matchedBy: 'barcode' as const, code: barcode, product: byBarcode.get(barcode)! }
+        : sku && bySku.has(sku)
+          ? { matchedBy: 'sku' as const, code: sku, product: bySku.get(sku)! }
+          : null
+    if (match) {
+      skipped.push({
+        row: rowNum,
+        name,
+        matchedBy: match.matchedBy,
+        code: match.code,
+        existingName: match.product.name,
+        existingDiscontinued: match.product.is_active !== 1
+      })
       continue
     }
 
@@ -369,7 +424,6 @@ export function importProductRows(sheetRows: unknown[][]): ImportOutcome {
       continue
     }
 
-    const barcode = str(row, 'barcode')
     if (barcode) {
       const previous = seenBarcodes.get(barcode)
       if (previous !== undefined) {
@@ -379,6 +433,14 @@ export function importProductRows(sheetRows: unknown[][]): ImportOutcome {
         continue
       }
       seenBarcodes.set(barcode, rowNum)
+    }
+    if (sku) {
+      const previous = seenSkus.get(sku)
+      if (previous !== undefined) {
+        errors.push(`Row ${rowNum} "${name}": SKU ${sku} already used on row ${previous}`)
+        continue
+      }
+      seenSkus.set(sku, rowNum)
     }
 
     parsed.push({
@@ -392,7 +454,7 @@ export function importProductRows(sheetRows: unknown[][]): ImportOutcome {
         name,
         generic_name: str(row, 'generic_name') || undefined,
         barcode: barcode || undefined,
-        sku: str(row, 'sku') || undefined,
+        sku: sku || undefined,
         cost_price: cost.ok ? cost.value : 0,
         unit_price: price.value,
         tax_rate: taxRate,
@@ -413,11 +475,17 @@ export function importProductRows(sheetRows: unknown[][]): ImportOutcome {
     )
   }
 
+  const skippedReport = {
+    skipped: skipped.slice(0, MAX_REPORTED_ERRORS),
+    skippedCount: skipped.length
+  }
+
   // Atomic: refuse the file rather than commit part of a medicine catalogue.
   if (errors.length) {
     return {
       imported: 0,
       batchesCreated: 0,
+      ...skippedReport,
       errors: errors.slice(0, MAX_REPORTED_ERRORS),
       errorsTruncated: Math.max(0, errors.length - MAX_REPORTED_ERRORS),
       totalRows: dataRows.length
@@ -425,6 +493,8 @@ export function importProductRows(sheetRows: unknown[][]): ImportOutcome {
   }
 
   if (!parsed.length) {
+    // Every row already exists: nothing to do, and nothing wrong.
+    if (skipped.length) return { ...empty, ...skippedReport, totalRows: dataRows.length }
     return { ...empty, totalRows: dataRows.length, errors: ['No data rows found in the sheet'] }
   }
 
@@ -477,6 +547,7 @@ export function importProductRows(sheetRows: unknown[][]): ImportOutcome {
   return {
     imported: parsed.length,
     batchesCreated,
+    ...skippedReport,
     errors: [],
     errorsTruncated: 0,
     totalRows: dataRows.length

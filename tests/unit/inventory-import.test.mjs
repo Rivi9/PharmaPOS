@@ -35,6 +35,8 @@ fs.writeFileSync(
   path.join(servicesDir, 'inventory.js'),
   `const calls = { products: [], batches: [], categories: [], suppliers: [] }
 exports.__calls = calls
+exports.__existing = []
+exports.listProductCodes = () => exports.__existing
 exports.getCategories = () => []
 exports.getSuppliers = () => []
 exports.createCategory = (d) => { calls.categories.push(d); return { id: 'cat-' + calls.categories.length } }
@@ -84,6 +86,7 @@ const reset = () => {
   c.batches.length = 0
   c.categories.length = 0
   c.suppliers.length = 0
+  inv.__existing.length = 0
 }
 
 const H = [
@@ -336,6 +339,68 @@ check(
   'the batch carries the sheet cost',
   r.imported === 1 && inv.__calls.batches[0]?.cost_price === 7.5,
   JSON.stringify(inv.__calls.batches[0])
+)
+
+console.log('\nRows matching an existing product are skipped, not fatal')
+const HB = H.concat(['Barcode', 'SKU'])
+const rowB = (o = {}) => row(o).concat([o.barcode ?? '', o.sku ?? ''])
+reset()
+inv.__existing.push(
+  { id: 'e1', name: 'Paracetamol 500mg', barcode: '4790001', sku: 'PARA500', is_active: 1 },
+  { id: 'e2', name: 'Old Syrup', barcode: null, sku: 'SYR01', is_active: 0 }
+)
+r = importProductRows([
+  HB,
+  rowB({ name: 'Paracetamol 500mg', barcode: '4790001', stock: 99 }),
+  rowB({ name: 'New Item', barcode: '4790999', sku: 'NEW01' }),
+  rowB({ name: 'Syrup renamed', sku: 'SYR01' }),
+  // Garbage figures on a skipped row do not block the file: they are never used.
+  rowB({ name: 'Paracetamol again', barcode: '4790001', price: 'xx', cost: '' })
+])
+check(
+  'the rest of the file imports — a duplicate used to roll back everything (UNIQUE error)',
+  r.imported === 1 &&
+    r.errors.length === 0 &&
+    inv.__calls.products.length === 1 &&
+    inv.__calls.products[0].name === 'New Item',
+  JSON.stringify(r)
+)
+check(
+  'a skipped row adds no batch',
+  inv.__calls.batches.length === 1 && inv.__calls.batches[0].product_id === 'p-1',
+  JSON.stringify(inv.__calls.batches)
+)
+check(
+  'matched by barcode first, listed with row, name and code',
+  r.skippedCount === 3 &&
+    r.skipped[0].row === 2 &&
+    r.skipped[0].matchedBy === 'barcode' &&
+    r.skipped[0].code === '4790001' &&
+    r.skipped[0].name === 'Paracetamol 500mg',
+  JSON.stringify(r.skipped)
+)
+check(
+  'matched by SKU when there is no barcode, discontinued products included',
+  r.skipped[1].row === 4 &&
+    r.skipped[1].matchedBy === 'sku' &&
+    r.skipped[1].existingName === 'Old Syrup' &&
+    r.skipped[1].existingDiscontinued === true,
+  JSON.stringify(r.skipped)
+)
+reset()
+inv.__existing.push({ id: 'e1', name: 'A', barcode: 'X1', sku: null, is_active: 1 })
+r = importProductRows([HB, rowB({ name: 'A', barcode: 'X1' })])
+check(
+  'a file where every row exists reports the skips and no error',
+  r.imported === 0 && r.errors.length === 0 && r.skippedCount === 1,
+  JSON.stringify(r)
+)
+reset()
+r = importProductRows([HB, rowB({ name: 'A', sku: 'S1' }), rowB({ name: 'B', sku: 'S1' })])
+check(
+  'a duplicate SKU within the sheet is caught before the database, naming both rows',
+  r.imported === 0 && /SKU S1 already used on row 2/.test(r.errors[0] ?? ''),
+  JSON.stringify(r.errors)
 )
 
 console.log('\nR1 — per-batch selling price')
