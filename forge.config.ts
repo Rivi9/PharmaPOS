@@ -3,7 +3,7 @@ import { MakerSquirrel } from '@electron-forge/maker-squirrel'
 import { MakerZIP } from '@electron-forge/maker-zip'
 import { VitePlugin } from '@electron-forge/plugin-vite'
 import { AutoUnpackNativesPlugin } from '@electron-forge/plugin-auto-unpack-natives'
-import { PublisherGithub } from '@electron-forge/publisher-github'
+import { PublisherGitHub } from '@electron-forge/publisher-github'
 
 const config: ForgeConfig = {
   packagerConfig: {
@@ -64,7 +64,7 @@ const config: ForgeConfig = {
     })
   ],
   publishers: [
-    new PublisherGithub({
+    new PublisherGitHub({
       repository: {
         owner: 'Rivi9',
         name: 'pharmapos'
