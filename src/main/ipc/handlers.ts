@@ -16,8 +16,30 @@ import { registerUpdateHandlers } from './update-handlers'
 import { registerAuditHandlers } from './audit-handlers'
 import { registerCustomerHandlers } from './customer-handlers'
 import { computeShiftExpectedCash } from '../services/sales'
-import { getUserById } from '../services/users/user-management'
+import { getUserById, assertPasswordStrength } from '../services/users/user-management'
+import { setupFlagExists } from '../services/setup/first-run'
 import { round2 } from '../../shared/money'
+
+/** The `users` row as AUTH_LOGIN reads it. */
+interface UserRow {
+  id: string
+  username: string
+  full_name: string
+  role: 'admin' | 'manager' | 'cashier'
+  password_hash: string
+  pin_code: string | null
+  failed_attempts: number | null
+  locked_until: string | null
+  [column: string]: unknown
+}
+
+/** The row without either credential hash, as returned to the renderer. */
+function toSafeUser(user: UserRow): Record<string, unknown> {
+  const rest: Record<string, unknown> = { ...user }
+  delete rest.password_hash
+  delete rest.pin_code
+  return { ...rest, pin_set: Boolean(user.pin_code) }
+}
 
 export function registerIpcHandlers(): void {
   // Register POS handlers
@@ -82,7 +104,9 @@ export function registerIpcHandlers(): void {
   // Login with PIN or password
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, async (event, { userId, pin, password }) => {
     const db = getDatabase()
-    const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(userId) as any
+    const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(userId) as
+      | UserRow
+      | undefined
 
     if (!user) {
       return { success: false, error: 'User not found' }
@@ -133,8 +157,7 @@ export function registerIpcHandlers(): void {
     if (pin && user.pin_code) {
       const pinValid = await bcrypt.compare(pin, user.pin_code)
       if (pinValid) {
-        const { password_hash, pin_code, ...rest } = user
-        const safeUser = { ...rest, pin_set: Boolean(pin_code) }
+        const safeUser = toSafeUser(user)
         const activeShift = db
           .prepare(
             `SELECT opening_cash FROM shifts WHERE user_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`
@@ -163,8 +186,7 @@ export function registerIpcHandlers(): void {
     if (password) {
       const valid = await bcrypt.compare(password, user.password_hash)
       if (valid) {
-        const { password_hash, pin_code, ...rest } = user
-        const safeUser = { ...rest, pin_set: Boolean(pin_code) }
+        const safeUser = toSafeUser(user)
         const activeShift = db
           .prepare(
             `SELECT opening_cash FROM shifts WHERE user_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`
@@ -248,16 +270,27 @@ export function registerIpcHandlers(): void {
    * First-run bootstrap only. This channel used to accept any role and create an
    * admin at any time with no permission check — one console call was enough to
    * mint an administrator. It now refuses once any user exists.
+   *
+   * It is the login screen's recovery path for an install whose wizard finished
+   * but which has no accounts, so it is also refused while the wizard itself has
+   * not run — that case belongs to `setup:initialize`.
    */
   ipcMain.handle(
     IPC_CHANNELS.AUTH_CREATE_USER,
     async (_event, { username, password, fullName, pin }) => {
       const db = getDatabase()
-      const { count } = db.prepare('SELECT COUNT(*) as count FROM users').get() as {
-        count: number
-      }
-      if (count > 0) {
+      const countUsers = (): number =>
+        (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number }).count
+      if (countUsers() > 0) {
         return { success: false, error: 'Setup has already been completed' }
+      }
+      if (!setupFlagExists()) {
+        return { success: false, error: 'Complete the setup wizard first' }
+      }
+      try {
+        assertPasswordStrength(password, username)
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
       }
 
       const id = generateId()
@@ -265,10 +298,16 @@ export function registerIpcHandlers(): void {
       const pinHash = pin ? await bcrypt.hash(pin, 10) : null
 
       try {
-        db.prepare(
-          `INSERT INTO users (id, username, password_hash, full_name, role, pin_code)
-           VALUES (?, ?, ?, ?, 'admin', ?)`
-        ).run(id, username, passwordHash, fullName, pinHash)
+        // Counted again, in the same transaction as the insert: the hashing above
+        // yields to the event loop, so two calls could both pass the first check
+        // and each create an administrator.
+        db.transaction(() => {
+          if (countUsers() > 0) throw new Error('Setup has already been completed')
+          db.prepare(
+            `INSERT INTO users (id, username, password_hash, full_name, role, pin_code)
+             VALUES (?, ?, ?, ?, 'admin', ?)`
+          ).run(id, username, passwordHash, fullName, pinHash)
+        })()
 
         logAudit({
           userId: id,
@@ -279,8 +318,8 @@ export function registerIpcHandlers(): void {
           details: { bootstrap: true, role: 'admin' }
         })
         return { success: true, id }
-      } catch (error: any) {
-        return { success: false, error: error.message }
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
       }
     }
   )
@@ -288,7 +327,9 @@ export function registerIpcHandlers(): void {
   // Get settings
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, (_, key: string) => {
     const db = getDatabase()
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as any
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+      | { value: string }
+      | undefined
     return row?.value || null
   })
 
@@ -361,7 +402,10 @@ export function registerIpcHandlers(): void {
   // Get all settings
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_ALL, () => {
     const db = getDatabase()
-    const rows = db.prepare('SELECT key, value FROM settings').all() as any[]
+    const rows = db.prepare('SELECT key, value FROM settings').all() as {
+      key: string
+      value: string
+    }[]
     return Object.fromEntries(rows.map((r) => [r.key, r.value]))
   })
 
