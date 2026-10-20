@@ -1,6 +1,6 @@
 {
   "name": "pharma-pos",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Pharmacy POS Desktop Application",
   "main": ".vite/build/index.cjs",
   "author": "Rivi9",
