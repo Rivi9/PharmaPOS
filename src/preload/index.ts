@@ -255,6 +255,8 @@ const electronAPI = {
     list: (search?: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_LIST, search),
     get: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_GET, id),
     getByPhone: (phone: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_GET_BY_PHONE, phone),
+    checkoutLookup: (phone: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_CHECKOUT_LOOKUP, phone),
     create: (userId: string, data: unknown) =>
       ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_CREATE, { userId, ...(data as object) }),
     update: (userId: string, id: string, data: unknown) =>

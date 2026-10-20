@@ -10,12 +10,29 @@ import {
   updateCustomer,
   deleteCustomer,
   eraseCustomer,
-  type CustomerData
+  findCheckoutCustomer,
+  getAllCustomerStats,
+  customerStatsFor,
+  type CustomerData,
+  type CustomerStats
 } from '../services/customers'
 import type { Customer } from '../db/schema'
 
+interface CustomerDto {
+  id: string
+  name: string
+  phone: string | null
+  email: string | null
+  address: string | null
+  notes: string | null
+  created_at: string
+  visits?: number
+  total_spent?: number
+  last_visit?: string | null
+}
+
 /** Map Drizzle camelCase Customer to the snake_case shape the renderer expects. */
-function mapCustomer(c: Customer) {
+function mapCustomer(c: Customer, stats?: CustomerStats): CustomerDto {
   return {
     id: c.id,
     name: c.name,
@@ -23,14 +40,22 @@ function mapCustomer(c: Customer) {
     email: c.email ?? null,
     address: c.address ?? null,
     notes: c.notes ?? null,
-    created_at: c.createdAt
+    created_at: c.createdAt,
+    ...(stats && {
+      visits: stats.visits,
+      total_spent: stats.totalSpent,
+      last_visit: stats.lastVisit
+    })
   }
 }
 
 export function registerCustomerHandlers(): void {
   // Read-only handlers — no permission gate (cashiers need these during checkout)
+  // With visits / spend / last visit, so the list and the detail panel show
+  // what the linked sales add up to.
   ipcMain.handle(IPC_CHANNELS.CUSTOMER_LIST, (_event, search?: string) => {
-    return listCustomers(search).map(mapCustomer)
+    const stats = getAllCustomerStats()
+    return listCustomers(search).map((c) => mapCustomer(c, customerStatsFor(stats, c.id)))
   })
 
   ipcMain.handle(IPC_CHANNELS.CUSTOMER_GET, (_event, id: string) => {
@@ -43,18 +68,49 @@ export function registerCustomerHandlers(): void {
     return c ? mapCustomer(c) : null
   })
 
+  // What the till needs to tell the cashier what Complete Sale will do with the
+  // number typed (planCheckoutCustomer runs on both sides with the same input).
+  ipcMain.handle(IPC_CHANNELS.CUSTOMER_CHECKOUT_LOOKUP, (_event, phone: string) => {
+    const { active, heldByRemoved } = findCheckoutCustomer(phone)
+    return { active: active ? mapCustomer(active) : null, heldByRemoved }
+  })
+
   // Mutating handlers — require userId and appropriate permission
   ipcMain.handle(
     IPC_CHANNELS.CUSTOMER_CREATE,
     (_event, { ...data }: { userId: string } & CustomerData) => {
-      return withPermission(_event, 'customers:create', () => createCustomer(data as CustomerData))
+      return withPermission(_event, 'customers:create', () => {
+        const made = createCustomer(data as CustomerData)
+        // No name or number in the details: audit_log is append-only, so they
+        // would outlive an erasure request. The entity id is enough to trace it.
+        logAudit({
+          userId: actingUserId(_event),
+          action: 'CUSTOMER_CREATED',
+          entityType: 'customer',
+          entityId: made.id,
+          details: { source: 'customers' }
+        })
+        return made
+      })
     }
   )
 
   ipcMain.handle(
     IPC_CHANNELS.CUSTOMER_UPDATE,
     (_event, { id, data }: { id: string; data: Partial<CustomerData> }) => {
-      return withPermission(_event, 'customers:update', () => updateCustomer(id, data))
+      return withPermission(_event, 'customers:update', () => {
+        const updated = updateCustomer(id, data)
+        if (updated) {
+          logAudit({
+            userId: actingUserId(_event),
+            action: 'CUSTOMER_UPDATED',
+            entityType: 'customer',
+            entityId: id,
+            details: { source: 'customers', fields: Object.keys(data ?? {}) }
+          })
+        }
+        return updated
+      })
     }
   )
 

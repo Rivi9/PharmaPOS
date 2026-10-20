@@ -156,6 +156,7 @@ export const IPC_CHANNELS = {
   CUSTOMER_LIST: 'customer:list',
   CUSTOMER_GET: 'customer:get',
   CUSTOMER_GET_BY_PHONE: 'customer:getByPhone',
+  CUSTOMER_CHECKOUT_LOOKUP: 'customer:checkoutLookup',
   CUSTOMER_CREATE: 'customer:create',
   CUSTOMER_UPDATE: 'customer:update',
   CUSTOMER_DELETE: 'customer:delete',
