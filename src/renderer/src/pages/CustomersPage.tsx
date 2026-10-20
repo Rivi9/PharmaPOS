@@ -43,6 +43,9 @@ import { cn } from '@renderer/lib/utils'
 import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
 import { useConfirm } from '@renderer/hooks/useConfirm'
 import { usePermission } from '@renderer/hooks/usePermission'
+import { hasRealCustomerName } from '../../../shared/customers'
+
+const formatDate = (iso: string): string => new Date(iso).toLocaleDateString()
 
 interface Customer {
   id: string
@@ -52,6 +55,11 @@ interface Customer {
   address: string | null
   notes: string | null
   created_at: string
+  /** Not voided; fully refunded sales still count as a visit. */
+  visits?: number
+  /** Linked sale totals less refunds. */
+  total_spent?: number
+  last_visit?: string | null
 }
 
 interface PurchaseHistoryEntry {
@@ -60,6 +68,8 @@ interface PurchaseHistoryEntry {
   total: number
   paymentMethod: string
   createdAt: string
+  status: 'completed' | 'refunded'
+  refunded: number
   items: { productName: string; quantity: number; lineTotal: number }[]
 }
 
@@ -249,8 +259,6 @@ export function CustomersPage(): React.JSX.Element {
     loadCustomers()
   }
 
-  const historyTotal = history?.reduce((s, h) => s + h.total, 0) ?? 0
-
   return (
     <div className="flex h-full gap-4 overflow-hidden bg-canvas p-4">
       {/* Customer List */}
@@ -294,7 +302,7 @@ export function CustomersPage(): React.JSX.Element {
                 <EmptyDescription>
                   {search
                     ? 'Try another name or phone number.'
-                    : 'Tap Add to create your first customer.'}
+                    : 'Customers are saved automatically when a phone number is entered at checkout, or tap Add.'}
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -323,6 +331,17 @@ export function CustomersPage(): React.JSX.Element {
                         >
                           <Phone className="size-4" />
                           {c.phone}
+                        </span>
+                      )}
+                      {!!c.visits && (
+                        <span
+                          className={cn(
+                            'mt-0.5 text-sm tabular-nums',
+                            isSelected ? 'text-accent-foreground/80' : 'text-muted-foreground'
+                          )}
+                        >
+                          {c.visits} {c.visits === 1 ? 'visit' : 'visits'}
+                          {c.last_visit && ` · last ${formatDate(c.last_visit)}`}
                         </span>
                       )}
                     </button>
@@ -356,10 +375,17 @@ export function CustomersPage(): React.JSX.Element {
             <section className="rounded-2xl border bg-card p-6 shadow-xs">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <h2 className="truncate text-2xl font-semibold">{selected.name}</h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="truncate text-2xl font-semibold">{selected.name}</h2>
+                    {!hasRealCustomerName(selected.name, selected.phone) && (
+                      <Badge variant="secondary" className="h-6 px-2.5 text-sm">
+                        No name yet
+                      </Badge>
+                    )}
+                  </div>
                   <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <CalendarDays className="size-4" />
-                    Customer since {new Date(selected.created_at).toLocaleDateString()}
+                    Customer since {formatDate(selected.created_at)}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -396,6 +422,18 @@ export function CustomersPage(): React.JSX.Element {
                   className="sm:col-span-2"
                 />
               </dl>
+
+              <dl
+                className="mt-6 grid grid-cols-3 gap-3 border-t pt-6"
+                aria-label="Customer totals"
+              >
+                <StatTile label="Visits" value={String(selected.visits ?? 0)} />
+                <StatTile label="Total spent" value={formatCurrency(selected.total_spent ?? 0)} />
+                <StatTile
+                  label="Last visit"
+                  value={selected.last_visit ? formatDate(selected.last_visit) : '—'}
+                />
+              </dl>
             </section>
 
             {/* Purchase History */}
@@ -403,12 +441,12 @@ export function CustomersPage(): React.JSX.Element {
               <div className="flex flex-wrap items-center gap-3 border-b px-6 py-4">
                 <History className="size-5 text-muted-foreground" />
                 <h3 className="text-lg font-semibold">Purchase History</h3>
-                {history && history.length > 0 && (
-                  <span className="ml-auto text-base text-muted-foreground tabular-nums">
-                    {history.length} visits · Total:{' '}
-                    <span className="font-semibold text-foreground">
-                      {formatCurrency(historyTotal)}
-                    </span>
+                {/* The lifetime figures are the tiles above; this list is capped at
+                    the latest ten, so it used to report "10 visits" for a customer
+                    with fifty, and sum only those ten as their total. */}
+                {history && history.length > 0 && (selected.visits ?? 0) > history.length && (
+                  <span className="ml-auto text-sm text-muted-foreground tabular-nums">
+                    Latest {history.length} of {selected.visits}
                   </span>
                 )}
               </div>
@@ -436,15 +474,27 @@ export function CustomersPage(): React.JSX.Element {
                           <div className="min-w-0">
                             <p className="font-medium">{sale.receiptNumber}</p>
                             <p className="flex items-center gap-2 text-sm text-muted-foreground">
-                              {new Date(sale.createdAt).toLocaleDateString()}
+                              {formatDate(sale.createdAt)}
                               <Badge variant="secondary" className="h-6 px-2.5 text-sm capitalize">
                                 {sale.paymentMethod}
                               </Badge>
+                              {sale.refunded > 0 && (
+                                <Badge variant="outline" className="h-6 px-2.5 text-sm">
+                                  {sale.status === 'refunded' ? 'Refunded' : 'Part refunded'}
+                                </Badge>
+                              )}
                             </p>
                           </div>
-                          <p className="text-lg font-semibold tabular-nums">
-                            {formatCurrency(sale.total)}
-                          </p>
+                          <div className="text-right">
+                            <p className="text-lg font-semibold tabular-nums">
+                              {formatCurrency(sale.total - sale.refunded)}
+                            </p>
+                            {sale.refunded > 0 && (
+                              <p className="text-sm text-muted-foreground tabular-nums line-through">
+                                {formatCurrency(sale.total)}
+                              </p>
+                            )}
+                          </div>
                         </div>
                         <ul className="mt-2 flex flex-col gap-1 border-l-2 border-border pl-3">
                           {sale.items.map((item, i) => (
@@ -602,6 +652,15 @@ function DetailItem({
           {value || '—'}
         </dd>
       </div>
+    </div>
+  )
+}
+
+function StatTile({ label, value }: { label: string; value: string }): React.JSX.Element {
+  return (
+    <div className="rounded-xl bg-muted px-4 py-3">
+      <dt className="text-sm text-muted-foreground">{label}</dt>
+      <dd className="text-xl font-semibold tabular-nums">{value}</dd>
     </div>
   )
 }

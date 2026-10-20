@@ -98,6 +98,61 @@ test.describe('cash sale, end to end', () => {
     expect(ctx.errors).toEqual([])
   })
 
+  test('a phone number at checkout saves the customer, and says so first', async () => {
+    await completeSetup(ctx.page)
+    await login(ctx.page)
+    const product = seedProduct(ctx.dbPath, { unitPrice: 25, quantity: 100 })
+    await startShift(ctx.page, '0')
+
+    const ringUp = async (): Promise<void> => {
+      const barcode = ctx.page.getByPlaceholder(/Scan a barcode/i)
+      await barcode.fill(product.barcode)
+      await barcode.press('Enter')
+      await expect(ctx.page.getByText(product.name).first()).toBeVisible({ timeout: 15_000 })
+      await ctx.page.getByRole('button', { name: /^Pay /i }).click()
+    }
+    const complete = async (sales: number): Promise<void> => {
+      await ctx.page.locator('#cash-received').fill('100')
+      await ctx.page.getByRole('button', { name: /^Complete Sale$/ }).click()
+      await expect
+        .poll(() => query(ctx.dbPath, "SELECT id FROM sales WHERE status='completed'").length, {
+          timeout: 20_000
+        })
+        .toBe(sales)
+      // Back to the till for the next customer.
+      await ctx.page.keyboard.press('Escape')
+    }
+
+    await ringUp()
+    await ctx.page.locator('#customer-phone').fill('077 123 4567')
+    await ctx.page.locator('#customer-name').fill('Nimal Perera')
+    // The cashier is told before committing that this creates a record.
+    await expect(ctx.page.getByText('New customer — will be saved')).toBeVisible()
+    await complete(1)
+
+    const customers = query<{ id: string; name: string; phone: string }>(
+      ctx.dbPath,
+      'SELECT id, name, phone FROM customers'
+    )
+    expect(customers).toEqual([
+      expect.objectContaining({ name: 'Nimal Perera', phone: '0771234567' })
+    ])
+    const [sale] = query<{ customer_id: string }>(ctx.dbPath, 'SELECT customer_id FROM sales')
+    expect(sale.customer_id).toBe(customers[0].id)
+
+    // Next visit: recognised, and the name filled in from the record.
+    await ringUp()
+    await ctx.page.locator('#customer-phone').fill('0771234567')
+    await expect(ctx.page.getByText(/Returning customer/)).toBeVisible()
+    await expect(ctx.page.locator('#customer-name')).toHaveValue('Nimal Perera')
+    await complete(2)
+    expect(
+      query(ctx.dbPath, 'SELECT id FROM sales WHERE customer_id = ?', customers[0].id)
+    ).toHaveLength(2)
+
+    expect(ctx.errors).toEqual([])
+  })
+
   test('a sale cannot be booked without an open shift', async () => {
     await completeSetup(ctx.page)
     await login(ctx.page)
