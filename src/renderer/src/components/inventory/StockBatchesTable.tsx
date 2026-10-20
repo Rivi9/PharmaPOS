@@ -59,7 +59,17 @@ export function StockBatchesTable({
       columnHelper.accessor('quantity', {
         header: 'Quantity',
         meta: { className: 'text-right tabular-nums font-medium' },
-        cell: (info) => info.getValue()
+        cell: (info) =>
+          info.getValue() > 0 ? (
+            info.getValue()
+          ) : (
+            // Only listed with "Show sold out" on. Kept for its cost and its
+            // history (the recall trail), so it must not read as live stock.
+            <span className="inline-flex items-center gap-2">
+              <Badge variant="secondary">Sold out</Badge>
+              <span className="text-muted-foreground">0</span>
+            </span>
+          )
       }),
       columnHelper.accessor('cost_price', {
         header: 'Cost Price',

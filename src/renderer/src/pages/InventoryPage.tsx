@@ -138,6 +138,9 @@ export function InventoryPage(): React.JSX.Element {
   // confirmation promises they can be restored "from the Discontinued filter",
   // and this is that filter (it went missing when the search moved into SQL).
   const [showDiscontinued, setShowDiscontinued] = useState(false)
+  // Batches sold down to zero are hidden by default but never unreachable: they
+  // still carry what the stock cost, and their history is the recall trail.
+  const [showSoldOut, setShowSoldOut] = useState(false)
 
   // Server-side paging for the two tables that can hold thousands of rows.
   const [productPage, setProductPage] = useState(0)
@@ -176,7 +179,7 @@ export function InventoryPage(): React.JSX.Element {
   }, [productSearch, showDiscontinued])
   useEffect(() => {
     setBatchPage(0)
-  }, [batchSearch])
+  }, [batchSearch, showSoldOut])
 
   useEffect(() => {
     const timer = setTimeout(loadProducts, productSearch ? 250 : 0)
@@ -188,7 +191,7 @@ export function InventoryPage(): React.JSX.Element {
     const timer = setTimeout(loadStockBatches, batchSearch ? 250 : 0)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batchSearch, batchPage])
+  }, [batchSearch, batchPage, showSoldOut])
 
   const loadAllData = async (): Promise<void> => {
     await Promise.all([
@@ -263,7 +266,8 @@ export function InventoryPage(): React.JSX.Element {
       const result = await window.electron.listStockBatchesPage(userId, {
         search: batchSearch || undefined,
         limit: PAGE_SIZE,
-        offset: batchPage * PAGE_SIZE
+        offset: batchPage * PAGE_SIZE,
+        includeSoldOut: showSoldOut || undefined
       })
       if (result.success) {
         setStockBatches(result.data.rows)
@@ -743,15 +747,24 @@ export function InventoryPage(): React.JSX.Element {
                     : `Showing ${batchPage * PAGE_SIZE + 1}–${Math.min((batchPage + 1) * PAGE_SIZE, batchTotal)} of ${batchTotal}${batchSearch ? ' matching' : ''} batches`}
               </div>
             </div>
-            <Button
-              onClick={() => {
-                setSelectedBatch(null)
-                setBatchDialogOpen(true)
-              }}
-            >
-              <Plus className="size-5" />
-              Receive Stock
-            </Button>
+            <div className="flex items-center gap-2">
+              <Label
+                htmlFor="show-sold-out"
+                className="h-12 cursor-pointer gap-3 rounded-lg px-3 text-base font-normal"
+              >
+                <Switch id="show-sold-out" checked={showSoldOut} onCheckedChange={setShowSoldOut} />
+                Show sold out
+              </Label>
+              <Button
+                onClick={() => {
+                  setSelectedBatch(null)
+                  setBatchDialogOpen(true)
+                }}
+              >
+                <Plus className="size-5" />
+                Receive Stock
+              </Button>
+            </div>
           </div>
           <TablePanel
             footer={<ServerPager page={batchPage} total={batchTotal} onPage={setBatchPage} />}
