@@ -53,6 +53,23 @@ async function switchToCashier(page: Page): Promise<string> {
   return id
 }
 
+/** A customer (created as the signed-in admin) with one completed sale on `shiftId`. */
+async function customerWithSale(saleId: string, shiftId: string): Promise<string> {
+  const customer = (await ipc(
+    ctx.page,
+    `window.electron.customers.create('', ${JSON.stringify({ name: 'Nimal Perera', phone: '0771234567' })})`
+  )) as { id: string }
+  expect(customer.id).toBeTruthy()
+  seedSaleForCustomer(ctx.dbPath, {
+    saleId,
+    shiftId,
+    customerId: customer.id,
+    customerName: 'Nimal Perera',
+    customerPhone: '+94771234567'
+  })
+  return customer.id
+}
+
 test.beforeEach(async () => {
   ctx = await launchApp()
 })
@@ -220,13 +237,7 @@ test.describe('cash in / out', () => {
 test.describe('previously ungated channels', () => {
   test('refuse a renderer with nobody signed in', async () => {
     const { shiftId } = await adminWithOpenShift()
-    seedSaleForCustomer(ctx.dbPath, {
-      saleId: 'gated-sale',
-      shiftId,
-      customerId: 'no-such-customer',
-      customerName: 'Nimal Perera',
-      customerPhone: '+94771234567'
-    })
+    const customerId = await customerWithSale('gated-sale', shiftId)
     await ipc(ctx.page, `window.electron.logout()`)
 
     const calls: Record<string, string> = {
@@ -235,7 +246,7 @@ test.describe('previously ungated channels', () => {
       printerInit: `window.electron.printer.initialize({ type: 'epson', interface: 'network', ip: '10.6.6.6', port: 9100 })`,
       printReceipt: `window.electron.printer.printReceipt({})`,
       receipt: `window.electron.getReceipt('gated-sale')`,
-      history: `window.electron.customers.purchaseHistory('no-such-customer')`,
+      history: `window.electron.customers.purchaseHistory(${JSON.stringify(customerId)})`,
       customerList: `window.electron.customers.list()`,
       customerByPhone: `window.electron.customers.getByPhone('0771234567')`,
       todayTotal: `window.electron.getTodaySalesTotal(${JSON.stringify(shiftId)})`,
@@ -257,13 +268,7 @@ test.describe('previously ungated channels', () => {
 
   test('a cashier can use the till-side ones but not configure the printer or pole', async () => {
     const { shiftId } = await adminWithOpenShift()
-    seedSaleForCustomer(ctx.dbPath, {
-      saleId: 'cashier-sale',
-      shiftId,
-      customerId: 'no-such-customer',
-      customerName: 'Nimal Perera',
-      customerPhone: '+94771234567'
-    })
+    const customerId = await customerWithSale('cashier-sale', shiftId)
     await switchToCashier(ctx.page)
 
     // Till-side: allowed (a missing printer is a printer error, not a refusal).
@@ -273,7 +278,7 @@ test.describe('previously ungated channels', () => {
     expect(receipt.sale.id).toBe('cashier-sale')
     const history = (await ipc(
       ctx.page,
-      `window.electron.customers.purchaseHistory('no-such-customer')`
+      `window.electron.customers.purchaseHistory(${JSON.stringify(customerId)})`
     )) as { id: string }[]
     expect(history.map((h) => h.id)).toEqual(['cashier-sale'])
     const drawer = await ipc(ctx.page, `window.electron.printer.openDrawer()`)
