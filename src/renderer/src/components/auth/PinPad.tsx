@@ -5,9 +5,15 @@ import { Delete, CornerDownLeft } from 'lucide-react'
 interface PinPadProps {
   onSubmit: (pin: string) => void
   maxLength?: number
+  /** Ignore taps and keys, e.g. while the account is locked out. */
+  disabled?: boolean
 }
 
-export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Element {
+export function PinPad({
+  onSubmit,
+  maxLength = 4,
+  disabled = false
+}: PinPadProps): React.JSX.Element {
   const [pin, setPin] = useState('')
 
   // Refs mirror the latest values so the keydown listener can be registered once.
@@ -16,12 +22,16 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
   const pinRef = useRef(pin)
   const maxLengthRef = useRef(maxLength)
   const onSubmitRef = useRef(onSubmit)
+  const disabledRef = useRef(disabled)
   useEffect(() => {
     maxLengthRef.current = maxLength
   }, [maxLength])
   useEffect(() => {
     onSubmitRef.current = onSubmit
   }, [onSubmit])
+  useEffect(() => {
+    disabledRef.current = disabled
+  }, [disabled])
 
   /** Update the ref synchronously (before re-render) and the state together. */
   const applyPin = useCallback((next: string): void => {
@@ -31,6 +41,7 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
 
   const handleNumber = useCallback(
     (num: string): void => {
+      if (disabledRef.current) return
       if (pinRef.current.length < maxLengthRef.current) applyPin(pinRef.current + num)
     },
     [applyPin]
@@ -46,7 +57,7 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
 
   const handleSubmit = useCallback((): void => {
     const current = pinRef.current
-    if (current.length === 0) return
+    if (current.length === 0 || disabledRef.current) return
     applyPin('')
     onSubmitRef.current(current)
   }, [applyPin])
@@ -114,6 +125,7 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
             key={num}
             variant="outline"
             className={keyClass}
+            disabled={disabled}
             onClick={() => handleNumber(num)}
           >
             {num}
@@ -122,17 +134,24 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
         <Button
           variant="ghost"
           className={`${keyClass} text-lg text-muted-foreground`}
+          disabled={disabled}
           onClick={handleClear}
           aria-label="Clear"
         >
           C
         </Button>
-        <Button variant="outline" className={keyClass} onClick={() => handleNumber('0')}>
+        <Button
+          variant="outline"
+          className={keyClass}
+          disabled={disabled}
+          onClick={() => handleNumber('0')}
+        >
           0
         </Button>
         <Button
           variant="ghost"
           className={`${keyClass} text-muted-foreground`}
+          disabled={disabled}
           onClick={handleDelete}
           aria-label="Delete last digit"
         >
@@ -141,7 +160,12 @@ export function PinPad({ onSubmit, maxLength = 4 }: PinPadProps): React.JSX.Elem
       </div>
 
       {/* Submit */}
-      <Button className="w-full" size="xl" onClick={handleSubmit} disabled={pin.length === 0}>
+      <Button
+        className="w-full"
+        size="xl"
+        onClick={handleSubmit}
+        disabled={disabled || pin.length === 0}
+      >
         <CornerDownLeft />
         Login
       </Button>

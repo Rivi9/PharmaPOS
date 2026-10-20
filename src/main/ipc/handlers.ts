@@ -79,6 +79,26 @@ export function registerIpcHandlers(): void {
     return 0
   }
 
+  /**
+   * The answer to a login attempt against a locked account. `lockedUntil` (ISO)
+   * is what the login screen counts down from: the message alone was built once
+   * from the remaining seconds, so "Try again in 27 seconds" sat frozen on the
+   * screen until the next tap. `error` stays for any caller that only shows text.
+   */
+  const lockedOut = (
+    lockedUntil: string
+  ): { success: false; error: string; lockedUntil: string } => {
+    const seconds = Math.max(1, Math.ceil((new Date(lockedUntil).getTime() - Date.now()) / 1000))
+    return {
+      success: false,
+      error:
+        seconds > 60
+          ? `Too many failed attempts. Try again in ${Math.ceil(seconds / 60)} minutes.`
+          : `Too many failed attempts. Try again in ${seconds} seconds.`,
+      lockedUntil
+    }
+  }
+
   // Login with PIN or password
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, async (event, { userId, pin, password }) => {
     const db = getDatabase()
@@ -91,14 +111,7 @@ export function registerIpcHandlers(): void {
     if (user.locked_until) {
       const until = new Date(user.locked_until).getTime()
       if (Number.isFinite(until) && until > Date.now()) {
-        const seconds = Math.ceil((until - Date.now()) / 1000)
-        return {
-          success: false,
-          error:
-            seconds > 60
-              ? `Too many failed attempts. Try again in ${Math.ceil(seconds / 60)} minutes.`
-              : `Too many failed attempts. Try again in ${seconds} seconds.`
-        }
+        return lockedOut(user.locked_until)
       }
     }
 
@@ -108,7 +121,8 @@ export function registerIpcHandlers(): void {
       )
     }
 
-    const onFailure = (method: 'pin' | 'password'): void => {
+    /** Records the failure; returns the new lock expiry when this attempt set one. */
+    const onFailure = (method: 'pin' | 'password'): string | null => {
       const attempts = (user.failed_attempts ?? 0) + 1
       const lockMs = lockoutFor(attempts)
       const lockedUntil = lockMs > 0 ? new Date(Date.now() + lockMs).toISOString() : null
@@ -125,6 +139,7 @@ export function registerIpcHandlers(): void {
         entityId: user.id,
         details: { method, attempts, locked_until: lockedUntil }
       })
+      return lockedUntil
     }
 
     // PIN is always bcrypt-compared. The old fallback branch did a plain `===`
@@ -189,7 +204,11 @@ export function registerIpcHandlers(): void {
       }
     }
 
-    onFailure(pin ? 'pin' : 'password')
+    // The attempt that trips the lock says so straight away. Answering it with
+    // a plain "Invalid credentials" left the cashier keying a fourth PIN only
+    // to learn then that the account had been locked all along.
+    const lockedUntil = onFailure(pin ? 'pin' : 'password')
+    if (lockedUntil) return lockedOut(lockedUntil)
     const remaining = Math.max(0, 3 - ((user.failed_attempts ?? 0) + 1))
     return {
       success: false,
