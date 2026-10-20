@@ -27,7 +27,11 @@ import autoTable, { type CellHookData } from 'jspdf-autotable'
 interface SalesReportData {
   start_date: string
   end_date: string
+  /** Net: excluding VAT, after discounts and refunds. */
   total_sales: number
+  total_gross_sales: number
+  total_vat: number
+  total_refunded: number
   total_profit: number
   total_cost: number
   total_transactions: number
@@ -169,12 +173,13 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
   // KPI row
   const kpiW = (W - 28 - 10) / 6
   const kpis: [string, string][] = [
-    ['Total Sales', fmt(data.total_sales, sym)],
+    // Net of VAT, discounts and refunds — the dashboard's and the P&L's basis.
+    ['Net Sales (ex VAT)', fmt(data.total_sales, sym)],
     ['Total Profit', fmt(data.total_profit, sym)],
     ['Total Cost', fmt(data.total_cost, sym)],
     ['Transactions', String(data.total_transactions)],
     ['Items Sold', String(data.total_items_sold)],
-    ['Avg. Sale', fmt(data.avg_transaction, sym)]
+    ['Avg. Sale (net)', fmt(data.avg_transaction, sym)]
   ]
   kpis.forEach(([label, value], i) => drawKpi(doc, label, value, 14 + i * (kpiW + 2), y, kpiW))
   y += 30
@@ -183,7 +188,7 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
   y = sectionTitle(doc, 'Daily Sales Breakdown', y)
   autoTable(doc, {
     startY: y,
-    head: [['Date', 'Sales', 'Profit', 'Transactions']],
+    head: [['Date', 'Net Sales', 'Profit', 'Transactions']],
     body: data.daily_breakdown.map((r) => [
       r.date,
       fmt(r.sales, sym),
@@ -213,10 +218,10 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
     doc.addPage()
     y = 20
   }
-  y = sectionTitle(doc, 'Top 10 Products by Revenue', y)
+  y = sectionTitle(doc, 'Top 10 Products by Net Revenue', y)
   autoTable(doc, {
     startY: y,
-    head: [['Product', 'Qty Sold', 'Revenue', 'Profit']],
+    head: [['Product', 'Qty Sold', 'Net Revenue', 'Profit']],
     body: data.top_products.map((r) => [
       r.product_name,
       String(r.quantity),
@@ -249,7 +254,7 @@ function buildSalesPdf(data: SalesReportData, businessName: string, sym: string)
   y = sectionTitle(doc, 'Payment Methods', y)
   autoTable(doc, {
     startY: y,
-    head: [['Method', 'Count', 'Amount']],
+    head: [['Method', 'Count', 'Amount (incl. VAT)']],
     body: data.payment_methods.map((r) => [
       r.method.replace('_', ' ').toUpperCase(),
       String(r.count),
@@ -401,7 +406,7 @@ function buildProfitLossPdf(data: ProfitLossData, businessName: string, sym: str
 
   // KPI row
   const kpiW = (W - 28 - 10) / 4
-  drawKpi(doc, 'Total Revenue', fmt(data.total_revenue, sym), 14, y, kpiW)
+  drawKpi(doc, 'Net Revenue (ex VAT)', fmt(data.total_revenue, sym), 14, y, kpiW)
   drawKpi(doc, 'Total Cost', fmt(data.total_cost, sym), 14 + (kpiW + 3.33), y, kpiW)
   drawKpi(doc, 'Gross Profit', fmt(data.gross_profit, sym), 14 + (kpiW + 3.33) * 2, y, kpiW)
   drawKpi(doc, 'Gross Margin', pct(data.gross_margin_percent), 14 + (kpiW + 3.33) * 3, y, kpiW)
@@ -421,7 +426,7 @@ function buildProfitLossPdf(data: ProfitLossData, businessName: string, sym: str
   y = sectionTitle(doc, 'Profit by Category', y)
   autoTable(doc, {
     startY: y,
-    head: [['Category', 'Revenue', 'Cost', 'Gross Profit', 'Margin %']],
+    head: [['Category', 'Net Revenue', 'Cost', 'Gross Profit', 'Margin %']],
     body: data.by_category.map((r) => [
       r.category_name,
       fmt(r.revenue, sym),
@@ -457,7 +462,7 @@ function buildProfitLossPdf(data: ProfitLossData, businessName: string, sym: str
     y = sectionTitle(doc, 'Monthly Trend', y)
     autoTable(doc, {
       startY: y,
-      head: [['Month', 'Revenue', 'Cost', 'Gross Profit']],
+      head: [['Month', 'Net Revenue', 'Cost', 'Gross Profit']],
       body: data.by_month.map((r) => [
         r.month,
         fmt(r.revenue, sym),
