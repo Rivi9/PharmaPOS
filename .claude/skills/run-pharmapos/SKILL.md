@@ -110,6 +110,7 @@ SHOT_DIR=/tmp/shots node .claude/skills/run-pharmapos/driver.mjs boot ss:home qu
 | `sql:<query>` | read-only SQL against this run's database |
 | `errors` | page errors collected since launch |
 | `windows` | list windows |
+| `downloads[:dir]` | save downloads (report PDFs, CSV exports) into `dir` (default the shot dir) instead of opening the Save dialog |
 | `quit` | release the close guard, close, delete the profile |
 
 Arguments are `:`-separated in batch mode and space-separated in the REPL.

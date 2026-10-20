@@ -450,6 +450,25 @@ const COMMANDS = {
     for (const w of app.windows()) log(' ', w.url())
   },
 
+  /**
+   * Save every download (the Reports tab's PDFs, CSV exports) into `dir`,
+   * default SHOT_DIR, instead of Electron's Save dialog — which nothing can
+   * click from here. Run it after `launch`/`boot`, before the download.
+   */
+  async downloads(dir = SHOT_DIR) {
+    const target = path.resolve(dir)
+    fs.mkdirSync(target, { recursive: true })
+    await app.evaluate(
+      ({ session }, { target, sep }) => {
+        session.defaultSession.on('will-download', (_e, item) => {
+          item.setSavePath(target + sep + item.getFilename())
+        })
+      },
+      { target, sep: path.sep }
+    )
+    log('downloads go to', target)
+  },
+
   async quit() {
     if (!app) return
     // app.close() alone HANGS: the End-Shift close guard answers any quit
