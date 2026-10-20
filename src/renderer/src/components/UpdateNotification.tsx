@@ -6,6 +6,8 @@ import { Alert, AlertDescription, AlertTitle } from './ui/alert'
 import { Download, RefreshCw, AlertTriangle, RotateCw } from 'lucide-react'
 import { ConfirmDialog } from '@renderer/components/ui/confirm-dialog'
 import { useConfirm } from '@renderer/hooks/useConfirm'
+import { usePermission } from '@renderer/hooks/usePermission'
+import { ipcErrorMessage } from '@renderer/lib/ipc-error'
 
 interface UpdateInfo {
   version: string
@@ -27,6 +29,8 @@ export function UpdateNotification(): React.JSX.Element | null {
   const [updateDownloaded, setUpdateDownloaded] = useState(false)
   const [updateError, setUpdateError] = useState('')
   const { confirm, confirmProps } = useConfirm()
+  // The main process refuses the install for anyone else (it closes the till).
+  const canInstall = usePermission('settings:update')
 
   useEffect(() => {
     // Listen for update events
@@ -83,7 +87,12 @@ export function UpdateNotification(): React.JSX.Element | null {
         'The till closes immediately. Finish or cancel the sale on screen first — anything in the cart is lost, and an open shift stays open until you close it after the restart.',
       confirmLabel: 'Restart and install'
     })
-    if (ok) window.electron.updates.install()
+    if (!ok) return
+    try {
+      await window.electron.updates.install()
+    } catch (error) {
+      setUpdateError(ipcErrorMessage(error, 'The update could not be installed.'))
+    }
   }
 
   if (!updateAvailable && !updateError) {
@@ -159,10 +168,16 @@ export function UpdateNotification(): React.JSX.Element | null {
               <p className="text-base text-muted-foreground">
                 Update downloaded and ready to install
               </p>
-              <Button size="lg" onClick={handleInstall} className="w-full">
-                <RotateCw />
-                Install & Restart
-              </Button>
+              {canInstall ? (
+                <Button size="lg" onClick={handleInstall} className="w-full">
+                  <RotateCw />
+                  Install & Restart
+                </Button>
+              ) : (
+                <p className="text-base text-muted-foreground">
+                  An administrator needs to sign in to install it.
+                </p>
+              )}
             </div>
           )}
         </CardContent>

@@ -8,8 +8,6 @@ import {
   createUser,
   updateUser,
   changeUserPassword,
-  verifyUserPassword,
-  verifyPinCode,
   deactivateUser,
   reactivateUser,
   getUserStats
@@ -22,8 +20,19 @@ import {
 } from '../services/users/permissions'
 import type { User } from '../db/schema'
 
+interface UserDto {
+  id: string
+  username: string
+  full_name: string
+  role: User['role']
+  pin_set: boolean
+  is_active: User['isActive']
+  created_at: string
+  updated_at: string
+}
+
 /** Map Drizzle camelCase User to the snake_case shape the renderer expects. */
-function mapUser(u: User) {
+function mapUser(u: User): UserDto {
   return {
     id: u.id,
     username: u.username,
@@ -46,15 +55,12 @@ export function registerUserHandlers(): void {
     return withPermission(_event, 'users:view', () => listUsers().map(mapUser))
   })
 
-  ipcMain.handle(
-    IPC_CHANNELS.USER_GET,
-    async (_event, { id }: { id: string }) => {
-      return withPermission(_event, 'users:view', () => {
-        const u = getUserById(id)
-        return u ? mapUser(u) : null
-      })
-    }
-  )
+  ipcMain.handle(IPC_CHANNELS.USER_GET, async (_event, { id }: { id: string }) => {
+    return withPermission(_event, 'users:view', () => {
+      const u = getUserById(id)
+      return u ? mapUser(u) : null
+    })
+  })
 
   ipcMain.handle(IPC_CHANNELS.USER_CREATE, async (_event, { ...data }) => {
     return withPermission(_event, 'users:create', async () => {
@@ -124,20 +130,14 @@ export function registerUserHandlers(): void {
     })
   })
 
-  // Login flow — no permission check required
+  // `user:verify-password` and `user:verify-pin` used to live here: unused by
+  // the app, needing no login, and with none of AUTH_LOGIN's lockout or audit. A
+  // signed-in cashier could walk all 10,000 PINs through verify-pin and get back
+  // whichever account matched — the admin's included — with no trace. Sign-in
+  // goes through AUTH_LOGIN only.
 
-  ipcMain.handle(IPC_CHANNELS.USER_VERIFY_PASSWORD, async (_event, { username, password }) => {
-    const u = await verifyUserPassword(username, password)
-    return u ? mapUser(u) : null
-  })
-
-  ipcMain.handle(IPC_CHANNELS.USER_VERIFY_PIN, async (_event, pin: string) => {
-    const u = await verifyPinCode(pin)
-    return u ? mapUser(u) : null
-  })
-
-  ipcMain.handle(IPC_CHANNELS.USER_STATS, () => {
-    return getUserStats()
+  ipcMain.handle(IPC_CHANNELS.USER_STATS, (event) => {
+    return withPermission(event, 'users:view', () => getUserStats())
   })
 
   // Permissions — no permission check required

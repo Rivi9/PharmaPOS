@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { IPC_CHANNELS } from './channels'
 import { withPermission, actingUserId } from './middleware'
 import {
@@ -20,6 +20,8 @@ import {
 import { getCustomerPurchaseHistory } from '../services/customers'
 import { getActiveShiftForUser } from '../services/shifts'
 import { logAudit } from '../services/audit'
+import { getDatabase } from '../services/database'
+import { getUserById } from '../services/users/user-management'
 
 export function registerPOSHandlers(): void {
   // Product handlers
@@ -61,12 +63,14 @@ export function registerPOSHandlers(): void {
     })
   })
 
-  ipcMain.handle(IPC_CHANNELS.SALE_GET_RECEIPT, async (_event, saleId: string) => {
-    return getReceipt(saleId)
+  // A receipt carries the customer's name and phone and what they were
+  // dispensed. It was readable by any renderer, signed in or not.
+  ipcMain.handle(IPC_CHANNELS.SALE_GET_RECEIPT, async (event, saleId: string) => {
+    return withPermission(event, 'sales:create', () => getReceipt(saleId))
   })
 
-  ipcMain.handle(IPC_CHANNELS.SALE_GET_TODAY_TOTAL, async (_event, shiftId: string) => {
-    return getTodaySalesTotal(shiftId)
+  ipcMain.handle(IPC_CHANNELS.SALE_GET_TODAY_TOTAL, async (event, shiftId: string) => {
+    return withPermission(event, 'sales:create', () => getTodaySalesTotal(shiftId))
   })
 
   // Stock handlers
@@ -74,14 +78,9 @@ export function registerPOSHandlers(): void {
     return checkStockAvailability(productId)
   })
 
-  ipcMain.handle(
-    IPC_CHANNELS.STOCK_DEDUCT,
-    async (_event, _data: { productId: string; quantity: number }) => {
-      // Note: Stock deduction is handled by createSale with FEFO logic
-      // This handler is for manual stock checks if needed
-      throw new Error('Stock deduction should be done via createSale')
-    }
-  )
+  // (`stock:deduct` was a stub that only threw — stock leaves through createSale's
+  // FEFO deduction and nowhere else — so the channel was removed rather than kept
+  // as an attractive place to bolt on an unaudited stock path.)
 
   // Void sale — requires sales:void permission
   ipcMain.handle(IPC_CHANNELS.SALE_VOID, async (_event, { saleId, reason }) => {
@@ -107,57 +106,91 @@ export function registerPOSHandlers(): void {
         entityId: saleId,
         details: {
           refund_id: result.refund_id,
-          total_refunded: items.reduce((s: number, i: any) => s + i.line_total, 0)
+          total_refunded: (items as Array<{ line_total: number }>).reduce(
+            (s, i) => s + i.line_total,
+            0
+          )
         }
       })
       return result
     })
   })
 
-  // Customer purchase history — no permission gate (cashier needs this)
-  ipcMain.handle(IPC_CHANNELS.CUSTOMER_PURCHASE_HISTORY, async (_event, customerId: string) => {
-    return getCustomerPurchaseHistory(customerId)
+  // Customer purchase history. Cashiers need it at checkout, so the gate is
+  // being signed in to sell — but it is a customer's dispensing record, and it
+  // used to answer anyone, signed in or not.
+  ipcMain.handle(IPC_CHANNELS.CUSTOMER_PURCHASE_HISTORY, async (event, customerId: string) => {
+    return withPermission(event, 'sales:create', () => getCustomerPurchaseHistory(customerId))
   })
 
-  // Shift expected cash — no permission gate
+  // Shift expected cash. The opening float is the one recorded on the shift,
+  // not a figure the renderer sends up.
   ipcMain.handle(
     IPC_CHANNELS.SHIFT_COMPUTE_EXPECTED_CASH,
-    async (_event, { shiftId, openingCash }: { shiftId: string; openingCash: number }) => {
-      return computeShiftExpectedCash(shiftId, openingCash)
+    async (event, { shiftId }: { shiftId: string; openingCash?: number }) => {
+      return withPermission(event, 'shifts:manage', () => {
+        const shift = shiftVisibleTo(event, shiftId)
+        return computeShiftExpectedCash(shift.id, shift.opening_cash ?? 0)
+      })
     }
   )
 
-  // Mid-shift cash in / out
+  // Mid-shift cash in / out.
+  // This took `userId` and `shiftId` from the payload and needed no login, so
+  // any renderer could post a cash movement against any open shift in anyone's
+  // name — moving the expected drawer figure and the blame with it. Both now come
+  // from the session: the movement is always the signed-in user's, on their own
+  // open shift. Any ids in the payload are ignored.
   ipcMain.handle(
     IPC_CHANNELS.SHIFT_CASH_MOVEMENT,
-    async (
-      _event,
-      params: {
-        userId: string
-        shiftId: string
-        type: 'in' | 'out'
-        amount: number
-        reason: string
-      }
-    ) => {
+    async (event, params: { type: 'in' | 'out'; amount: number; reason: string }) => {
       try {
-        return {
-          success: true,
-          ...recordCashMovement({
-            shiftId: params.shiftId,
-            userId: params.userId,
-            type: params.type,
-            amount: params.amount,
-            reason: params.reason
-          })
-        }
+        return await withPermission(event, 'shifts:manage', () => {
+          const userId = actingUserId(event)
+          const shift = getActiveShiftForUser(userId)
+          if (!shift) throw new Error('Start a shift before recording cash in or out')
+          if (params?.type !== 'in' && params?.type !== 'out') {
+            throw new Error('Choose cash in or cash out')
+          }
+          return {
+            success: true,
+            ...recordCashMovement({
+              shiftId: shift.id,
+              userId,
+              type: params.type,
+              amount: Number(params.amount),
+              reason: String(params.reason ?? '')
+            })
+          }
+        })
       } catch (error) {
         return { success: false, error: (error as Error).message }
       }
     }
   )
 
-  ipcMain.handle(IPC_CHANNELS.SHIFT_CASH_MOVEMENTS, async (_event, shiftId: string) => {
-    return getShiftCashMovements(shiftId)
+  ipcMain.handle(IPC_CHANNELS.SHIFT_CASH_MOVEMENTS, async (event, shiftId: string) => {
+    return withPermission(event, 'shifts:manage', () =>
+      getShiftCashMovements(shiftVisibleTo(event, shiftId).id)
+    )
   })
+}
+
+/**
+ * The shift, if the caller may see its cash figures: their own, or any shift for
+ * a manager or admin (who may also close someone else's — see SHIFT_END).
+ */
+function shiftVisibleTo(
+  event: IpcMainInvokeEvent,
+  shiftId: string
+): { id: string; user_id: string; opening_cash: number } {
+  const shift = getDatabase()
+    .prepare('SELECT id, user_id, opening_cash FROM shifts WHERE id = ?')
+    .get(shiftId) as { id: string; user_id: string; opening_cash: number } | undefined
+  if (!shift) throw new Error('That shift no longer exists')
+  const actor = getUserById(actingUserId(event))
+  if (shift.user_id !== actor?.id && (!actor || actor.role === 'cashier')) {
+    throw new Error('You can only view your own shift')
+  }
+  return shift
 }

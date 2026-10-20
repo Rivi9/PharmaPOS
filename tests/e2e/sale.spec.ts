@@ -90,7 +90,7 @@ test.describe('cash sale, end to end', () => {
 
     // C2: the drawer expects cash retained, not cash tendered.
     const expected = await ctx.page.evaluate(
-      (shiftId) => window.electron.shifts.computeExpectedCash(shiftId, 5000),
+      (shiftId) => window.electron.shifts.computeExpectedCash(shiftId),
       sale.shift_id
     )
     expect(expected).toBe(5025)

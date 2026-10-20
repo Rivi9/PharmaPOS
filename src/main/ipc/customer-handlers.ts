@@ -14,8 +14,18 @@ import {
 } from '../services/customers'
 import type { Customer } from '../db/schema'
 
+interface CustomerDto {
+  id: string
+  name: string
+  phone: string | null
+  email: string | null
+  address: string | null
+  notes: string | null
+  created_at: string
+}
+
 /** Map Drizzle camelCase Customer to the snake_case shape the renderer expects. */
-function mapCustomer(c: Customer) {
+function mapCustomer(c: Customer): CustomerDto {
   return {
     id: c.id,
     name: c.name,
@@ -28,19 +38,25 @@ function mapCustomer(c: Customer) {
 }
 
 export function registerCustomerHandlers(): void {
-  // Read-only handlers — no permission gate (cashiers need these during checkout)
-  ipcMain.handle(IPC_CHANNELS.CUSTOMER_LIST, (_event, search?: string) => {
-    return listCustomers(search).map(mapCustomer)
+  // Read-only handlers. Cashiers need these during checkout, so the gate is
+  // being signed in to sell — but they return names, phone numbers and
+  // addresses, and used to answer any renderer with no session at all.
+  ipcMain.handle(IPC_CHANNELS.CUSTOMER_LIST, (event, search?: string) => {
+    return withPermission(event, 'sales:create', () => listCustomers(search).map(mapCustomer))
   })
 
-  ipcMain.handle(IPC_CHANNELS.CUSTOMER_GET, (_event, id: string) => {
-    const c = getCustomer(id)
-    return c ? mapCustomer(c) : null
+  ipcMain.handle(IPC_CHANNELS.CUSTOMER_GET, (event, id: string) => {
+    return withPermission(event, 'sales:create', () => {
+      const c = getCustomer(id)
+      return c ? mapCustomer(c) : null
+    })
   })
 
-  ipcMain.handle(IPC_CHANNELS.CUSTOMER_GET_BY_PHONE, (_event, phone: string) => {
-    const c = getCustomerByPhone(phone)
-    return c ? mapCustomer(c) : null
+  ipcMain.handle(IPC_CHANNELS.CUSTOMER_GET_BY_PHONE, (event, phone: string) => {
+    return withPermission(event, 'sales:create', () => {
+      const c = getCustomerByPhone(phone)
+      return c ? mapCustomer(c) : null
+    })
   })
 
   // Mutating handlers — require userId and appropriate permission
