@@ -41,12 +41,6 @@ const productSchema = z.object({
   supplier_id: z.string().optional(),
   cost_price: z.number({ error: 'Enter the cost price' }).min(0, 'Cost price must be positive'),
   unit_price: z.number({ error: 'Enter the unit price' }).min(0, 'Unit price must be positive'),
-  tax_rate: z
-    .number({ error: 'Enter a tax rate (0 for none)' })
-    .min(0, 'Tax rate cannot be negative')
-    .max(100, 'Tax rate cannot be over 100%')
-    .optional(),
-  is_tax_inclusive: z.number().optional(),
   reorder_level: z
     .number({ error: 'Enter a reorder level' })
     .int('Whole numbers only')
@@ -73,7 +67,7 @@ interface ProductFormDialogProps {
   suppliers: Supplier[]
 }
 
-type NumberFieldName = 'cost_price' | 'unit_price' | 'tax_rate' | 'reorder_level' | 'reorder_qty'
+type NumberFieldName = 'cost_price' | 'unit_price' | 'reorder_level' | 'reorder_qty'
 
 export function ProductFormDialog({
   open,
@@ -94,8 +88,6 @@ export function ProductFormDialog({
   } = useForm<ProductFormData>({
     resolver: zodResolver(productSchema),
     defaultValues: {
-      tax_rate: 0,
-      is_tax_inclusive: 1,
       reorder_level: 10,
       reorder_qty: 50,
       unit: 'piece',
@@ -115,8 +107,6 @@ export function ProductFormDialog({
         supplier_id: product.supplier_id || '',
         cost_price: product.cost_price,
         unit_price: product.unit_price,
-        tax_rate: product.tax_rate,
-        is_tax_inclusive: product.is_tax_inclusive,
         reorder_level: product.reorder_level,
         reorder_qty: product.reorder_qty,
         unit: product.unit,
@@ -125,8 +115,6 @@ export function ProductFormDialog({
       })
     } else {
       reset({
-        tax_rate: 0,
-        is_tax_inclusive: 1,
         reorder_level: 10,
         reorder_qty: 50,
         unit: 'piece',
@@ -272,10 +260,11 @@ export function ProductFormDialog({
 
               <FieldSet>
                 <FieldLegend>Pricing</FieldLegend>
-                <div className="grid grid-cols-3 gap-5">
+                {/* No per-product tax rate: VAT is one shop-wide rate, set in
+                    Settings, and prices are entered VAT-inclusive. */}
+                <div className="grid grid-cols-2 gap-5">
                   {numberField('cost_price', <>Cost Price (Rs.) {required}</>, { decimal: true })}
                   {numberField('unit_price', <>Unit Price (Rs.) {required}</>, { decimal: true })}
-                  {numberField('tax_rate', 'Tax Rate (%)', { decimal: true })}
                 </div>
               </FieldSet>
 

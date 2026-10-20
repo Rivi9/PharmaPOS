@@ -219,7 +219,8 @@ CREATE INDEX IF NOT EXISTS idx_inventory_adj_product ON inventory_adjustments(pr
 -- Default settings seed data
 INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES
   ('business_name', 'My Pharmacy', datetime('now')),
-  ('vat_rate', '18', datetime('now')),
+  -- 0: a new pharmacy starts without VAT; it is set once, shop-wide, in Settings.
+  ('vat_rate', '0', datetime('now')),
   ('currency_symbol', 'Rs.', datetime('now')),
   ('receipt_footer', 'Thank you for your purchase!', datetime('now')),
   ('display_port', '', datetime('now')),

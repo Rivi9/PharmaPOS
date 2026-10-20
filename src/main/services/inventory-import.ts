@@ -45,6 +45,9 @@ const COLUMNS = {
   cost_price: ['cost_price', 'cost price', 'cost', 'buying price', 'purchase price'],
   unit_price: ['unit_price', 'unit price', 'selling price', 'price', 'mrp', 'retail price'],
   current_stock: ['current_stock', 'current stock', 'stock', 'quantity', 'qty', 'opening stock'],
+  // Recognised only so a sheet that has one imports cleanly: VAT is a single
+  // shop-wide rate (Settings), so a per-product rate is read from nowhere and
+  // this column is ignored — not parsed, not validated, not stored.
   tax_rate: ['tax_rate', 'tax rate', 'vat', 'vat rate'],
   reorder_level: ['reorder_level', 'reorder level', 'min stock', 'minimum stock'],
   reorder_qty: ['reorder_qty', 'reorder quantity', 'reorder qty'],
@@ -286,16 +289,6 @@ export function importProductRows(sheetRows: unknown[][]): ImportOutcome {
 
     // Present-but-unreadable is an error; absent is a default. `|| 0` and `|| 5`
     // conflated the two and silently rewrote real values.
-    let taxRate = 0
-    if (String(cell(row, 'tax_rate') ?? '').trim() !== '') {
-      const t = parseNumber(cell(row, 'tax_rate'))
-      if (!t.ok) {
-        errors.push(`Row ${rowNum} "${name}": tax rate ${t.reason}`)
-        continue
-      }
-      taxRate = t.value
-    }
-
     let reorderLevel = 10
     if (String(cell(row, 'reorder_level') ?? '').trim() !== '') {
       const r = parseNumber(cell(row, 'reorder_level'))
@@ -369,7 +362,6 @@ export function importProductRows(sheetRows: unknown[][]): ImportOutcome {
         sku: str(row, 'sku') || undefined,
         cost_price: cost.ok ? cost.value : 0,
         unit_price: price.value,
-        tax_rate: taxRate,
         reorder_level: reorderLevel,
         reorder_qty: reorderQty,
         unit: str(row, 'unit') || 'pcs',

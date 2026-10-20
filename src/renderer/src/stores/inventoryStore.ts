@@ -12,8 +12,6 @@ interface Product {
   supplier_name?: string
   cost_price: number
   unit_price: number
-  tax_rate: number
-  is_tax_inclusive: number
   reorder_level: number
   reorder_qty: number
   unit: string
