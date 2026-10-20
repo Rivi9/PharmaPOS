@@ -1,4 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
+import fs from 'fs'
+import path from 'path'
 import { launchApp, ipc, ipcError, type LaunchedApp } from './helpers/app'
 import { completeSetup, login, startShift, ADMIN } from './helpers/flows'
 import { query, seedSaleForCustomer } from './helpers/seed'
@@ -110,6 +112,27 @@ test.describe('first-run channels only work on a first run', () => {
     const early = await ipc(ctx.page, `window.electron.setup.complete()`)
     expect(ipcError(early)).toMatch(/not created an administrator/i)
     expect(await ipc(ctx.page, `window.electron.setup.isFirstRun()`)).toBe(true)
+  })
+
+  test('the login screen still recovers an install that finished setup with no accounts', async () => {
+    // The one legitimate use of auth:createUser: the wizard's flag is present but
+    // the users table is empty, so the login screen mints an admin with generated
+    // credentials and shows them once.
+    await expect(ctx.page.getByText('Welcome to PharmaPOS')).toBeVisible({ timeout: 30_000 })
+    fs.writeFileSync(path.join(ctx.userDataDir, '.setup-complete'), new Date().toISOString())
+    await ctx.page.reload()
+
+    await expect(ctx.page.getByText('First-Time Setup')).toBeVisible({ timeout: 20_000 })
+    expect(
+      query<{ username: string; role: string }>(ctx.dbPath, 'SELECT username, role FROM users')
+    ).toEqual([{ username: 'admin', role: 'admin' }])
+
+    // ...and only once.
+    const again = (await ipc(
+      ctx.page,
+      `window.electron.createUser({ username: 'second', password: 'secondpass1', fullName: 'Second', role: 'admin' })`
+    )) as { success: boolean; error?: string }
+    expect(again).toMatchObject({ success: false, error: 'Setup has already been completed' })
   })
 
   test('auth:createUser cannot mint an admin ahead of the wizard', async () => {

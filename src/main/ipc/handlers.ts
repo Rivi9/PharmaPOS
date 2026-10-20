@@ -304,8 +304,10 @@ export function registerIpcHandlers(): void {
         db.transaction(() => {
           if (countUsers() > 0) throw new Error('Setup has already been completed')
           db.prepare(
-            `INSERT INTO users (id, username, password_hash, full_name, role, pin_code)
-             VALUES (?, ?, ?, ?, 'admin', ?)`
+            // created_at/updated_at are NOT NULL with no default. They were left
+            // out, so this recovery path failed on every install that reached it.
+            `INSERT INTO users (id, username, password_hash, full_name, role, pin_code, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 'admin', ?, datetime('now'), datetime('now'))`
           ).run(id, username, passwordHash, fullName, pinHash)
         })()
 
