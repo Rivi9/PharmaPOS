@@ -122,7 +122,17 @@ const THEME_OPTIONS: Array<{ value: ThemePreference; label: string; icon: typeof
   { value: 'system', label: 'System', icon: Monitor }
 ]
 
-const TAB_CONTENT_CLASS = 'mt-0 min-h-0 overflow-y-auto overscroll-contain pb-6 pr-1'
+// `@container`: the tab layouts below respond to the width the content actually
+// gets (screen minus sidebar and tab list), not to the viewport.
+const TAB_CONTENT_CLASS = '@container mt-0 min-h-0 overflow-y-auto overscroll-contain pb-6 pr-1'
+/**
+ * Tabs with several cards. A single form column stays max-w-3xl so fields do
+ * not stretch across a 1920px screen, but on a wide (maximised) till the cards
+ * go two-up instead of leaving half the screen empty. Rows are `auto 1fr` so a
+ * card spanning both rows grows the second row, not a gap under the first.
+ */
+const CARD_GRID_CLASS =
+  'grid max-w-3xl items-start gap-6 @5xl:max-w-[100rem] @5xl:grid-cols-2 @5xl:grid-rows-[auto_1fr]'
 const TAB_TRIGGER_CLASS =
   'h-14 flex-none justify-start gap-3 px-4 [&_svg:not([class*=size-])]:size-5'
 
@@ -548,7 +558,7 @@ export function SettingsPage(): React.JSX.Element {
 
         {/* ── Business Tab ───────────────────────────────────────────── */}
         <TabsContent value="business" className={TAB_CONTENT_CLASS}>
-          <div className="flex max-w-3xl flex-col gap-6">
+          <div className="flex max-w-3xl flex-col gap-6 @5xl:max-w-[100rem]">
             <div className="flex items-center justify-between gap-4">
               <p className="text-base text-muted-foreground">
                 Changes on this page apply after you save.
@@ -559,121 +569,125 @@ export function SettingsPage(): React.JSX.Element {
               </Button>
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Business Information</CardTitle>
-                <CardDescription className="text-base">
-                  Configure your pharmacy details for receipts
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <FieldGroup className="gap-5">
-                  <Field>
-                    <FieldLabel htmlFor="business-name">Business Name</FieldLabel>
-                    <Input
-                      id="business-name"
-                      value={localSettings.business_name}
-                      onChange={(e) => handleChange('business_name', e.target.value)}
-                      placeholder="My Pharmacy"
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="business-address">Address</FieldLabel>
-                    <Input
-                      id="business-address"
-                      value={localSettings.business_address}
-                      onChange={(e) => handleChange('business_address', e.target.value)}
-                      placeholder="123 Main Street, Colombo"
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="business-phone">Phone</FieldLabel>
-                    <Input
-                      id="business-phone"
-                      value={localSettings.business_phone}
-                      onChange={(e) => handleChange('business_phone', e.target.value)}
-                      placeholder="011-2345678"
-                    />
-                  </Field>
-                </FieldGroup>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Tax &amp; Currency</CardTitle>
-                <CardDescription className="text-base">
-                  Configure tax and currency settings
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <FieldGroup className="gap-5">
-                  <div className="grid gap-5 sm:grid-cols-2">
-                    <Field data-invalid={Boolean(fieldErrors.vat_rate)}>
-                      <FieldLabel htmlFor="vat-rate">VAT Rate (%)</FieldLabel>
-                      <NumberInput
-                        id="vat-rate"
-                        decimal
-                        value={localSettings.vat_rate}
-                        onValueChange={(v) => handleChange('vat_rate', v)}
-                        placeholder="0"
-                        aria-invalid={Boolean(fieldErrors.vat_rate)}
-                      />
-                      <FieldError>{fieldErrors.vat_rate}</FieldError>
-                    </Field>
-                    <Field data-invalid={Boolean(fieldErrors.currency_symbol)}>
-                      <FieldLabel htmlFor="currency-symbol">Currency Symbol</FieldLabel>
+            <div className={CARD_GRID_CLASS}>
+              <Card className="@5xl:row-span-2">
+                <CardHeader>
+                  <CardTitle className="text-lg">Business Information</CardTitle>
+                  <CardDescription className="text-base">
+                    Configure your pharmacy details for receipts
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <FieldGroup className="gap-5">
+                    <Field>
+                      <FieldLabel htmlFor="business-name">Business Name</FieldLabel>
                       <Input
-                        id="currency-symbol"
-                        value={localSettings.currency_symbol}
-                        onChange={(e) => handleChange('currency_symbol', e.target.value)}
-                        placeholder="Rs."
-                        maxLength={5}
-                        aria-invalid={Boolean(fieldErrors.currency_symbol)}
+                        id="business-name"
+                        value={localSettings.business_name}
+                        onChange={(e) => handleChange('business_name', e.target.value)}
+                        placeholder="My Pharmacy"
                       />
-                      <FieldError>{fieldErrors.currency_symbol}</FieldError>
                     </Field>
-                  </div>
-                  <Separator />
-                  <Field orientation="horizontal">
-                    <FieldContent>
-                      <FieldLabel htmlFor="card-payment-enabled" className="text-base">
-                        Accept card payments
-                      </FieldLabel>
-                      <FieldDescription>
-                        Turn card off if this pharmacy has no card terminal — the Card button is
-                        then hidden at checkout and card sales are rejected.
-                      </FieldDescription>
-                    </FieldContent>
-                    <Switch
-                      id="card-payment-enabled"
-                      checked={localSettings.card_payment_enabled !== '0'}
-                      onCheckedChange={(on) => handleChange('card_payment_enabled', on ? '1' : '0')}
+                    <Field>
+                      <FieldLabel htmlFor="business-address">Address</FieldLabel>
+                      <Input
+                        id="business-address"
+                        value={localSettings.business_address}
+                        onChange={(e) => handleChange('business_address', e.target.value)}
+                        placeholder="123 Main Street, Colombo"
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="business-phone">Phone</FieldLabel>
+                      <Input
+                        id="business-phone"
+                        value={localSettings.business_phone}
+                        onChange={(e) => handleChange('business_phone', e.target.value)}
+                        placeholder="011-2345678"
+                      />
+                    </Field>
+                  </FieldGroup>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Tax &amp; Currency</CardTitle>
+                  <CardDescription className="text-base">
+                    Configure tax and currency settings
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <FieldGroup className="gap-5">
+                    <div className="grid gap-5 sm:grid-cols-2">
+                      <Field data-invalid={Boolean(fieldErrors.vat_rate)}>
+                        <FieldLabel htmlFor="vat-rate">VAT Rate (%)</FieldLabel>
+                        <NumberInput
+                          id="vat-rate"
+                          decimal
+                          value={localSettings.vat_rate}
+                          onValueChange={(v) => handleChange('vat_rate', v)}
+                          placeholder="0"
+                          aria-invalid={Boolean(fieldErrors.vat_rate)}
+                        />
+                        <FieldError>{fieldErrors.vat_rate}</FieldError>
+                      </Field>
+                      <Field data-invalid={Boolean(fieldErrors.currency_symbol)}>
+                        <FieldLabel htmlFor="currency-symbol">Currency Symbol</FieldLabel>
+                        <Input
+                          id="currency-symbol"
+                          value={localSettings.currency_symbol}
+                          onChange={(e) => handleChange('currency_symbol', e.target.value)}
+                          placeholder="Rs."
+                          maxLength={5}
+                          aria-invalid={Boolean(fieldErrors.currency_symbol)}
+                        />
+                        <FieldError>{fieldErrors.currency_symbol}</FieldError>
+                      </Field>
+                    </div>
+                    <Separator />
+                    <Field orientation="horizontal">
+                      <FieldContent>
+                        <FieldLabel htmlFor="card-payment-enabled" className="text-base">
+                          Accept card payments
+                        </FieldLabel>
+                        <FieldDescription>
+                          Turn card off if this pharmacy has no card terminal — the Card button is
+                          then hidden at checkout and card sales are rejected.
+                        </FieldDescription>
+                      </FieldContent>
+                      <Switch
+                        id="card-payment-enabled"
+                        checked={localSettings.card_payment_enabled !== '0'}
+                        onCheckedChange={(on) =>
+                          handleChange('card_payment_enabled', on ? '1' : '0')
+                        }
+                      />
+                    </Field>
+                  </FieldGroup>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Receipt</CardTitle>
+                  <CardDescription className="text-base">
+                    Customize receipt appearance
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Field>
+                    <FieldLabel htmlFor="receipt-footer">Receipt Footer Message</FieldLabel>
+                    <Input
+                      id="receipt-footer"
+                      value={localSettings.receipt_footer}
+                      onChange={(e) => handleChange('receipt_footer', e.target.value)}
+                      placeholder="Thank you for your purchase!"
                     />
                   </Field>
-                </FieldGroup>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Receipt</CardTitle>
-                <CardDescription className="text-base">
-                  Customize receipt appearance
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Field>
-                  <FieldLabel htmlFor="receipt-footer">Receipt Footer Message</FieldLabel>
-                  <Input
-                    id="receipt-footer"
-                    value={localSettings.receipt_footer}
-                    onChange={(e) => handleChange('receipt_footer', e.target.value)}
-                    placeholder="Thank you for your purchase!"
-                  />
-                </Field>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            </div>
           </div>
         </TabsContent>
 
@@ -811,7 +825,7 @@ export function SettingsPage(): React.JSX.Element {
 
         {/* ── Backup Tab ───────────────────────────────────────────── */}
         <TabsContent value="backup" className={TAB_CONTENT_CLASS}>
-          <div className="flex max-w-3xl flex-col gap-6">
+          <div className={CARD_GRID_CLASS}>
             {/* Manual Backup */}
             <Card>
               <CardHeader>
@@ -858,8 +872,9 @@ export function SettingsPage(): React.JSX.Element {
               </CardContent>
             </Card>
 
-            {/* Local Backups List */}
-            <Card>
+            {/* Local Backups List — the right-hand column on a wide screen, since
+                it is the one that grows. */}
+            <Card className="@5xl:col-start-2 @5xl:row-span-2 @5xl:row-start-1">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <Database className="size-5" />

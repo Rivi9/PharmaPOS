@@ -18,11 +18,13 @@ export function LowStockAlert({ lowStockProducts }: LowStockAlertProps): React.J
       <TriangleAlert className="mt-0.5 size-5 shrink-0 text-warning" />
       <div className="min-w-0 flex-1">
         <h3 className="font-semibold text-warning">Low Stock Alert ({lowStockProducts.length})</h3>
-        <ul className="mt-2 flex flex-wrap gap-2">
+        {/* One swipeable row on a short (768px) screen, so the alert does not
+            eat the table's height; wrapped when there is room. */}
+        <ul className="mt-2 flex gap-2 overflow-x-auto overscroll-x-contain [@media(min-height:900px)]:flex-wrap [@media(min-height:900px)]:overflow-visible">
           {lowStockProducts.slice(0, 5).map((product) => (
             <li
               key={product.id}
-              className="rounded-lg border border-warning/20 bg-card px-3 py-1.5 text-sm text-foreground"
+              className="shrink-0 rounded-lg border border-warning/20 bg-card px-3 py-1.5 text-sm whitespace-nowrap text-foreground"
             >
               <span className="font-medium">{product.name}</span>
               {product.sku && <span className="text-muted-foreground"> ({product.sku})</span>}
@@ -34,7 +36,7 @@ export function LowStockAlert({ lowStockProducts }: LowStockAlertProps): React.J
             </li>
           ))}
           {lowStockProducts.length > 5 && (
-            <li className="self-center px-1 text-sm text-warning">
+            <li className="shrink-0 self-center px-1 text-sm whitespace-nowrap text-warning">
               and {lowStockProducts.length - 5} more products...
             </li>
           )}
