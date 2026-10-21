@@ -86,7 +86,8 @@ export function seedSaleForCustomer(
   opts: {
     saleId: string
     shiftId: string
-    customerId: string
+    /** null for a sale that carries a number but was never linked to anyone. */
+    customerId: string | null
     customerName: string
     customerPhone: string
     total?: number

@@ -272,6 +272,7 @@ test.describe('previously ungated channels', () => {
       history: `window.electron.customers.purchaseHistory(${JSON.stringify(customerId)})`,
       customerList: `window.electron.customers.list()`,
       customerByPhone: `window.electron.customers.getByPhone('0771234567')`,
+      checkoutLookup: `window.electron.customers.checkoutLookup('0771234567')`,
       todayTotal: `window.electron.getTodaySalesTotal(${JSON.stringify(shiftId)})`,
       expectedCash: `window.electron.shifts.computeExpectedCash(${JSON.stringify(shiftId)})`,
       cashMovements: `window.electron.shifts.cashMovements(${JSON.stringify(shiftId)})`,

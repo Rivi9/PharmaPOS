@@ -22,6 +22,7 @@ import { getActiveShiftForUser } from '../services/shifts'
 import { logAudit } from '../services/audit'
 import { getDatabase } from '../services/database'
 import { getUserById } from '../services/users/user-management'
+import { hasPermission, type Role } from '../services/users/permissions'
 
 export function registerPOSHandlers(): void {
   // Product handlers
@@ -50,12 +51,21 @@ export function registerPOSHandlers(): void {
         throw new Error('Start a shift before ringing up a sale')
       }
 
-      const result = createSale({
-        ...(saleData as Record<string, unknown>),
-        user_id: userId,
-        shift_id: shift.id
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } as any)
+      // A new phone number at checkout creates the customer, so that part of the
+      // sale needs customers:create in its own right. Without it the sale still
+      // goes through and the typed name and number stay on the receipt only.
+      const role = getUserById(userId)?.role as Role | undefined
+      const canCreateCustomer = !!role && hasPermission(role, 'customers:create')
+
+      const result = createSale(
+        {
+          ...(saleData as Record<string, unknown>),
+          user_id: userId,
+          shift_id: shift.id
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any,
+        { canCreateCustomer }
+      )
 
       // The SALE_CREATED audit entry is written inside createSale's transaction,
       // so it cannot be lost between the commit and this point (M13).
