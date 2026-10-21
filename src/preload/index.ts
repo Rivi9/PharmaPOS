@@ -72,7 +72,7 @@ const electronAPI = {
   ) => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_LIST_PAGE, query ?? {}),
   listStockBatchesPage: (
     _userId: string,
-    query?: { search?: string; limit?: number; offset?: number }
+    query?: { search?: string; limit?: number; offset?: number; includeSoldOut?: boolean }
   ) => ipcRenderer.invoke(IPC_CHANNELS.STOCK_BATCH_LIST_PAGE, query ?? {}),
   listProducts: (userId: string) => ipcRenderer.invoke(IPC_CHANNELS.PRODUCT_LIST, { userId }),
   createProduct: (userId: string, data: unknown) =>

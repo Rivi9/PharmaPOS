@@ -29,6 +29,21 @@ export interface ProductData {
   is_active?: number
 }
 
+/**
+ * SQL for a product's last known cost, as a correlated subquery on `p`: the cost
+ * of its most recently received batch that carries one, falling back to
+ * `products.cost_price`. Sold-out batches count — running out of stock does not
+ * make what it cost unknown.
+ *
+ * The fallback in `sales.createSale` follows the same order.
+ */
+const LAST_KNOWN_COST_SQL = `COALESCE((
+    SELECT lb.cost_price FROM stock_batches lb
+    WHERE lb.product_id = p.id AND lb.cost_price > 0
+    ORDER BY lb.received_date DESC, lb.created_at DESC
+    LIMIT 1
+  ), p.cost_price, 0)`
+
 export function listProducts(): any[] {
   const db = getDatabase()
 
@@ -42,6 +57,7 @@ export function listProducts(): any[] {
         WHERE b.product_id = p.id AND b.quantity > 0
           AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
       ), 0) as total_stock,
+      ${LAST_KNOWN_COST_SQL} as last_known_cost,
       c.name as category_name,
       s.name as supplier_name
     FROM products p
@@ -126,6 +142,13 @@ export interface PagedQuery {
   offset?: number
   /** Include discontinued products — the Inventory page's "Discontinued" filter. */
   includeInactive?: boolean
+  /**
+   * Include batches sold down to zero — the Stock Batches tab's "Show sold out"
+   * filter. Hidden by default, but never unreachable: a depleted batch still
+   * carries what it cost and its ledger is the recall trail for every unit it
+   * dispensed.
+   */
+  includeSoldOut?: boolean
 }
 
 export interface Page<T> {
@@ -215,7 +238,8 @@ export function listStockBatchesPage(query: PagedQuery = {}): Page<Record<string
   const limit = Math.min(Math.max(1, query.limit ?? 50), MAX_PAGE)
   const offset = Math.max(0, query.offset ?? 0)
 
-  const where = ['sb.quantity > 0', 'p.is_active = 1']
+  const where = ['p.is_active = 1']
+  if (!query.includeSoldOut) where.push('sb.quantity > 0')
   const params: unknown[] = []
   if (term) {
     where.push('(p.name LIKE ? OR p.sku LIKE ? OR sb.batch_number LIKE ?)')
@@ -242,7 +266,8 @@ export function listStockBatchesPage(query: PagedQuery = {}): Page<Record<string
     JOIN products p ON sb.product_id = p.id
     LEFT JOIN suppliers s ON sb.supplier_id = s.id
     ${whereSql}
-    ORDER BY sb.expiry_date ASC NULLS LAST, sb.received_date DESC
+    -- Sold-out rows (when shown) after the stock still on the shelf.
+    ORDER BY (sb.quantity > 0) DESC, sb.expiry_date ASC NULLS LAST, sb.received_date DESC
     LIMIT ? OFFSET ?
   `
     )
@@ -396,6 +421,32 @@ export function updateProduct(id: string, data: Partial<ProductData>): void {
   ).run(...values)
 }
 
+/**
+ * Every product's barcode and SKU — both UNIQUE, discontinued products
+ * included — so the import can recognise rows that already exist instead of
+ * hitting the constraint mid-transaction.
+ */
+export function listProductCodes(): {
+  id: string
+  name: string
+  barcode: string | null
+  sku: string | null
+  is_active: number
+}[] {
+  return getDatabase()
+    .prepare(
+      `SELECT id, name, barcode, sku, is_active FROM products
+       WHERE barcode IS NOT NULL OR sku IS NOT NULL`
+    )
+    .all() as {
+    id: string
+    name: string
+    barcode: string | null
+    sku: string | null
+    is_active: number
+  }[]
+}
+
 /** Bring a soft-deleted product back. Delete is a flag flip, so nothing is lost. */
 export function reactivateProduct(id: string): void {
   getDatabase()
@@ -416,21 +467,36 @@ export function deleteProduct(id: string): void {
   ).run(new Date().toISOString(), id)
 }
 
+/**
+ * The Inventory page's low-stock banner.
+ *
+ * Same definition as the dashboard's `getLowStockAlerts`: sellable stock only
+ * (positive, unexpired — what `deductStockFEFO` will actually dispense), and only
+ * products that have ever been stocked. This used to sum every batch, expired
+ * ones included, and count never-stocked catalogue rows, so 500 expired units
+ * kept a product off this list while the dashboard flagged it — the two screens
+ * disagreed on the same product.
+ */
 export function getLowStockProducts(): any[] {
   const db = getDatabase()
 
   const lowStock = db
     .prepare(
       `
-    SELECT
-      p.*,
-      COALESCE(SUM(sb.quantity), 0) as total_stock
-    FROM products p
-    LEFT JOIN stock_batches sb ON p.id = sb.product_id
-    WHERE p.is_active = 1
-    GROUP BY p.id
-    HAVING total_stock <= p.reorder_level
-    ORDER BY total_stock ASC, p.name ASC
+    SELECT * FROM (
+      SELECT
+        p.*,
+        COALESCE((
+          SELECT SUM(b.quantity) FROM stock_batches b
+          WHERE b.product_id = p.id AND b.quantity > 0
+            AND (b.expiry_date IS NULL OR b.expiry_date = '' OR b.expiry_date >= date('now','localtime'))
+        ), 0) as total_stock
+      FROM products p
+      WHERE p.is_active = 1
+        AND EXISTS (SELECT 1 FROM stock_batches b WHERE b.product_id = p.id)
+    )
+    WHERE total_stock <= reorder_level
+    ORDER BY total_stock ASC, name ASC
   `
     )
     .all()
@@ -668,6 +734,50 @@ export interface StockBatchData {
   supplier_id?: string
 }
 
+/**
+ * A batch's cost is what the stock cost to buy, and it is the basis of every
+ * margin and valuation figure built on it. 0 is refused rather than stored: an
+ * empty cost field arrived as 0, and a sale from that batch then reported a 100%
+ * margin that no report could tell apart from a real one.
+ */
+function assertBatchCost(value: unknown): number {
+  const cost = assertMoney('Cost price', value) ?? 0
+  if (cost <= 0) {
+    throw new Error('Cost price must be more than 0 — enter what this stock cost to buy')
+  }
+  return cost
+}
+
+/**
+ * Carry the latest purchase cost onto the product.
+ *
+ * `products.cost_price` used to be only whatever was typed on the product form —
+ * 0 for every imported product — and nothing ever updated it from received
+ * stock. It is now the product's last known cost: refreshed whenever a batch is
+ * received or its cost or received date is corrected, and never reset when the
+ * stock runs out, so a sold-out product still has a cost for reports, the CSV
+ * export and the sale-cost fallback.
+ *
+ * Only ever moves to a real (non-zero) batch cost. With no costed batch at all
+ * the typed value is left as it is.
+ */
+function refreshProductCost(productId: string): void {
+  const db = getDatabase()
+  const latest = db
+    .prepare(
+      `SELECT cost_price FROM stock_batches
+       WHERE product_id = ? AND cost_price > 0
+       ORDER BY received_date DESC, created_at DESC
+       LIMIT 1`
+    )
+    .get(productId) as { cost_price: number } | undefined
+  if (!latest) return
+  db.prepare(
+    `UPDATE products SET cost_price = ?, updated_at = ?
+     WHERE id = ? AND cost_price IS NOT ?`
+  ).run(latest.cost_price, new Date().toISOString(), productId, latest.cost_price)
+}
+
 export function getStockBatches(productId: string): StockBatch[] {
   const drizzleDb = getDb()
   return drizzleDb
@@ -692,30 +802,33 @@ export function createStockBatch(data: StockBatchData): { id: string } {
   const receivedDate = data.received_date || localDateString()
 
   const quantity = assertQuantity('Quantity', data.quantity)
-  const costPrice = assertMoney('Cost price', data.cost_price) ?? 0
+  const costPrice = assertBatchCost(data.cost_price)
   const sellingPrice = assertMoney('Selling price', data.selling_price, { required: false })
   const expiryDate = assertExpiryDate(data.expiry_date)
 
-  drizzleDb
-    .insert(stockBatches)
-    .values({
-      id,
-      productId: data.product_id,
-      batchNumber: data.batch_number?.trim() || null,
-      quantity,
-      costPrice,
-      sellingPrice,
-      expiryDate,
-      receivedDate,
-      supplierId: data.supplier_id ?? null,
-      createdAt: now
-    })
-    .run()
+  getDatabase().transaction(() => {
+    drizzleDb
+      .insert(stockBatches)
+      .values({
+        id,
+        productId: data.product_id,
+        batchNumber: data.batch_number?.trim() || null,
+        quantity,
+        costPrice,
+        sellingPrice,
+        expiryDate,
+        receivedDate,
+        supplierId: data.supplier_id ?? null,
+        createdAt: now
+      })
+      .run()
+    refreshProductCost(data.product_id)
+  })()
 
   return { id }
 }
 
-export function listStockBatches(): any[] {
+export function listStockBatches({ includeSoldOut = false } = {}): any[] {
   const db = getDatabase()
 
   const batches = db
@@ -731,7 +844,7 @@ export function listStockBatches(): any[] {
     LEFT JOIN suppliers s ON sb.supplier_id = s.id
     -- Batches of a soft-deleted product used to stay listed, and could still
     -- receive new stock via the Receive Stock combobox.
-    WHERE sb.quantity > 0 AND p.is_active = 1
+    WHERE p.is_active = 1 ${includeSoldOut ? '' : 'AND sb.quantity > 0'}
     ORDER BY sb.expiry_date ASC NULLS LAST, sb.received_date DESC
   `
     )
@@ -761,7 +874,7 @@ export function updateStockBatch(id: string, data: Partial<StockBatchData>): voi
   }
   if (data.cost_price !== undefined) {
     fields.push('cost_price = ?')
-    values.push(assertMoney('Cost price', data.cost_price))
+    values.push(assertBatchCost(data.cost_price))
   }
   if (data.selling_price !== undefined) {
     fields.push('selling_price = ?')
@@ -794,13 +907,24 @@ export function updateStockBatch(id: string, data: Partial<StockBatchData>): voi
 
   values.push(id)
 
-  db.prepare(
+  db.transaction(() => {
+    db.prepare(
+      `
+      UPDATE stock_batches
+      SET ${fields.join(', ')}
+      WHERE id = ?
     `
-    UPDATE stock_batches
-    SET ${fields.join(', ')}
-    WHERE id = ?
-  `
-  ).run(...values)
+    ).run(...values)
+
+    // A corrected cost, or a corrected received date that changes which batch is
+    // the latest, changes the product's last known cost.
+    if (data.cost_price !== undefined || data.received_date !== undefined) {
+      const row = db.prepare('SELECT product_id FROM stock_batches WHERE id = ?').get(id) as
+        | { product_id: string }
+        | undefined
+      if (row) refreshProductCost(row.product_id)
+    }
+  })()
 }
 
 export function deleteStockBatch(id: string): void {
@@ -814,6 +938,24 @@ export function deleteStockBatch(id: string): void {
 
   if (batch.quantity > 0) {
     throw new Error('Cannot delete batch with remaining stock')
+  }
+
+  // Sold-out batches are listable now (the "Show sold out" filter), which makes
+  // this reachable for batches that were actually dispensed. Their rows are the
+  // recall trail — which customers received this lot — and the foreign keys
+  // would refuse the delete anyway, with a raw SQLite message.
+  const history = getDatabase()
+    .prepare(
+      `SELECT 1 FROM sale_item_batches WHERE batch_id = ?
+       UNION ALL SELECT 1 FROM sale_items WHERE batch_id = ?
+       UNION ALL SELECT 1 FROM inventory_adjustments WHERE batch_id = ?
+       LIMIT 1`
+    )
+    .get(id, id, id)
+  if (history) {
+    throw new Error(
+      'This batch has sales or stock adjustments recorded against it, so it is kept as part of the stock history'
+    )
   }
 
   drizzleDb.delete(stockBatches).where(eq(stockBatches.id, id)).run()
@@ -903,7 +1045,10 @@ export function exportProductsToCSV(): string {
     p.barcode || '',
     p.category_name || '',
     p.supplier_name || '',
-    p.cost_price.toString(),
+    // The last known cost, not just what was typed on the product form:
+    // imported products carried 0 there, and the export reported it as their
+    // cost even with costed stock on the shelf or long since sold.
+    String(p.last_known_cost ?? p.cost_price),
     p.unit_price.toString(),
     p.tax_rate.toString(),
     (p.total_stock || 0).toString(),

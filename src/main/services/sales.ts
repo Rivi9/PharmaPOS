@@ -314,12 +314,28 @@ export function createSale(
       // Reading products.cost_price instead reported 100% margin on every sale,
       // because cost is captured per batch when stock is received and the product
       // column is left at its 0 default.
+      //
+      // A dispensed batch with no cost (0 — stored by old imports and the batch
+      // form before 0 was refused) is costed at the product's last known cost:
+      // its most recent non-zero batch cost, sold-out batches included, then
+      // products.cost_price — the same order as inventory's LAST_KNOWN_COST_SQL.
+      // Falling straight back to products.cost_price, 0 on imported products,
+      // reported those sales at 100% margin. Resolved per batch, so
+      // sale_item_batches records the same cost the line does.
+      const lastBatchCost = (
+        db
+          .prepare(
+            `SELECT cost_price FROM stock_batches
+             WHERE product_id = ? AND cost_price > 0
+             ORDER BY received_date DESC, created_at DESC LIMIT 1`
+          )
+          .get(item.product_id) as { cost_price: number } | undefined
+      )?.cost_price
+      const knownCost = lastBatchCost ?? product?.costPrice ?? 0
+      for (const b of batches) if (!(b.cost_price > 0)) b.cost_price = knownCost
       const batchCostTotal = batches.reduce((sum, b) => sum + b.cost_price * b.quantity, 0)
       const batchQty = batches.reduce((sum, b) => sum + b.quantity, 0)
-      const costPrice =
-        batchQty > 0 && batchCostTotal > 0
-          ? round2(batchCostTotal / batchQty)
-          : (product?.costPrice ?? 0)
+      const costPrice = batchQty > 0 ? round2(batchCostTotal / batchQty) : knownCost
       // Single global rate, extracted from the tax-inclusive line total. The old
       // code used a per-product rate here while the cart used the global rate and
       // ADDED it, so sales.tax_amount and SUM(sale_items.tax_amount) never agreed
