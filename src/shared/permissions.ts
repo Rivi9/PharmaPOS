@@ -81,10 +81,11 @@ const ROLE_PERMISSIONS: Record<Role, Permission[]> = {
     'backup:create'
   ],
   cashier: [
-    // Basic sales operations only
+    // Basic sales operations only. No inventory or settings: the till's product
+    // search and quick items run on their own POS channels, so a cashier needs
+    // neither screen to sell.
     'sales:create',
     'sales:view_all',
-    'inventory:view',
     'customers:create',
     'shifts:manage'
   ]

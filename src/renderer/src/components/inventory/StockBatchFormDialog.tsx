@@ -47,7 +47,12 @@ const stockBatchSchema = z.object({
   // Only used when editing: a quantity change becomes a recorded stock
   // adjustment, and an adjustment without a reason is untraceable shrinkage.
   adjustment_reason: z.string().optional(),
-  cost_price: z.number({ error: 'Enter the cost price' }).min(0, 'Cost price must be positive'),
+  // More than 0, not just "not negative": an empty or zero cost was stored as 0
+  // and every sale from the batch then reported a 100% margin. The main process
+  // refuses it too.
+  cost_price: z
+    .number({ error: 'Enter the cost price' })
+    .positive('Cost price must be more than 0 — enter what this stock cost to buy'),
   selling_price: z.union([z.number().min(0), z.nan()]).optional(),
   expiry_date: z.string().optional(),
   received_date: z.string().optional(),

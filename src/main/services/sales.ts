@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { getDb } from '../db/index'
 import { getDatabase } from './database'
 import { sales, saleItems, products, customers } from '../db/schema'
@@ -6,7 +6,8 @@ import type { Sale, SaleItem, SaleRefund } from '../db/schema'
 import { round2, basketLineTax } from '../../shared/money'
 import { localDateString } from '../../shared/dates'
 import { logAudit } from './audit'
-import { normalisePhone } from './customers'
+import { normalisePhone, findCheckoutCustomer, linkEarlierSales } from './customers'
+import { planCheckoutCustomer } from '../../shared/customers'
 import { saleLineAmounts, refundLineAmounts } from './analytics/ledger'
 
 // Re-export types that may be consumed by other modules
@@ -150,12 +151,21 @@ function deductStockFEFO(productId: string, quantityNeeded: number): BatchDeduct
 
 /**
  * Create a complete sale with stock deduction.
- * FIX 1: Auto-links customer by phone.
+ * FIX 1: Auto-links customer by phone, creating them if the number is new.
  * FIX 2: Calculates per-item tax amount.
  * FIX 3: Uses ON CONFLICT upsert for product_sales_daily.
  * FIX 4: No longer updates shifts.expected_cash (computed at shift-end).
  */
-export function createSale(saleData: SaleData): { sale_id: string; receipt_number: string } {
+export function createSale(
+  saleData: SaleData,
+  options: {
+    /**
+     * The signed-in role holds `customers:create`. Resolved by the IPC handler;
+     * defaults to false so a caller that forgets cannot create customers.
+     */
+    canCreateCustomer?: boolean
+  } = {}
+): { sale_id: string; receipt_number: string } {
   const db = getDatabase()
   const drizzleDb = getDb()
 
@@ -184,17 +194,70 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
     // Auto-link the customer by phone. Both sides go through normalisePhone so
     // "077 123 4567" typed at the till still matches "+94771234567" on file —
     // exact-equality matching silently dropped the sale from their history.
+    //
+    // A number nobody holds now CREATES the customer, here in the sale's own
+    // transaction. Linking only to customers someone had pre-registered in the
+    // Customers tab meant almost nothing ever linked: the name was printed on the
+    // receipt and then went nowhere, and the tab stayed empty. The rules (name
+    // alone creates nothing, a stored name is never overwritten, a Removed
+    // customer is not revived) live in planCheckoutCustomer, shared with the till
+    // so the cashier is told what will happen before pressing Complete Sale.
     const customerPhone = normalisePhone(saleData.customer_phone)
+    const typedName = saleData.customer_name?.trim() || ''
+    const plan = planCheckoutCustomer({
+      phone: customerPhone,
+      typedName,
+      ...findCheckoutCustomer(customerPhone),
+      canCreate: options.canCreateCustomer === true
+    })
+
     let customerId: string | null = null
-    if (customerPhone) {
-      const customer = drizzleDb
-        .select({ id: customers.id })
-        .from(customers)
-        // Active only — a removed customer must not quietly start accruing
-        // history again just because the number was typed in.
-        .where(and(eq(customers.phone, customerPhone), eq(customers.isActive, 1)))
-        .get()
-      customerId = customer?.id ?? null
+    if (plan.kind === 'link') {
+      customerId = plan.customerId
+      if (plan.fillName) {
+        drizzleDb
+          .update(customers)
+          .set({ name: plan.fillName, updatedAt: now })
+          .where(eq(customers.id, plan.customerId))
+          .run()
+        logAudit({
+          userId: saleData.user_id,
+          action: 'CUSTOMER_UPDATED',
+          entityType: 'customer',
+          entityId: plan.customerId,
+          details: { source: 'checkout', receipt_number: receiptNumber, fields: ['name'] }
+        })
+      }
+    } else if (plan.kind === 'create') {
+      customerId = crypto.randomUUID()
+      drizzleDb
+        .insert(customers)
+        .values({
+          id: customerId,
+          name: plan.name,
+          phone: customerPhone,
+          isActive: 1,
+          createdAt: now,
+          updatedAt: now
+        })
+        .run()
+      // Earlier sales under this number — rung up before this change, or by a
+      // role that could not create customers — become part of their history.
+      const earlierSalesLinked = linkEarlierSales(customerId, customerPhone)
+      // No name or number in the details: audit_log is append-only, so anything
+      // personal written here would survive the customer's erasure request.
+      logAudit({
+        userId: saleData.user_id,
+        action: 'CUSTOMER_CREATED',
+        entityType: 'customer',
+        entityId: customerId,
+        details: {
+          source: 'checkout',
+          receipt_number: receiptNumber,
+          named: !plan.placeholder,
+          earlier_sales_linked: earlierSalesLinked
+        }
+      })
     }
 
     // Insert sale header using Drizzle
@@ -217,7 +280,9 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
         cardReceived: saleData.card_received,
         changeGiven: saleData.change_given,
         status: 'completed',
-        customerName: saleData.customer_name?.trim() || null,
+        // What was typed, which is what the receipt prints — even when it differs
+        // from the name on file, which is deliberately left alone.
+        customerName: typedName || null,
         customerPhone: customerPhone,
         createdAt: now
       })
@@ -265,12 +330,28 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
       // Reading products.cost_price instead reported 100% margin on every sale,
       // because cost is captured per batch when stock is received and the product
       // column is left at its 0 default.
+      //
+      // A dispensed batch with no cost (0 — stored by old imports and the batch
+      // form before 0 was refused) is costed at the product's last known cost:
+      // its most recent non-zero batch cost, sold-out batches included, then
+      // products.cost_price — the same order as inventory's LAST_KNOWN_COST_SQL.
+      // Falling straight back to products.cost_price, 0 on imported products,
+      // reported those sales at 100% margin. Resolved per batch, so
+      // sale_item_batches records the same cost the line does.
+      const lastBatchCost = (
+        db
+          .prepare(
+            `SELECT cost_price FROM stock_batches
+             WHERE product_id = ? AND cost_price > 0
+             ORDER BY received_date DESC, created_at DESC LIMIT 1`
+          )
+          .get(item.product_id) as { cost_price: number } | undefined
+      )?.cost_price
+      const knownCost = lastBatchCost ?? product?.costPrice ?? 0
+      for (const b of batches) if (!(b.cost_price > 0)) b.cost_price = knownCost
       const batchCostTotal = batches.reduce((sum, b) => sum + b.cost_price * b.quantity, 0)
       const batchQty = batches.reduce((sum, b) => sum + b.quantity, 0)
-      const costPrice =
-        batchQty > 0 && batchCostTotal > 0
-          ? round2(batchCostTotal / batchQty)
-          : (product?.costPrice ?? 0)
+      const costPrice = batchQty > 0 ? round2(batchCostTotal / batchQty) : knownCost
       // Single global rate, extracted from the tax-inclusive line total. The old
       // code used a per-product rate here while the cart used the global rate and
       // ADDED it, so sales.tax_amount and SUM(sale_items.tax_amount) never agreed

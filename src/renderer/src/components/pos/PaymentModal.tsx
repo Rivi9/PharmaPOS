@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import { CreditCard, Banknote, CircleAlert, CircleCheck, UserCheck } from 'lucide-react'
+import {
+  CreditCard,
+  Banknote,
+  CircleAlert,
+  CircleCheck,
+  UserCheck,
+  UserPlus,
+  UserX
+} from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -26,7 +34,15 @@ import { usePOSStore } from '@renderer/stores/posStore'
 import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { calculateChange, formatCurrency } from '@renderer/lib/calculations'
+import { usePermission } from '@renderer/hooks/usePermission'
 import { isAtLeast } from '../../../../shared/money'
+import {
+  normalisePhone,
+  isValidCustomerPhone,
+  hasRealCustomerName,
+  planCheckoutCustomer,
+  type CheckoutCustomerPlan
+} from '../../../../shared/customers'
 
 interface PaymentModalProps {
   open: boolean
@@ -35,6 +51,13 @@ interface PaymentModalProps {
 }
 
 type PaymentMethod = 'cash' | 'card' | 'mixed'
+
+interface CheckoutLookup {
+  /** The normalised number this answer is for. */
+  phone: string
+  active: { id: string; name: string; phone: string | null } | null
+  heldByRemoved: boolean
+}
 
 interface PurchaseHistoryEntry {
   id: string
@@ -72,7 +95,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   const [customerPhone, setCustomerPhone] = useState('')
   const [error, setError] = useState('')
   const [processing, setProcessing] = useState(false)
-  const [foundCustomer, setFoundCustomer] = useState<{ id: string; name: string } | null>(null)
+  const [lookup, setLookup] = useState<CheckoutLookup | null>(null)
   const [purchaseHistory, setPurchaseHistory] = useState<PurchaseHistoryEntry[]>([])
   const inFlight = useRef(false)
 
@@ -88,6 +111,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
   const refreshTodaySales = useShiftStore((state) => state.refreshTodaySales)
   const currencySymbol = useSettingsStore((state) => state.settings.currency_symbol)
   const cardEnabled = useSettingsStore((state) => state.settings.card_payment_enabled !== '0')
+  const canCreateCustomer = usePermission('customers:create')
 
   // Clear stale errors each time the dialog opens
   useEffect(() => {
@@ -103,33 +127,58 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
     }
   }, [cardEnabled, paymentMethod])
 
+  // Look the typed number up once it is a complete one. The result is tagged
+  // with the number it answers, so a slow reply for an earlier keystroke is
+  // never shown against what is in the box now.
+  const normalisedPhone = normalisePhone(customerPhone)
+  const phoneComplete = isValidCustomerPhone(normalisedPhone)
   useEffect(() => {
-    if (customerPhone.length < 7) {
-      setFoundCustomer(null)
+    if (!phoneComplete || !normalisedPhone) {
+      setLookup(null)
       setPurchaseHistory([])
       return
     }
 
+    let cancelled = false
     const timer = setTimeout(async () => {
       try {
-        const customer = await window.electron.customers.getByPhone(customerPhone)
-        if (customer) {
-          setFoundCustomer({ id: customer.id, name: customer.name })
-          setCustomerName(customer.name)
-          const history = await window.electron.customers.purchaseHistory(customer.id)
-          setPurchaseHistory(history ?? [])
-        } else {
-          setFoundCustomer(null)
-          setPurchaseHistory([])
-        }
+        const result = await window.electron.customers.checkoutLookup(normalisedPhone)
+        if (cancelled) return
+        const active: CheckoutLookup['active'] = result?.active ?? null
+        setLookup({ phone: normalisedPhone, active, heldByRemoved: !!result?.heldByRemoved })
+        // A real name on file fills the box; a placeholder ("Customer 4567")
+        // does not, so whatever the cashier types is what gets saved.
+        if (active && hasRealCustomerName(active.name, active.phone)) setCustomerName(active.name)
+        const history = active ? await window.electron.customers.purchaseHistory(active.id) : []
+        if (!cancelled) setPurchaseHistory(history ?? [])
       } catch {
-        setFoundCustomer(null)
+        if (cancelled) return
+        setLookup(null)
         setPurchaseHistory([])
       }
     }, 400)
 
-    return () => clearTimeout(timer)
-  }, [customerPhone])
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [normalisedPhone, phoneComplete])
+
+  // The same decision createSale makes with the same inputs, so what the card
+  // says is what Complete Sale does. `null` while a lookup is outstanding.
+  const customerPlan: CheckoutCustomerPlan | null = !normalisedPhone
+    ? null
+    : !phoneComplete
+      ? { kind: 'none', reason: 'invalid-phone' }
+      : lookup?.phone === normalisedPhone
+        ? planCheckoutCustomer({
+            phone: normalisedPhone,
+            typedName: customerName,
+            active: lookup.active,
+            heldByRemoved: lookup.heldByRemoved,
+            canCreate: canCreateCustomer
+          })
+        : null
 
   const cashReceivedNum = parseFloat(cashReceived) || 0
   const cardAmountNum = parseFloat(cardAmount) || 0
@@ -284,7 +333,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
       setCardAmount('')
       setCustomerName('')
       setCustomerPhone('')
-      setFoundCustomer(null)
+      setLookup(null)
       setPurchaseHistory([])
 
       onComplete(result.sale_id, result.receipt_number)
@@ -488,21 +537,7 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
                 </Field>
               </div>
 
-              {foundCustomer && (
-                <Item variant="muted" size="sm" className="bg-success-muted">
-                  <ItemMedia variant="icon" className="text-success">
-                    <UserCheck className="size-5" />
-                  </ItemMedia>
-                  <ItemContent>
-                    <ItemTitle className="text-base">{foundCustomer.name}</ItemTitle>
-                    <ItemDescription>
-                      Returning customer
-                      {purchaseHistory.length > 0 &&
-                        ` · ${purchaseHistory.length} recent ${purchaseHistory.length === 1 ? 'purchase' : 'purchases'}`}
-                    </ItemDescription>
-                  </ItemContent>
-                </Item>
-              )}
+              <CheckoutCustomerNotice plan={customerPlan} historyCount={purchaseHistory.length} />
 
               {purchaseHistory.length > 0 && (
                 <div className="max-h-48 overflow-y-auto overscroll-contain rounded-xl border">
@@ -599,5 +634,73 @@ export function PaymentModal({ open, onClose, onComplete }: PaymentModalProps): 
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * Tells the cashier what Complete Sale will do with the customer fields:
+ * attach to someone on file, save someone new, or neither (and why).
+ */
+function CheckoutCustomerNotice({
+  plan,
+  historyCount
+}: {
+  plan: CheckoutCustomerPlan | null
+  historyCount: number
+}): React.JSX.Element | null {
+  if (!plan || (plan.kind === 'none' && plan.reason === 'no-phone')) return null
+
+  if (plan.kind === 'link') {
+    return (
+      <Item variant="muted" size="sm" className="bg-success-muted" data-testid="customer-notice">
+        <ItemMedia variant="icon" className="text-success">
+          <UserCheck className="size-5" />
+        </ItemMedia>
+        <ItemContent>
+          <ItemTitle className="text-base">{plan.displayName}</ItemTitle>
+          <ItemDescription>
+            Returning customer
+            {historyCount > 0 &&
+              ` · ${historyCount} recent ${historyCount === 1 ? 'purchase' : 'purchases'}`}
+            {plan.fillName && ' · name will be saved'}
+          </ItemDescription>
+        </ItemContent>
+      </Item>
+    )
+  }
+
+  if (plan.kind === 'create') {
+    return (
+      <Item variant="muted" size="sm" className="bg-info-muted" data-testid="customer-notice">
+        <ItemMedia variant="icon" className="text-info">
+          <UserPlus className="size-5" />
+        </ItemMedia>
+        <ItemContent>
+          <ItemTitle className="text-base">New customer — will be saved</ItemTitle>
+          <ItemDescription>
+            {plan.placeholder
+              ? `Saved as “${plan.name}” until a name is given`
+              : `Saved as ${plan.name}`}
+          </ItemDescription>
+        </ItemContent>
+      </Item>
+    )
+  }
+
+  const reason = {
+    'invalid-phone': 'Enter a 10-digit number to save this customer',
+    removed: 'This number belongs to a removed customer — the sale won’t be added to their history',
+    'not-permitted': 'Not saved — your role can’t add customers'
+  }[plan.reason]
+
+  return (
+    <Item variant="muted" size="sm" data-testid="customer-notice">
+      <ItemMedia variant="icon" className="text-muted-foreground">
+        <UserX className="size-5" />
+      </ItemMedia>
+      <ItemContent>
+        <ItemDescription className="text-base">{reason}</ItemDescription>
+      </ItemContent>
+    </Item>
   )
 }

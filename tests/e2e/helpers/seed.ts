@@ -3,6 +3,7 @@
 // fails with "was compiled against a different Node.js version". node:sqlite
 // ships with the runtime, needs no rebuild, and is enough for fixtures.
 import { DatabaseSync } from 'node:sqlite'
+import bcrypt from 'bcryptjs'
 
 export interface SeededProduct {
   productId: string
@@ -85,7 +86,8 @@ export function seedSaleForCustomer(
   opts: {
     saleId: string
     shiftId: string
-    customerId: string
+    /** null for a sale that carries a number but was never linked to anyone. */
+    customerId: string | null
     customerName: string
     customerPhone: string
     total?: number
@@ -109,6 +111,50 @@ export function seedSaleForCustomer(
       opts.total ?? 100,
       opts.customerName,
       opts.customerPhone
+    )
+  } finally {
+    db.close()
+  }
+}
+
+/**
+ * An extra active user with a PIN, for login-screen tests that need a second
+ * tile. Hashed with bcryptjs (pure JS, so it loads in the test process) at a
+ * low cost — `bcrypt.compare` reads the cost from the hash.
+ */
+export function seedUser(
+  dbPath: string,
+  opts: { id: string; username: string; fullName: string; pin: string; role?: string }
+): void {
+  const db = new DatabaseSync(dbPath)
+  try {
+    const now = new Date().toISOString()
+    db.prepare(
+      `INSERT INTO users (id, username, password_hash, full_name, role, pin_code, is_active,
+                          created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`
+    ).run(
+      opts.id,
+      opts.username,
+      bcrypt.hashSync('unused-password', 4),
+      opts.fullName,
+      opts.role ?? 'cashier',
+      bcrypt.hashSync(opts.pin, 4),
+      now,
+      now
+    )
+  } finally {
+    db.close()
+  }
+}
+
+/** Lock a user out until `until` without walking the failed attempts. */
+export function setLockedUntil(dbPath: string, username: string, until: Date | null): void {
+  const db = new DatabaseSync(dbPath)
+  try {
+    db.prepare('UPDATE users SET locked_until = ? WHERE username = ?').run(
+      until ? until.toISOString() : null,
+      username
     )
   } finally {
     db.close()

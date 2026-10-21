@@ -366,6 +366,18 @@ const COMMANDS = {
     log('slept', ms + 'ms')
   },
 
+  /**
+   * Render at a fixed CSS size, e.g. `viewport:1920:1080` for the till's
+   * maximised touchscreen. Emulated (Playwright's setViewportSize), not a
+   * window resize: a BrowserWindow larger than the host screen gets clamped,
+   * so a 1920x1080 layout could not otherwise be seen on a laptop.
+   */
+  async viewport(w = '1920', h = '1080') {
+    await page.setViewportSize({ width: Number(w), height: Number(h) })
+    await sleep(300)
+    log('viewport', `${w}x${h}`)
+  },
+
   async ss(name) {
     if (!page) return log('ERROR: launch first')
     const file = path.join(SHOT_DIR, (name || 'shot-' + Date.now()) + '.png')
@@ -448,6 +460,25 @@ const COMMANDS = {
 
   async windows() {
     for (const w of app.windows()) log(' ', w.url())
+  },
+
+  /**
+   * Save every download (the Reports tab's PDFs, CSV exports) into `dir`,
+   * default SHOT_DIR, instead of Electron's Save dialog — which nothing can
+   * click from here. Run it after `launch`/`boot`, before the download.
+   */
+  async downloads(dir = SHOT_DIR) {
+    const target = path.resolve(dir)
+    fs.mkdirSync(target, { recursive: true })
+    await app.evaluate(
+      ({ session }, { target, sep }) => {
+        session.defaultSession.on('will-download', (_e, item) => {
+          item.setSavePath(target + sep + item.getFilename())
+        })
+      },
+      { target, sep: path.sep }
+    )
+    log('downloads go to', target)
   },
 
   async quit() {
