@@ -80,6 +80,8 @@ const ACTION_TONES: Record<string, Tone> = {
   SUPPLIER_CREATED: 'primary',
   SUPPLIER_UPDATED: 'primary',
   SUPPLIER_DELETED: 'destructive',
+  CUSTOMER_CREATED: 'primary',
+  CUSTOMER_UPDATED: 'primary',
   CUSTOMER_ERASED: 'destructive',
   USER_LOGIN_FAILED: 'warning',
   USER_LOCKED_OUT: 'destructive'
@@ -109,6 +111,8 @@ const AUDIT_ACTIONS = [
   'SUPPLIER_CREATED',
   'SUPPLIER_UPDATED',
   'SUPPLIER_DELETED',
+  'CUSTOMER_CREATED',
+  'CUSTOMER_UPDATED',
   'CUSTOMER_ERASED',
   'USER_CREATED',
   'USER_UPDATED',

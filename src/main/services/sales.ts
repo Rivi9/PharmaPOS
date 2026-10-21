@@ -1,11 +1,12 @@
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { getDb } from '../db/index'
 import { getDatabase } from './database'
 import { sales, saleItems, products, customers } from '../db/schema'
 import type { Sale, SaleItem, SaleRefund } from '../db/schema'
 import { round2, extractIncludedTax } from '../../shared/money'
 import { logAudit } from './audit'
-import { normalisePhone } from './customers'
+import { normalisePhone, findCheckoutCustomer, linkEarlierSales } from './customers'
+import { planCheckoutCustomer } from '../../shared/customers'
 
 // Re-export types that may be consumed by other modules
 export type { Sale, SaleItem, SaleRefund }
@@ -148,12 +149,21 @@ function deductStockFEFO(productId: string, quantityNeeded: number): BatchDeduct
 
 /**
  * Create a complete sale with stock deduction.
- * FIX 1: Auto-links customer by phone.
+ * FIX 1: Auto-links customer by phone, creating them if the number is new.
  * FIX 2: Calculates per-item tax amount.
  * FIX 3: Uses ON CONFLICT upsert for product_sales_daily.
  * FIX 4: No longer updates shifts.expected_cash (computed at shift-end).
  */
-export function createSale(saleData: SaleData): { sale_id: string; receipt_number: string } {
+export function createSale(
+  saleData: SaleData,
+  options: {
+    /**
+     * The signed-in role holds `customers:create`. Resolved by the IPC handler;
+     * defaults to false so a caller that forgets cannot create customers.
+     */
+    canCreateCustomer?: boolean
+  } = {}
+): { sale_id: string; receipt_number: string } {
   const db = getDatabase()
   const drizzleDb = getDb()
 
@@ -179,17 +189,70 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
     // Auto-link the customer by phone. Both sides go through normalisePhone so
     // "077 123 4567" typed at the till still matches "+94771234567" on file —
     // exact-equality matching silently dropped the sale from their history.
+    //
+    // A number nobody holds now CREATES the customer, here in the sale's own
+    // transaction. Linking only to customers someone had pre-registered in the
+    // Customers tab meant almost nothing ever linked: the name was printed on the
+    // receipt and then went nowhere, and the tab stayed empty. The rules (name
+    // alone creates nothing, a stored name is never overwritten, a Removed
+    // customer is not revived) live in planCheckoutCustomer, shared with the till
+    // so the cashier is told what will happen before pressing Complete Sale.
     const customerPhone = normalisePhone(saleData.customer_phone)
+    const typedName = saleData.customer_name?.trim() || ''
+    const plan = planCheckoutCustomer({
+      phone: customerPhone,
+      typedName,
+      ...findCheckoutCustomer(customerPhone),
+      canCreate: options.canCreateCustomer === true
+    })
+
     let customerId: string | null = null
-    if (customerPhone) {
-      const customer = drizzleDb
-        .select({ id: customers.id })
-        .from(customers)
-        // Active only — a removed customer must not quietly start accruing
-        // history again just because the number was typed in.
-        .where(and(eq(customers.phone, customerPhone), eq(customers.isActive, 1)))
-        .get()
-      customerId = customer?.id ?? null
+    if (plan.kind === 'link') {
+      customerId = plan.customerId
+      if (plan.fillName) {
+        drizzleDb
+          .update(customers)
+          .set({ name: plan.fillName, updatedAt: now })
+          .where(eq(customers.id, plan.customerId))
+          .run()
+        logAudit({
+          userId: saleData.user_id,
+          action: 'CUSTOMER_UPDATED',
+          entityType: 'customer',
+          entityId: plan.customerId,
+          details: { source: 'checkout', receipt_number: receiptNumber, fields: ['name'] }
+        })
+      }
+    } else if (plan.kind === 'create') {
+      customerId = crypto.randomUUID()
+      drizzleDb
+        .insert(customers)
+        .values({
+          id: customerId,
+          name: plan.name,
+          phone: customerPhone,
+          isActive: 1,
+          createdAt: now,
+          updatedAt: now
+        })
+        .run()
+      // Earlier sales under this number — rung up before this change, or by a
+      // role that could not create customers — become part of their history.
+      const earlierSalesLinked = linkEarlierSales(customerId, customerPhone)
+      // No name or number in the details: audit_log is append-only, so anything
+      // personal written here would survive the customer's erasure request.
+      logAudit({
+        userId: saleData.user_id,
+        action: 'CUSTOMER_CREATED',
+        entityType: 'customer',
+        entityId: customerId,
+        details: {
+          source: 'checkout',
+          receipt_number: receiptNumber,
+          named: !plan.placeholder,
+          earlier_sales_linked: earlierSalesLinked
+        }
+      })
     }
 
     // Insert sale header using Drizzle
@@ -212,7 +275,9 @@ export function createSale(saleData: SaleData): { sale_id: string; receipt_numbe
         cardReceived: saleData.card_received,
         changeGiven: saleData.change_given,
         status: 'completed',
-        customerName: saleData.customer_name?.trim() || null,
+        // What was typed, which is what the receipt prints — even when it differs
+        // from the name on file, which is deliberately left alone.
+        customerName: typedName || null,
         customerPhone: customerPhone,
         createdAt: now
       })

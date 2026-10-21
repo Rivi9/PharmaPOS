@@ -15,7 +15,7 @@ Electron 44); printer and pole display report "no device". Install **inside a
 `.worktrees/<name>` worktree** so the ~1 GB of `node_modules` stays disposable:
 
 ```bash
-npm ci
+npm ci   # npm 12+: add --allow-git=all (electron/node-gyp is a pinned git dependency)
 # `npx electron-rebuild` crashes under Node 26 (old yargs); use the API:
 node -e "require('@electron/rebuild').rebuild({buildPath:process.cwd(),electronVersion:require('electron/package.json').version,force:true})"
 npx electron-forge package

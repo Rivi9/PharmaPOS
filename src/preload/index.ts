@@ -61,8 +61,6 @@ const electronAPI = {
   // Stock
   checkStockAvailability: (productId: string) =>
     ipcRenderer.invoke(IPC_CHANNELS.STOCK_CHECK_AVAILABILITY, productId),
-  deductStock: (productId: string, quantity: number) =>
-    ipcRenderer.invoke(IPC_CHANNELS.STOCK_DEDUCT, { productId, quantity }),
 
   // Inventory - Products
   // `_userId` is vestigial on these two: the handler resolves the acting user
@@ -220,9 +218,6 @@ const electronAPI = {
       ipcRenderer.invoke(IPC_CHANNELS.USER_DELETE, { userId, id, reactivate }),
     changePassword: (userId: string, id: string, password: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.USER_CHANGE_PASSWORD, { userId, id, password }),
-    verifyPassword: (username: string, password: string) =>
-      ipcRenderer.invoke(IPC_CHANNELS.USER_VERIFY_PASSWORD, { username, password }),
-    verifyPin: (pin: string) => ipcRenderer.invoke(IPC_CHANNELS.USER_VERIFY_PIN, pin),
     stats: () => ipcRenderer.invoke(IPC_CHANNELS.USER_STATS),
 
     checkPermission: (role: string, permission: string) =>
@@ -255,6 +250,8 @@ const electronAPI = {
     list: (search?: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_LIST, search),
     get: (id: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_GET, id),
     getByPhone: (phone: string) => ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_GET_BY_PHONE, phone),
+    checkoutLookup: (phone: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_CHECKOUT_LOOKUP, phone),
     create: (userId: string, data: unknown) =>
       ipcRenderer.invoke(IPC_CHANNELS.CUSTOMER_CREATE, { userId, ...(data as object) }),
     update: (userId: string, id: string, data: unknown) =>
@@ -281,15 +278,13 @@ const electronAPI = {
 
   // Shifts - Extended
   shifts: {
-    computeExpectedCash: (shiftId: string, openingCash: number) =>
-      ipcRenderer.invoke(IPC_CHANNELS.SHIFT_COMPUTE_EXPECTED_CASH, { shiftId, openingCash }),
-    recordCashMovement: (params: {
-      userId: string
-      shiftId: string
-      type: 'in' | 'out'
-      amount: number
-      reason: string
-    }) => ipcRenderer.invoke(IPC_CHANNELS.SHIFT_CASH_MOVEMENT, params),
+    // No opening float is sent: the main process uses the one recorded on the shift.
+    computeExpectedCash: (shiftId: string) =>
+      ipcRenderer.invoke(IPC_CHANNELS.SHIFT_COMPUTE_EXPECTED_CASH, { shiftId }),
+    // No userId or shiftId: the movement is always the signed-in user's, on
+    // their own open shift, resolved in the main process.
+    recordCashMovement: (params: { type: 'in' | 'out'; amount: number; reason: string }) =>
+      ipcRenderer.invoke(IPC_CHANNELS.SHIFT_CASH_MOVEMENT, params),
     cashMovements: (shiftId: string) =>
       ipcRenderer.invoke(IPC_CHANNELS.SHIFT_CASH_MOVEMENTS, shiftId)
   },
@@ -316,13 +311,17 @@ const electronAPI = {
 
   // IPC Renderer for event listeners
   ipcRenderer: {
+    // Listeners are typed by their callers; `unknown[]` would reject every typed one.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     on: (channel: string, listener: (...args: any[]) => void) => {
       ipcRenderer.on(channel, listener)
     },
+    // Listeners are typed by their callers; `unknown[]` would reject every typed one.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     removeListener: (channel: string, listener: (...args: any[]) => void) => {
       ipcRenderer.removeListener(channel, listener)
     },
-    send: (channel: string, ...args: any[]) => {
+    send: (channel: string, ...args: unknown[]) => {
       ipcRenderer.send(channel, ...args)
     }
   }

@@ -121,7 +121,7 @@ export function EndShiftModal({
 
     setLoadingExpectedCash(true)
     window.electron.shifts
-      .computeExpectedCash(currentShift.id, (currentShift as WithOpeningCash).opening_cash ?? 0)
+      .computeExpectedCash(currentShift.id)
       .then((cash: number) => {
         setComputedExpectedCash(cash)
       })
