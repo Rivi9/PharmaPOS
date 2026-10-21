@@ -20,8 +20,6 @@ export interface ProductData {
   supplier_id?: string
   cost_price: number
   unit_price: number
-  tax_rate?: number
-  is_tax_inclusive?: number
   reorder_level?: number
   reorder_qty?: number
   unit?: string
@@ -297,8 +295,6 @@ export function createProduct(data: ProductData): { id: string } {
   const name = assertName('Product name', data.name)
   const costPrice = assertMoney('Cost price', data.cost_price) ?? 0
   const unitPrice = assertMoney('Selling price', data.unit_price) ?? 0
-  const taxRate = assertMoney('Tax rate', data.tax_rate ?? 0) ?? 0
-  if (taxRate > 100) throw new Error('Tax rate cannot exceed 100%')
   const reorderLevel = assertQuantity('Reorder level', data.reorder_level ?? 10)
   const reorderQty = assertQuantity('Reorder quantity', data.reorder_qty ?? 50)
 
@@ -322,8 +318,11 @@ export function createProduct(data: ProductData): { id: string } {
     data.supplier_id || null,
     costPrice,
     unitPrice,
-    taxRate,
-    data.is_tax_inclusive ?? 1,
+    // products.tax_rate is no longer used: VAT is one shop-wide rate (Settings →
+    // vat_rate), read by createSale. The column stays so no migration has to
+    // drop it; it is always written as 0 and never read.
+    0,
+    1,
     reorderLevel,
     reorderQty,
     data.unit || 'piece',
@@ -376,16 +375,6 @@ export function updateProduct(id: string, data: Partial<ProductData>): void {
   if (data.unit_price !== undefined) {
     fields.push('unit_price = ?')
     values.push(assertMoney('Selling price', data.unit_price))
-  }
-  if (data.tax_rate !== undefined) {
-    const taxRate = assertMoney('Tax rate', data.tax_rate) ?? 0
-    if (taxRate > 100) throw new Error('Tax rate cannot exceed 100%')
-    fields.push('tax_rate = ?')
-    values.push(taxRate)
-  }
-  if (data.is_tax_inclusive !== undefined) {
-    fields.push('is_tax_inclusive = ?')
-    values.push(data.is_tax_inclusive)
   }
   if (data.reorder_level !== undefined) {
     fields.push('reorder_level = ?')
@@ -1030,7 +1019,6 @@ export function exportProductsToCSV(): string {
     'Supplier',
     'Cost Price',
     'Unit Price',
-    'Tax Rate',
     'Stock',
     'Unit',
     'Reorder Level',
@@ -1050,7 +1038,6 @@ export function exportProductsToCSV(): string {
     // cost even with costed stock on the shelf or long since sold.
     String(p.last_known_cost ?? p.cost_price),
     p.unit_price.toString(),
-    p.tax_rate.toString(),
     (p.total_stock || 0).toString(),
     p.unit,
     p.reorder_level.toString(),

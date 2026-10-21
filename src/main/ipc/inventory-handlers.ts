@@ -47,7 +47,6 @@ const PRODUCT_AUDIT_KEYS = [
   'sku',
   'cost_price',
   'unit_price',
-  'tax_rate',
   'reorder_level',
   'reorder_qty',
   'unit',

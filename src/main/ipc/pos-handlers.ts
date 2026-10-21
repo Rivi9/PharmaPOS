@@ -19,7 +19,6 @@ import {
 } from '../services/sales'
 import { getCustomerPurchaseHistory } from '../services/customers'
 import { getActiveShiftForUser } from '../services/shifts'
-import { logAudit } from '../services/audit'
 import { getDatabase } from '../services/database'
 import { getUserById } from '../services/users/user-management'
 import { hasPermission, type Role } from '../services/users/permissions'
@@ -101,29 +100,13 @@ export function registerPOSHandlers(): void {
 
   // Refund sale — requires sales:refund permission
   ipcMain.handle(IPC_CHANNELS.SALE_REFUND, async (_event, { saleId, items, reason, restock }) => {
-    return withPermission(_event, 'sales:refund', () => {
-      const result = createRefund(
-        saleId,
-        actingUserId(_event),
-        items,
-        reason ?? '',
-        restock ?? false
-      )
-      logAudit({
-        userId: actingUserId(_event),
-        action: 'SALE_REFUNDED',
-        entityType: 'sale',
-        entityId: saleId,
-        details: {
-          refund_id: result.refund_id,
-          total_refunded: (items as Array<{ line_total: number }>).reduce(
-            (s, i) => s + i.line_total,
-            0
-          )
-        }
-      })
-      return result
-    })
+    // The SALE_REFUNDED audit entry is written once, inside createRefund's
+    // transaction, with the amount the server priced. This handler used to add a
+    // second one totalling the renderer's line_total values — undiscounted and
+    // caller-supplied — so every refund appeared twice with two different sums.
+    return withPermission(_event, 'sales:refund', () =>
+      createRefund(saleId, actingUserId(_event), items, reason ?? '', restock ?? false)
+    )
   })
 
   // Customer purchase history. Cashiers need it at checkout, so the gate is

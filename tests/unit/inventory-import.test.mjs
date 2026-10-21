@@ -138,9 +138,11 @@ check(
 )
 reset()
 r = importProductRows([H, row({ tax: 'abc' })])
+// VAT is one shop-wide rate, so a Tax Rate column is recognised and ignored —
+// whatever it holds, it neither blocks the row nor reaches the product.
 check(
-  'unreadable tax rate is an error, not a silent 0',
-  r.imported === 0 && /tax rate/.test(r.errors[0] ?? ''),
+  'a Tax Rate column is ignored, readable or not',
+  r.imported === 1 && r.errors.length === 0 && !('tax_rate' in inv.__calls.products[0]),
   JSON.stringify(r.errors)
 )
 reset()

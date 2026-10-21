@@ -241,6 +241,19 @@ check(
   true
 )
 
+// Sales figures are net of VAT, discounts and refunds, like the dashboard and the
+// P&L; only the payment-method amounts are as tendered. The labels must say so —
+// "Total Sales" here used to mean gross while the dashboard's meant net.
+for (const label of [
+  'Net Sales (ex VAT)',
+  'Avg. Sale (net)',
+  'Net Revenue',
+  'Amount (incl. VAT)'
+]) {
+  check(`sales: labelled "${label}"`, has(salesPdf.raw, textOp(label)), true)
+}
+check('sales: no ambiguous "Total Sales"', has(salesPdf.raw, textOp('Total Sales')), false)
+
 console.log('\nSales report, empty period')
 const emptySales = inspect(
   buildSalesPdf(
@@ -355,6 +368,7 @@ const pl = {
 const plPdf = inspect(buildProfitLossPdf(pl, 'Test Pharmacy', 'Rs.'), 'profit-loss.pdf')
 commonChecks('p&l', plPdf, { title: 'Profit & Loss Statement', period: '1 Aug 2026 – 20 Oct 2026' })
 check('p&l: TOTAL row kept', has(plPdf.raw, textOp('TOTAL')), true)
+check('p&l: revenue labelled net of VAT', has(plPdf.raw, textOp('Net Revenue (ex VAT)')), true)
 check('p&l: total row on the accent tint', usesColour(plPdf.raw, PDF_COLORS.accent, 'rg'), true)
 check(
   'p&l: loss-making category in destructive',

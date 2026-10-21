@@ -1,38 +1,26 @@
 import { getDatabase } from '../database'
 import { localDateString, localDateOffset } from '../../../shared/dates'
+import { rebuildProductSalesDaily } from './ledger'
 
 /**
  * Aggregates sales data for a specific date into product_sales_daily table.
  * This is the core analytics aggregation job that should run daily.
+ *
+ * Rebuilt from the sales ledger (./ledger.ts): local calendar date, net of VAT
+ * and of the sale discount, with refunds subtracted — the same figures
+ * createSale, the void and the refund maintain live. The previous SQL summed
+ * completed lines only, so every run (and opening Analytics runs it for the past
+ * week) quietly put partially refunded revenue back into the P&L.
  */
 export function aggregateDailySales(date?: string): { processed: number } {
   const db = getDatabase()
   const targetDate = date || localDateString()
 
-  // Delete existing aggregations for the date (idempotent)
-  db.prepare('DELETE FROM product_sales_daily WHERE date = ?').run(targetDate)
-
-  // Aggregate sales by product for the date
-  const stmt = db.prepare(`
-    INSERT INTO product_sales_daily (date, product_id, quantity_sold, revenue, cost, profit)
-    SELECT
-      date(s.created_at) as date,
-      si.product_id,
-      SUM(si.quantity) as quantity_sold,
-      -- Net of VAT, matching what createSale writes live. Prices are tax-inclusive,
-      -- so the gross line total is not revenue — the VAT portion is a liability.
-      ROUND(SUM(si.line_total - si.tax_amount), 2) as revenue,
-      ROUND(SUM(si.cost_price * si.quantity), 2) as cost,
-      ROUND(SUM((si.line_total - si.tax_amount) - (si.cost_price * si.quantity)), 2) as profit
-    FROM sale_items si
-    JOIN sales s ON si.sale_id = s.id
-    WHERE date(s.created_at) = ?
-      AND s.status = 'completed'
-    GROUP BY date(s.created_at), si.product_id
-  `)
-
-  const result = stmt.run(targetDate)
-  return { processed: result.changes }
+  // One transaction, so a reader never sees the day deleted but not yet rebuilt.
+  const processed = db.transaction(() =>
+    rebuildProductSalesDaily(db, { start: targetDate, end: targetDate })
+  )()
+  return { processed }
 }
 
 /**

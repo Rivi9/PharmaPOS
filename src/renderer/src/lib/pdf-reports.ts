@@ -26,7 +26,12 @@ import {
 export interface SalesReportData {
   start_date: string
   end_date: string
+  /** Net: excluding VAT, after discounts and refunds — the dashboard's and the P&L's basis. */
   total_sales: number
+  /** VAT included, after refunds. */
+  total_gross_sales?: number
+  total_vat?: number
+  total_refunded?: number
   total_profit: number
   total_cost: number
   total_transactions: number
@@ -93,7 +98,8 @@ export function buildSalesPdf(data: SalesReportData, businessName: string, sym: 
   y = drawKpiGrid(
     doc,
     [
-      { label: 'Total Sales', value: fmt(data.total_sales, sym) },
+      // Net of VAT, discounts and refunds — the dashboard's and the P&L's basis.
+      { label: 'Net Sales (ex VAT)', value: fmt(data.total_sales, sym) },
       {
         label: 'Total Profit',
         value: fmt(data.total_profit, sym),
@@ -103,7 +109,7 @@ export function buildSalesPdf(data: SalesReportData, businessName: string, sym: 
       { label: 'Total Cost', value: fmt(data.total_cost, sym), tone: 'neutral' },
       { label: 'Transactions', value: String(data.total_transactions), tone: 'info' },
       { label: 'Items Sold', value: String(data.total_items_sold), tone: 'info' },
-      { label: 'Avg. Sale', value: fmt(data.avg_transaction, sym) }
+      { label: 'Avg. Sale (net)', value: fmt(data.avg_transaction, sym) }
     ],
     y,
     3
@@ -112,7 +118,7 @@ export function buildSalesPdf(data: SalesReportData, businessName: string, sym: 
   y = drawSectionTitle(doc, 'Daily Sales Breakdown', y)
   y = drawReportTable(doc, {
     startY: y,
-    head: ['Date', 'Sales', 'Profit', 'Transactions'],
+    head: ['Date', 'Net Sales', 'Profit', 'Transactions'],
     body: data.daily_breakdown.map((r) => [
       r.date,
       fmt(r.sales, sym),
@@ -124,10 +130,10 @@ export function buildSalesPdf(data: SalesReportData, businessName: string, sym: 
   })
 
   y = ensureSpace(doc, y, 40)
-  y = drawSectionTitle(doc, 'Top 10 Products by Revenue', y)
+  y = drawSectionTitle(doc, 'Top 10 Products by Net Revenue', y)
   y = drawReportTable(doc, {
     startY: y,
-    head: ['Product', 'Qty Sold', 'Revenue', 'Profit'],
+    head: ['Product', 'Qty Sold', 'Net Revenue', 'Profit'],
     body: data.top_products.map((r) => [
       r.product_name,
       String(r.quantity),
@@ -142,7 +148,7 @@ export function buildSalesPdf(data: SalesReportData, businessName: string, sym: 
   y = drawSectionTitle(doc, 'Payment Methods', y)
   drawReportTable(doc, {
     startY: y,
-    head: ['Method', 'Count', 'Amount'],
+    head: ['Method', 'Count', 'Amount (incl. VAT)'],
     body: data.payment_methods.map((r) => [
       r.method.replace('_', ' ').toUpperCase(),
       String(r.count),
@@ -266,7 +272,7 @@ export function buildProfitLossPdf(data: ProfitLossData, businessName: string, s
   y = drawKpiGrid(
     doc,
     [
-      { label: 'Total Revenue', value: fmt(data.total_revenue, sym) },
+      { label: 'Net Revenue (ex VAT)', value: fmt(data.total_revenue, sym) },
       { label: 'Total Cost', value: fmt(data.total_cost, sym), tone: 'neutral' },
       {
         label: 'Gross Profit',
@@ -302,7 +308,7 @@ export function buildProfitLossPdf(data: ProfitLossData, businessName: string, s
   y = drawSectionTitle(doc, 'Profit by Category', y)
   y = drawReportTable(doc, {
     startY: y,
-    head: ['Category', 'Revenue', 'Cost', 'Gross Profit', 'Margin %'],
+    head: ['Category', 'Net Revenue', 'Cost', 'Gross Profit', 'Margin %'],
     body: data.by_category.map((r) => [
       r.category_name,
       fmt(r.revenue, sym),
@@ -319,7 +325,7 @@ export function buildProfitLossPdf(data: ProfitLossData, businessName: string, s
     y = drawSectionTitle(doc, 'Monthly Trend', y)
     drawReportTable(doc, {
       startY: y,
-      head: ['Month', 'Revenue', 'Cost', 'Gross Profit'],
+      head: ['Month', 'Net Revenue', 'Cost', 'Gross Profit'],
       body: data.by_month.map((r) => [
         r.month,
         fmt(r.revenue, sym),

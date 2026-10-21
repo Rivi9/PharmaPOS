@@ -41,3 +41,57 @@ export function extractIncludedTax(grossAmount: number, ratePercent: number): nu
 export function netOfIncludedTax(grossAmount: number, ratePercent: number): number {
   return round2(grossAmount - extractIncludedTax(grossAmount, ratePercent))
 }
+
+/**
+ * Split a sale-level discount across the lines it was given on, in proportion
+ * to each line's total, so the shares add up to the discount exactly.
+ *
+ * VAT is due on the consideration actually received. A sale-level discount
+ * lowers that, so it has to reach each line before the line's VAT is extracted
+ * — otherwise the VAT, the net revenue and the P&L are all computed on money
+ * the customer never paid. The leftover cents after rounding go to the lines
+ * with the largest fractional share (largest remainder), so
+ * `SUM(shares) === discount` to the cent and the header can be rebuilt from the
+ * lines.
+ *
+ *   apportionDiscount([600, 400], 100)  ->  [60, 40]
+ *   apportionDiscount([1, 1, 1], 1)     ->  [0.34, 0.33, 0.33]
+ */
+export function apportionDiscount(lineTotals: number[], discount: number): number[] {
+  const totalCents = lineTotals.reduce((s, t) => s + Math.max(Math.round(t * 100), 0), 0)
+  if (!(discount > 0) || totalCents <= 0) return lineTotals.map(() => 0)
+
+  const discountCents = Math.min(Math.round(discount * 100), totalCents)
+  const exact = lineTotals.map(
+    (t) => (Math.max(Math.round(t * 100), 0) * discountCents) / totalCents
+  )
+  const floors = exact.map(Math.floor)
+  let left = discountCents - floors.reduce((s, c) => s + c, 0)
+
+  const byRemainder = exact
+    .map((e, i) => ({ i, r: e - floors[i] }))
+    .sort((a, b) => b.r - a.r || a.i - b.i)
+  for (const { i } of byRemainder) {
+    if (left <= 0) break
+    floors[i]++
+    left--
+  }
+
+  return floors.map((c) => c / 100)
+}
+
+/**
+ * VAT for each line of a basket, after its share of the sale discount.
+ *
+ * The cart and `createSale` both use this, so the VAT on screen, on the receipt,
+ * in `sales.tax_amount` and in `SUM(sale_items.tax_amount)` are the same number.
+ */
+export function basketLineTax(
+  lineTotals: number[],
+  discount: number,
+  ratePercent: number
+): { discounts: number[]; taxes: number[]; tax: number } {
+  const discounts = apportionDiscount(lineTotals, discount)
+  const taxes = lineTotals.map((t, i) => extractIncludedTax(round2(t - discounts[i]), ratePercent))
+  return { discounts, taxes, tax: round2(taxes.reduce((s, t) => s + t, 0)) }
+}

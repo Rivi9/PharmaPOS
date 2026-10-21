@@ -188,7 +188,12 @@ export const saleItems = sqliteTable('sale_items', {
   unitPrice: real('unit_price').notNull(),
   costPrice: real('cost_price').notNull(),
   taxRate: real('tax_rate').notNull().default(0),
+  /** VAT in what was paid for this line: `line_total - discount_amount`. */
   taxAmount: real('tax_amount').notNull().default(0),
+  /**
+   * This line's share of the SALE-level discount (`apportionDiscount`). A line
+   * discount is already in `unit_price`; `line_total` stays pre-sale-discount.
+   */
   discountAmount: real('discount_amount').notNull().default(0),
   lineTotal: real('line_total').notNull(),
   createdAt: text('created_at').notNull()
@@ -225,6 +230,8 @@ export const saleRefunds = sqliteTable('sale_refunds', {
   totalRefunded: real('total_refunded').notNull(),
   /** VAT contained in the refunded amount, so VAT reporting can be reversed too. */
   taxRefunded: real('tax_refunded').notNull().default(0),
+  /** The part paid back in cash from the drawer; the rest went back to the card. */
+  cashRefunded: real('cash_refunded').notNull().default(0),
   restock: integer('restock').notNull().default(1),
   reason: text('reason'),
   /** Shift whose drawer the cash came out of — not necessarily the sale's shift. */
