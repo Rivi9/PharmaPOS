@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { AlertCircle, ArrowLeft, Cross, Hash, KeyRound, LogIn } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Clock, Cross, Hash, KeyRound, LogIn } from 'lucide-react'
 import { Card, CardContent } from '@renderer/components/ui/card'
 import { Button } from '@renderer/components/ui/button'
 import { Input } from '@renderer/components/ui/input'
@@ -52,6 +52,14 @@ function initialsOf(name: string): string {
   )
 }
 
+/** "45 seconds" under a minute, "m:ss" from a minute up. */
+function formatLockRemaining(seconds: number): string {
+  if (seconds < 60) return `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`
+  const m = Math.floor(seconds / 60)
+  const s = seconds % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
 /** The PharmaPOS mark — same treatment as the app header, scaled up. */
 function BrandMark(): React.JSX.Element {
   return (
@@ -73,6 +81,12 @@ export function LoginPage(): React.JSX.Element {
   const [loading, setLoading] = useState(true)
   const [firstRunCreds, setFirstRunCreds] = useState<{ pin: string; password: string } | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // Lock expiry (epoch ms) per user id. The lockout is per account, so the
+  // countdown follows the user it belongs to: picking another tile must not
+  // show — or block on — the previous user's lock, and coming back to the
+  // locked user picks it up again.
+  const [locks, setLocks] = useState<Record<string, number>>({})
+  const [now, setNow] = useState(() => Date.now())
   const bootstrapAttempted = useRef(false)
 
   const login = useAuthStore((state) => state.login)
@@ -82,6 +96,59 @@ export function LoginPage(): React.JSX.Element {
   useEffect(() => {
     loadUsers()
   }, [])
+
+  const lockUntil = selectedUser ? locks[selectedUser.id] : undefined
+  const lockSeconds = lockUntil !== undefined ? Math.ceil((lockUntil - now) / 1000) : 0
+  const locked = lockSeconds > 0
+
+  // Tick while the selected user is locked. The main process sends the unlock
+  // time once; the countdown is worked out here so it actually goes down
+  // instead of freezing on whatever it said when the attempt came back.
+  // Once it expires the lock is dropped, which clears the message and
+  // re-enables the pad.
+  const selectedId = selectedUser?.id
+  useEffect(() => {
+    if (selectedId === undefined || lockUntil === undefined) return
+    const timer = setInterval(() => {
+      const t = Date.now()
+      setNow(t)
+      if (t >= lockUntil) {
+        setLocks((prev) => {
+          const next = { ...prev }
+          delete next[selectedId]
+          return next
+        })
+      }
+    }, 250)
+    return () => clearInterval(timer)
+  }, [selectedId, lockUntil])
+
+  const selectUser = (user: User): void => {
+    // Fresh clock before the first render of this user, so a lock that ran
+    // out (or a countdown that moved on) while another tile was open is not
+    // shown stale for a tick.
+    setNow(Date.now())
+    setSelectedUser(user)
+  }
+
+  /**
+   * Show a failed attempt. A locked-out answer carries `lockedUntil`; that goes
+   * into `locks` rather than `error`, so the message counts down live.
+   */
+  const showFailure = (
+    userId: string,
+    result: { error?: string; lockedUntil?: string },
+    fallback: string
+  ): void => {
+    const until = result.lockedUntil ? new Date(result.lockedUntil).getTime() : NaN
+    if (Number.isFinite(until) && until > Date.now()) {
+      setNow(Date.now())
+      setLocks((prev) => ({ ...prev, [userId]: until }))
+      setError('')
+    } else {
+      setError(result.error || fallback)
+    }
+  }
 
   const loadUsers = async (): Promise<void> => {
     try {
@@ -131,7 +198,7 @@ export function LoginPage(): React.JSX.Element {
   }
 
   const handlePinSubmit = async (pin: string): Promise<void> => {
-    if (!selectedUser) return
+    if (!selectedUser || locked) return
     setError('')
 
     const result = await window.electron.login({ userId: selectedUser.id, pin })
@@ -140,14 +207,14 @@ export function LoginPage(): React.JSX.Element {
       await resumeShift()
       login(result.user)
     } else {
-      setError(result.error || 'Invalid PIN')
+      showFailure(selectedUser.id, result, 'Invalid PIN')
     }
   }
 
   const handlePasswordSubmit = async (): Promise<void> => {
     // `submitting` stops Enter + a tap on Login from sending two attempts for
     // the same password (each failure counts towards the lockout).
-    if (!selectedUser || !password || submitting) return
+    if (!selectedUser || !password || submitting || locked) return
     setError('')
     setSubmitting(true)
 
@@ -158,7 +225,7 @@ export function LoginPage(): React.JSX.Element {
         await resumeShift()
         login(result.user)
       } else {
-        setError(result.error || 'Invalid password')
+        showFailure(selectedUser.id, result, 'Invalid password')
         setPassword('')
       }
     } finally {
@@ -182,6 +249,16 @@ export function LoginPage(): React.JSX.Element {
       </div>
     )
   }
+
+  const lockAlert = locked ? (
+    <Alert variant="destructive" className="text-base" data-testid="login-lockout">
+      <Clock />
+      <AlertDescription>
+        Too many failed attempts. Try again in{' '}
+        <span className="font-semibold tabular-nums">{formatLockRemaining(lockSeconds)}</span>.
+      </AlertDescription>
+    </Alert>
+  ) : null
 
   const errorAlert = error ? (
     <Alert variant="destructive" className="text-base">
@@ -244,7 +321,7 @@ export function LoginPage(): React.JSX.Element {
                     key={user.id}
                     variant="outline"
                     className="h-auto flex-col gap-3 rounded-xl px-3 py-5 whitespace-normal hover:border-primary/40 hover:bg-accent"
-                    onClick={() => setSelectedUser(user)}
+                    onClick={() => selectUser(user)}
                   >
                     <Avatar className="size-16">
                       <AvatarFallback className="bg-accent text-xl font-semibold text-accent-foreground">
@@ -276,7 +353,7 @@ export function LoginPage(): React.JSX.Element {
               </div>
             </div>
 
-            {errorAlert}
+            {lockAlert ?? errorAlert}
 
             {usePassword ? (
               <div className="flex w-full flex-col gap-4">
@@ -300,14 +377,14 @@ export function LoginPage(): React.JSX.Element {
                   className="w-full"
                   size="xl"
                   onClick={handlePasswordSubmit}
-                  disabled={!password || submitting}
+                  disabled={!password || submitting || locked}
                 >
                   {submitting ? <Spinner className="size-6" aria-hidden="true" /> : <LogIn />}
                   Login
                 </Button>
               </div>
             ) : (
-              <PinPad onSubmit={handlePinSubmit} />
+              <PinPad onSubmit={handlePinSubmit} disabled={locked} />
             )}
 
             <div className="flex w-full justify-between gap-3">

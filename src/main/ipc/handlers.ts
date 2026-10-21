@@ -19,6 +19,34 @@ import { computeShiftExpectedCash } from '../services/sales'
 import { getUserById } from '../services/users/user-management'
 import { round2 } from '../../shared/money'
 
+/** A `users` row as SELECT * returns it. */
+interface UserRow {
+  id: string
+  username: string
+  password_hash: string
+  full_name: string
+  role: 'admin' | 'manager' | 'cashier'
+  pin_code: string | null
+  is_active: number
+  failed_attempts: number | null
+  locked_until: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** What login hands the renderer: never the password hash or the PIN hash. */
+function toSafeUser(user: UserRow): Omit<UserRow, 'password_hash' | 'pin_code'> & {
+  pin_set: boolean
+} {
+  const rest: Partial<UserRow> = { ...user }
+  delete rest.password_hash
+  delete rest.pin_code
+  return {
+    ...(rest as Omit<UserRow, 'password_hash' | 'pin_code'>),
+    pin_set: Boolean(user.pin_code)
+  }
+}
+
 export function registerIpcHandlers(): void {
   // Register POS handlers
   registerPOSHandlers()
@@ -79,10 +107,32 @@ export function registerIpcHandlers(): void {
     return 0
   }
 
+  /**
+   * The answer to a login attempt against a locked account. `lockedUntil` (ISO)
+   * is what the login screen counts down from: the message alone was built once
+   * from the remaining seconds, so "Try again in 27 seconds" sat frozen on the
+   * screen until the next tap. `error` stays for any caller that only shows text.
+   */
+  const lockedOut = (
+    lockedUntil: string
+  ): { success: false; error: string; lockedUntil: string } => {
+    const seconds = Math.max(1, Math.ceil((new Date(lockedUntil).getTime() - Date.now()) / 1000))
+    return {
+      success: false,
+      error:
+        seconds > 60
+          ? `Too many failed attempts. Try again in ${Math.ceil(seconds / 60)} minutes.`
+          : `Too many failed attempts. Try again in ${seconds} seconds.`,
+      lockedUntil
+    }
+  }
+
   // Login with PIN or password
   ipcMain.handle(IPC_CHANNELS.AUTH_LOGIN, async (event, { userId, pin, password }) => {
     const db = getDatabase()
-    const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(userId) as any
+    const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(userId) as
+      | UserRow
+      | undefined
 
     if (!user) {
       return { success: false, error: 'User not found' }
@@ -91,14 +141,7 @@ export function registerIpcHandlers(): void {
     if (user.locked_until) {
       const until = new Date(user.locked_until).getTime()
       if (Number.isFinite(until) && until > Date.now()) {
-        const seconds = Math.ceil((until - Date.now()) / 1000)
-        return {
-          success: false,
-          error:
-            seconds > 60
-              ? `Too many failed attempts. Try again in ${Math.ceil(seconds / 60)} minutes.`
-              : `Too many failed attempts. Try again in ${seconds} seconds.`
-        }
+        return lockedOut(user.locked_until)
       }
     }
 
@@ -108,7 +151,8 @@ export function registerIpcHandlers(): void {
       )
     }
 
-    const onFailure = (method: 'pin' | 'password'): void => {
+    /** Records the failure; returns the new lock expiry when this attempt set one. */
+    const onFailure = (method: 'pin' | 'password'): string | null => {
       const attempts = (user.failed_attempts ?? 0) + 1
       const lockMs = lockoutFor(attempts)
       const lockedUntil = lockMs > 0 ? new Date(Date.now() + lockMs).toISOString() : null
@@ -125,6 +169,7 @@ export function registerIpcHandlers(): void {
         entityId: user.id,
         details: { method, attempts, locked_until: lockedUntil }
       })
+      return lockedUntil
     }
 
     // PIN is always bcrypt-compared. The old fallback branch did a plain `===`
@@ -133,8 +178,7 @@ export function registerIpcHandlers(): void {
     if (pin && user.pin_code) {
       const pinValid = await bcrypt.compare(pin, user.pin_code)
       if (pinValid) {
-        const { password_hash, pin_code, ...rest } = user
-        const safeUser = { ...rest, pin_set: Boolean(pin_code) }
+        const safeUser = toSafeUser(user)
         const activeShift = db
           .prepare(
             `SELECT opening_cash FROM shifts WHERE user_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`
@@ -163,8 +207,7 @@ export function registerIpcHandlers(): void {
     if (password) {
       const valid = await bcrypt.compare(password, user.password_hash)
       if (valid) {
-        const { password_hash, pin_code, ...rest } = user
-        const safeUser = { ...rest, pin_set: Boolean(pin_code) }
+        const safeUser = toSafeUser(user)
         const activeShift = db
           .prepare(
             `SELECT opening_cash FROM shifts WHERE user_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`
@@ -189,7 +232,11 @@ export function registerIpcHandlers(): void {
       }
     }
 
-    onFailure(pin ? 'pin' : 'password')
+    // The attempt that trips the lock says so straight away. Answering it with
+    // a plain "Invalid credentials" left the cashier keying a fourth PIN only
+    // to learn then that the account had been locked all along.
+    const lockedUntil = onFailure(pin ? 'pin' : 'password')
+    if (lockedUntil) return lockedOut(lockedUntil)
     const remaining = Math.max(0, 3 - ((user.failed_attempts ?? 0) + 1))
     return {
       success: false,
@@ -279,8 +326,8 @@ export function registerIpcHandlers(): void {
           details: { bootstrap: true, role: 'admin' }
         })
         return { success: true, id }
-      } catch (error: any) {
-        return { success: false, error: error.message }
+      } catch (error: unknown) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) }
       }
     }
   )
@@ -288,7 +335,9 @@ export function registerIpcHandlers(): void {
   // Get settings
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET, (_, key: string) => {
     const db = getDatabase()
-    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as any
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
+      | { value: string | null }
+      | undefined
     return row?.value || null
   })
 
@@ -361,7 +410,10 @@ export function registerIpcHandlers(): void {
   // Get all settings
   ipcMain.handle(IPC_CHANNELS.SETTINGS_GET_ALL, () => {
     const db = getDatabase()
-    const rows = db.prepare('SELECT key, value FROM settings').all() as any[]
+    const rows = db.prepare('SELECT key, value FROM settings').all() as {
+      key: string
+      value: string | null
+    }[]
     return Object.fromEntries(rows.map((r) => [r.key, r.value]))
   })
 

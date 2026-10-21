@@ -100,6 +100,7 @@ SHOT_DIR=/tmp/shots node .claude/skills/run-pharmapos/driver.mjs boot ss:home qu
 | `scan:<barcode>` | type a barcode into Product Entry and press Enter |
 | `pay:<cash>` | Pay → fill cash → Complete Sale |
 | `ss[:name]` | screenshot |
+| `viewport[:w:h]` | render at a fixed CSS size (default 1920x1080, the maximised till) — emulated, so it works on a smaller host screen |
 | `click:<css>` | DOM `.click()` on a selector |
 | `clicktext:<text>` | click a button by its visible text — most of this UI has no stable ids |
 | `tab:<label>` | switch a Radix tab (`clicktext` cannot — see Gotchas) |
