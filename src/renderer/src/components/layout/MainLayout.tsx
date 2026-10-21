@@ -6,6 +6,7 @@ import { SettingsPage, POSPage, InventoryPage, AnalyticsPage } from '@renderer/p
 import { UsersPage } from '@renderer/pages/UsersPage'
 import { AuditLogPage } from '@renderer/pages/AuditLogPage'
 import { CustomersPage } from '@renderer/pages/CustomersPage'
+import { SalesPage } from '@renderer/pages/SalesPage'
 import { useAuthStore } from '@renderer/stores/authStore'
 import { hasPermission, type Role } from '../../../../shared/permissions'
 
@@ -41,6 +42,8 @@ export function MainLayout({ user, onEndShift }: MainLayoutProps): React.JSX.Ele
         return <UsersPage />
       case 'customers':
         return <CustomersPage />
+      case 'sales':
+        return <SalesPage />
       case 'audit':
         return <AuditLogPage />
       default:
