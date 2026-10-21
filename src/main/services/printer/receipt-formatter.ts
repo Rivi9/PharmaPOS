@@ -124,8 +124,10 @@ export async function printShiftReport(
    * They used to be parameters. The only caller had no honest source for the
    * transaction count or the card split, so wiring this up (L6) would have meant
    * printing zeros on a report the cashier hands over with the drawer — worse
-   * than not printing it. Voided and refunded sales are excluded, so the report
-   * agrees with the drawer reconciliation by construction.
+   * than not printing it. Voided sales are excluded. A fully refunded sale is
+   * counted — its money was taken — and its refund appears under Refunds Paid
+   * Out, the way computeShiftExpectedCash sees the drawer; excluding it too
+   * took the refund off twice.
    */
   const totals = db
     .prepare(
@@ -135,7 +137,7 @@ export async function printShiftReport(
          COALESCE(SUM(cash_received - COALESCE(change_given, 0)), 0) as cash_sales,
          COALESCE(SUM(card_received), 0) as card_sales
        FROM sales
-       WHERE shift_id = ? AND status = 'completed'`
+       WHERE shift_id = ? AND status IN ('completed', 'refunded')`
     )
     .get(shiftData.shift_id) as {
     transaction_count: number

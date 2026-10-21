@@ -308,6 +308,32 @@ test.describe('refunds', () => {
     ).toBe(5000)
   })
 
+  test('a sale refunded in full in its own shift leaves the drawer and takings at the float', async () => {
+    await bootToPos(ctx.page) // opening float 5000
+    const p = seedProduct(ctx.dbPath, { unitPrice: 100, costPrice: 40, quantity: 10 })
+
+    const kept = await sell(ctx.page, p, 1)
+    const saleId = await sell(ctx.page, p, 3)
+    expect(await refund(ctx.page, saleId, p, 3)).toMatchObject({ refund_id: expect.any(String) })
+    expect(query(ctx.dbPath, 'SELECT status FROM sales WHERE id = ?', saleId)).toEqual([
+      { status: 'refunded' }
+    ])
+
+    const [{ shift_id }] = query<{ shift_id: string }>(
+      ctx.dbPath,
+      'SELECT shift_id FROM sales WHERE id = ?',
+      kept
+    )
+    // 5000 + 100 kept + 300 taken - 300 handed back. The refunded sale used to
+    // be dropped AND its refund subtracted, expecting 4800.
+    expect(
+      await ctx.page.evaluate((id) => window.electron.shifts.computeExpectedCash(id), shift_id)
+    ).toBe(5100)
+    expect(await ctx.page.evaluate((id) => window.electron.getTodaySalesTotal(id), shift_id)).toBe(
+      100
+    )
+  })
+
   test('a refund needs an open shift, like a sale', async () => {
     await completeSetup(ctx.page)
     await login(ctx.page) // signed in, no shift started

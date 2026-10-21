@@ -619,10 +619,15 @@ export function computeShiftExpectedCash(shiftId: string, openingCash: number): 
   // cash_received is what the customer HANDED OVER; change_given went back out.
   // Only the difference stays in the drawer. Summing cash_received alone
   // overstated the drawer by the whole day's change and reported every cashier short.
+  //
+  // Fully refunded sales count as taken: the cash did come in, and what went
+  // back out is the refund, subtracted below. Excluding them as well (they are
+  // status 'refunded') took the money out twice — a Rs. 100 sale refunded in
+  // the same shift left the drawer expecting Rs. 100 less than it held.
   const sales = db
     .prepare(
       `SELECT COALESCE(SUM(cash_received - COALESCE(change_given, 0)), 0) as total
-       FROM sales WHERE shift_id = ? AND status = 'completed'`
+       FROM sales WHERE shift_id = ? AND status IN ('completed', 'refunded')`
     )
     .get(shiftId) as { total: number }
 
@@ -782,12 +787,16 @@ export function getShiftCashMovements(shiftId: string): {
   }
 }
 
-/** Cash actually taken during a shift, i.e. excluding the opening float. */
+/**
+ * Cash actually taken during a shift, i.e. excluding the opening float. Refunded
+ * sales were still taken; the refund is a separate payout (see above).
+ */
 export function computeShiftCashSales(shiftId: string): number {
   const result = getDatabase()
     .prepare(
       `SELECT COALESCE(SUM(cash_received - COALESCE(change_given, 0)), 0) as total
-       FROM sales WHERE shift_id = ? AND status = 'completed' AND payment_method IN ('cash','mixed')`
+       FROM sales WHERE shift_id = ? AND status IN ('completed', 'refunded')
+         AND payment_method IN ('cash','mixed')`
     )
     .get(shiftId) as { total: number }
   return round2(result.total)
@@ -829,7 +838,13 @@ export function getReceipt(saleId: string): { sale: unknown; items: unknown[] } 
 }
 
 /**
- * Get today's sales total for a shift
+ * The shift's takings for the header's "Today" figure: what was sold in it, less
+ * what was refunded from it.
+ *
+ * Refunds used to be invisible here. A partial refund leaves the sale
+ * 'completed', so the figure did not move; a full one dropped the sale but
+ * ignored a refund paid now for a sale from an earlier shift. Both now come off
+ * when they are paid, the way the drawer sees them (computeShiftExpectedCash).
  */
 export function getTodaySalesTotal(shiftId: string): number {
   const db = getDatabase()
@@ -837,18 +852,22 @@ export function getTodaySalesTotal(shiftId: string): number {
   const result = db
     .prepare(
       `
-    SELECT COALESCE(SUM(total), 0) as total
-    FROM sales
-    WHERE shift_id = ?
-      -- Scoped to the shift, not the calendar day: an overnight shift used to
-      -- report zero after the UTC date rolled over mid-shift. Voided sales are
-      -- excluded, which they previously were not.
-      AND status = 'completed'
+    SELECT
+      (SELECT COALESCE(SUM(total), 0)
+       FROM sales
+       WHERE shift_id = ?
+         -- Scoped to the shift, not the calendar day: an overnight shift used to
+         -- report zero after the UTC date rolled over mid-shift. Voided sales are
+         -- excluded, which they previously were not.
+         AND status IN ('completed', 'refunded'))
+      -
+      (SELECT COALESCE(SUM(total_refunded), 0) FROM sale_refunds WHERE shift_id = ?)
+      AS total
   `
     )
-    .get(shiftId) as { total: number }
+    .get(shiftId, shiftId) as { total: number }
 
-  return result.total
+  return round2(result.total)
 }
 
 interface RefundItemInput {
