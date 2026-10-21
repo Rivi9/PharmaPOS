@@ -16,7 +16,8 @@ import { registerUpdateHandlers } from './update-handlers'
 import { registerAuditHandlers } from './audit-handlers'
 import { registerCustomerHandlers } from './customer-handlers'
 import { computeShiftExpectedCash } from '../services/sales'
-import { getUserById } from '../services/users/user-management'
+import { getUserById, assertPasswordStrength } from '../services/users/user-management'
+import { setupFlagExists } from '../services/setup/first-run'
 import { round2 } from '../../shared/money'
 
 /** A `users` row as SELECT * returns it. */
@@ -295,16 +296,27 @@ export function registerIpcHandlers(): void {
    * First-run bootstrap only. This channel used to accept any role and create an
    * admin at any time with no permission check — one console call was enough to
    * mint an administrator. It now refuses once any user exists.
+   *
+   * It is the login screen's recovery path for an install whose wizard finished
+   * but which has no accounts, so it is also refused while the wizard itself has
+   * not run — that case belongs to `setup:initialize`.
    */
   ipcMain.handle(
     IPC_CHANNELS.AUTH_CREATE_USER,
     async (_event, { username, password, fullName, pin }) => {
       const db = getDatabase()
-      const { count } = db.prepare('SELECT COUNT(*) as count FROM users').get() as {
-        count: number
-      }
-      if (count > 0) {
+      const countUsers = (): number =>
+        (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number }).count
+      if (countUsers() > 0) {
         return { success: false, error: 'Setup has already been completed' }
+      }
+      if (!setupFlagExists()) {
+        return { success: false, error: 'Complete the setup wizard first' }
+      }
+      try {
+        assertPasswordStrength(password, username)
+      } catch (error) {
+        return { success: false, error: (error as Error).message }
       }
 
       const id = generateId()
@@ -312,10 +324,18 @@ export function registerIpcHandlers(): void {
       const pinHash = pin ? await bcrypt.hash(pin, 10) : null
 
       try {
-        db.prepare(
-          `INSERT INTO users (id, username, password_hash, full_name, role, pin_code)
-           VALUES (?, ?, ?, ?, 'admin', ?)`
-        ).run(id, username, passwordHash, fullName, pinHash)
+        // Counted again, in the same transaction as the insert: the hashing above
+        // yields to the event loop, so two calls could both pass the first check
+        // and each create an administrator.
+        db.transaction(() => {
+          if (countUsers() > 0) throw new Error('Setup has already been completed')
+          db.prepare(
+            // created_at/updated_at are NOT NULL with no default. They were left
+            // out, so this recovery path failed on every install that reached it.
+            `INSERT INTO users (id, username, password_hash, full_name, role, pin_code, created_at, updated_at)
+             VALUES (?, ?, ?, ?, 'admin', ?, datetime('now'), datetime('now'))`
+          ).run(id, username, passwordHash, fullName, pinHash)
+        })()
 
         logAudit({
           userId: id,
