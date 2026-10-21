@@ -188,6 +188,14 @@ const MIGRATIONS: Array<{ version: number; sql: string; run?: (sqlite: Sqlite) =
       ), 0);
     `,
     run: repairSalesLedger
+  },
+  {
+    version: 10,
+    sql: `
+      -- The Sales screen lists every sale newest first, a page at a time. Without
+      -- this, each page sorted the whole sales table to find its 50 rows.
+      CREATE INDEX IF NOT EXISTS idx_sales_created ON sales(created_at);
+    `
   }
 ]
 

@@ -26,6 +26,11 @@ interface ReceiptPreviewProps {
   onClose: () => void
   saleId: string
   receiptNumber: string
+  /**
+   * A copy of an earlier sale (the Sales screen), not the receipt being handed
+   * over at checkout: it previews and prints marked *** REPRINT ***.
+   */
+  reprint?: boolean
 }
 
 interface ReceiptData {
@@ -56,14 +61,15 @@ export function ReceiptPreview({
   open,
   onClose,
   saleId,
-  receiptNumber
+  receiptNumber,
+  reprint = false
 }: ReceiptPreviewProps): React.JSX.Element {
   const [receipt, setReceipt] = useState<ReceiptData | null>(null)
   const [loading, setLoading] = useState(true)
   const [printing, setPrinting] = useState(false)
   const [printError, setPrintError] = useState('')
   const [printWarning, setPrintWarning] = useState('')
-  const [hasPrinted, setHasPrinted] = useState(false)
+  const [hasPrinted, setHasPrinted] = useState(reprint)
   const settings = useSettingsStore((state) => state.settings)
 
   useEffect(() => {
@@ -76,7 +82,7 @@ export function ReceiptPreview({
     setReceipt(null)
     setPrintError('')
     setPrintWarning('')
-    setHasPrinted(false)
+    setHasPrinted(reprint)
     window.electron
       .getReceipt(saleId)
       .then((data: ReceiptData) => {
@@ -89,7 +95,7 @@ export function ReceiptPreview({
     return () => {
       cancelled = true
     }
-  }, [open, saleId])
+  }, [open, saleId, reprint])
 
   // Built from the SAME shared layout the printer uses, so the preview is
   // literally the document that comes out of the printer.
@@ -112,7 +118,8 @@ export function ReceiptPreview({
           currency: settings.currency_symbol || 'Rs.',
           vatRate: settings.vat_rate
         },
-        width: receiptWidth
+        width: receiptWidth,
+        reprint
       }),
       receiptWidth
     )

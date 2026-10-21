@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { IPC_CHANNELS } from '../main/ipc/channels'
+import type {
+  RefundPreview,
+  SaleDetail,
+  SaleListRow,
+  SalesPageQuery
+} from '../shared/sales-history'
 
 const electronAPI = {
   // Auth
@@ -57,6 +63,18 @@ const electronAPI = {
     reason?: string
     restock?: boolean
   }) => ipcRenderer.invoke(IPC_CHANNELS.SALE_REFUND, params),
+
+  // Sales screen. No user id: the main process authorises from the session.
+  sales: {
+    listPage: (query: SalesPageQuery): Promise<{ rows: SaleListRow[]; total: number }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.SALE_LIST_PAGE, query),
+    detail: (saleId: string): Promise<SaleDetail | null> =>
+      ipcRenderer.invoke(IPC_CHANNELS.SALE_DETAIL, saleId),
+    refundPreview: (params: {
+      saleId: string
+      items: Array<{ product_id: string; quantity: number; product_name?: string }>
+    }): Promise<RefundPreview> => ipcRenderer.invoke(IPC_CHANNELS.SALE_REFUND_PREVIEW, params)
+  },
 
   // Stock
   checkStockAvailability: (productId: string) =>

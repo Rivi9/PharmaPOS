@@ -9,12 +9,16 @@ import {
   Users,
   Settings,
   UserCog,
-  ClipboardList
+  ClipboardList,
+  ReceiptText
 } from 'lucide-react'
 import type { Permission } from '../../../../shared/permissions'
 
 export const NAV_ITEMS = [
   { id: 'pos', label: 'POS', icon: ShoppingCart, permission: 'sales:create' as Permission },
+  // Every role may look a sale up and reprint it; Void and Refund inside the
+  // page need sales:void / sales:refund, which cashiers do not hold.
+  { id: 'sales', label: 'Sales', icon: ReceiptText, permission: 'sales:view_all' as Permission },
   {
     id: 'inventory',
     label: 'Inventory',

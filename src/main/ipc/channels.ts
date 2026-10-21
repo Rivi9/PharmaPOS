@@ -30,6 +30,9 @@ export const IPC_CHANNELS = {
   SALE_GET_TODAY_TOTAL: 'sale:getTodayTotal',
   SALE_VOID: 'sale:void',
   SALE_REFUND: 'sale:refund',
+  SALE_LIST_PAGE: 'sale:listPage',
+  SALE_DETAIL: 'sale:detail',
+  SALE_REFUND_PREVIEW: 'sale:refundPreview',
 
   // Stock
   STOCK_CHECK_AVAILABILITY: 'stock:checkAvailability',

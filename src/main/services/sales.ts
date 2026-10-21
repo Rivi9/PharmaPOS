@@ -9,6 +9,7 @@ import { logAudit } from './audit'
 import { normalisePhone, findCheckoutCustomer, linkEarlierSales } from './customers'
 import { planCheckoutCustomer } from '../../shared/customers'
 import { saleLineAmounts, refundLineAmounts } from './analytics/ledger'
+import { quoteRefund, voidBlockReason, voidCheck } from './sales-history'
 
 // Re-export types that may be consumed by other modules
 export type { Sale, SaleItem, SaleRefund }
@@ -538,17 +539,16 @@ export function voidSale(saleId: string, userId: string, reason: string): void {
       | { status: string; total: number; receipt_number: string; created_at: string }
       | undefined
     if (!sale) throw new Error('Sale not found')
-    if (sale.status !== 'completed') throw new Error(`Cannot void a ${sale.status} sale`)
 
-    // A partly refunded sale stays 'completed', but its refunds have already
-    // paid cash out, restocked units and reversed part of the rollup. Voiding it
-    // as well would do all three a second time for those units.
-    const refunded = raw
-      .prepare('SELECT COUNT(*) as n FROM sale_refunds WHERE sale_id = ?')
-      .get(saleId) as { n: number }
-    if (refunded.n > 0) {
-      throw new Error('This sale has refunds against it — refund the remaining items instead')
-    }
+    // The rules are shared with the Sales screen (sales-history.ts), so the
+    // button it offers and the refusal here cannot disagree. Among them: a
+    // partly refunded sale stays 'completed', but its refunds have already paid
+    // cash out, restocked units and reversed part of the rollup — voiding it as
+    // well would do all three a second time for those units. And only today's
+    // sales: an older one belongs to a day already reported and a drawer
+    // already counted, so it is refunded from today's drawer instead.
+    const blocked = voidBlockReason(voidCheck(raw, saleId)!)
+    if (blocked) throw new Error(blocked)
 
     const items = raw
       .prepare(
@@ -619,10 +619,15 @@ export function computeShiftExpectedCash(shiftId: string, openingCash: number): 
   // cash_received is what the customer HANDED OVER; change_given went back out.
   // Only the difference stays in the drawer. Summing cash_received alone
   // overstated the drawer by the whole day's change and reported every cashier short.
+  //
+  // Fully refunded sales count as taken: the cash did come in, and what went
+  // back out is the refund, subtracted below. Excluding them as well (they are
+  // status 'refunded') took the money out twice — a Rs. 100 sale refunded in
+  // the same shift left the drawer expecting Rs. 100 less than it held.
   const sales = db
     .prepare(
       `SELECT COALESCE(SUM(cash_received - COALESCE(change_given, 0)), 0) as total
-       FROM sales WHERE shift_id = ? AND status = 'completed'`
+       FROM sales WHERE shift_id = ? AND status IN ('completed', 'refunded')`
     )
     .get(shiftId) as { total: number }
 
@@ -782,12 +787,16 @@ export function getShiftCashMovements(shiftId: string): {
   }
 }
 
-/** Cash actually taken during a shift, i.e. excluding the opening float. */
+/**
+ * Cash actually taken during a shift, i.e. excluding the opening float. Refunded
+ * sales were still taken; the refund is a separate payout (see above).
+ */
 export function computeShiftCashSales(shiftId: string): number {
   const result = getDatabase()
     .prepare(
       `SELECT COALESCE(SUM(cash_received - COALESCE(change_given, 0)), 0) as total
-       FROM sales WHERE shift_id = ? AND status = 'completed' AND payment_method IN ('cash','mixed')`
+       FROM sales WHERE shift_id = ? AND status IN ('completed', 'refunded')
+         AND payment_method IN ('cash','mixed')`
     )
     .get(shiftId) as { total: number }
   return round2(result.total)
@@ -829,7 +838,13 @@ export function getReceipt(saleId: string): { sale: unknown; items: unknown[] } 
 }
 
 /**
- * Get today's sales total for a shift
+ * The shift's takings for the header's "Today" figure: what was sold in it, less
+ * what was refunded from it.
+ *
+ * Refunds used to be invisible here. A partial refund leaves the sale
+ * 'completed', so the figure did not move; a full one dropped the sale but
+ * ignored a refund paid now for a sale from an earlier shift. Both now come off
+ * when they are paid, the way the drawer sees them (computeShiftExpectedCash).
  */
 export function getTodaySalesTotal(shiftId: string): number {
   const db = getDatabase()
@@ -837,18 +852,22 @@ export function getTodaySalesTotal(shiftId: string): number {
   const result = db
     .prepare(
       `
-    SELECT COALESCE(SUM(total), 0) as total
-    FROM sales
-    WHERE shift_id = ?
-      -- Scoped to the shift, not the calendar day: an overnight shift used to
-      -- report zero after the UTC date rolled over mid-shift. Voided sales are
-      -- excluded, which they previously were not.
-      AND status = 'completed'
+    SELECT
+      (SELECT COALESCE(SUM(total), 0)
+       FROM sales
+       WHERE shift_id = ?
+         -- Scoped to the shift, not the calendar day: an overnight shift used to
+         -- report zero after the UTC date rolled over mid-shift. Voided sales are
+         -- excluded, which they previously were not.
+         AND status IN ('completed', 'refunded'))
+      -
+      (SELECT COALESCE(SUM(total_refunded), 0) FROM sale_refunds WHERE shift_id = ?)
+      AS total
   `
     )
-    .get(shiftId) as { total: number }
+    .get(shiftId, shiftId) as { total: number }
 
-  return result.total
+  return round2(result.total)
 }
 
 interface RefundItemInput {
@@ -878,22 +897,8 @@ export function createRefund(
 
   return rawDb.transaction(() => {
     const sale = rawDb
-      .prepare(
-        `SELECT status, total, receipt_number, created_at, payment_method,
-                cash_received, change_given
-         FROM sales WHERE id = ?`
-      )
-      .get(saleId) as
-      | {
-          status: string
-          total: number
-          receipt_number: string
-          created_at: string
-          payment_method: string
-          cash_received: number | null
-          change_given: number | null
-        }
-      | undefined
+      .prepare(`SELECT status, receipt_number, created_at FROM sales WHERE id = ?`)
+      .get(saleId) as { status: string; receipt_number: string; created_at: string } | undefined
     if (!sale) throw new Error('Sale not found')
     if (sale.status === 'voided') throw new Error('Cannot refund a voided sale')
 
@@ -906,84 +911,18 @@ export function createRefund(
       .get(userId) as { id: string } | undefined
     if (!activeShift) throw new Error('Start a shift before processing a refund')
 
-    // What was actually sold, and what has already been sent back.
-    const sold = rawDb
-      .prepare(
-        `SELECT id, product_id, batch_id, quantity, unit_price, line_total, discount_amount,
-                tax_amount, cost_price
-         FROM sale_items WHERE sale_id = ? ORDER BY rowid`
-      )
-      .all(saleId) as Array<{
-      id: string
-      product_id: string
-      batch_id: string | null
-      quantity: number
-      unit_price: number
-      line_total: number
-      discount_amount: number
-      tax_amount: number
-      cost_price: number
-    }>
-
-    const priorRefunds = rawDb
-      .prepare('SELECT items FROM sale_refunds WHERE sale_id = ?')
-      .all(saleId) as Array<{ items: string }>
-
-    const alreadyRefunded = new Map<string, number>()
-    for (const row of priorRefunds) {
-      try {
-        for (const i of JSON.parse(row.items) as RefundItemInput[]) {
-          alreadyRefunded.set(i.product_id, (alreadyRefunded.get(i.product_id) ?? 0) + i.quantity)
-        }
-      } catch {
-        /* a malformed historical row must not block a legitimate refund */
-      }
-    }
-
-    // Validate against the original sale. The caller's items were previously
-    // trusted verbatim, so a sale could be refunded repeatedly and for more
-    // than was ever bought.
-    //
-    // Priced per line from the ledger: the line's own total less its share of
-    // the sale discount. That replaces scaling by total/subtotal, which was only
-    // right while the lines ignored the discount; createSale now stores the
-    // share on each line (and migration 9 backfilled older sales).
-    let refundAmount = 0
-    let taxRefunded = 0
-    const counted = new Map(alreadyRefunded)
-    for (const item of items) {
-      const soldLine = sold.find((s) => s.product_id === item.product_id)
-      if (!soldLine) {
-        throw new Error(`${item.product_name} was not part of this sale`)
-      }
-      // Counted across this request too, so the same product listed twice
-      // cannot together exceed what was sold.
-      const remaining = soldLine.quantity - (counted.get(item.product_id) ?? 0)
-      if (item.quantity <= 0) throw new Error('Refund quantity must be greater than zero')
-      if (item.quantity > remaining) {
-        throw new Error(
-          `Cannot refund ${item.quantity} of ${item.product_name} — only ${remaining} remain refundable`
-        )
-      }
-      counted.set(item.product_id, (counted.get(item.product_id) ?? 0) + item.quantity)
-      // Price the refund from the ORIGINAL sale, never from the caller's payload.
-      const back = refundLineAmounts(soldLine, item.quantity)
-      refundAmount = round2(refundAmount + back.gross)
-      taxRefunded = round2(taxRefunded + back.tax)
-    }
-
-    // The refund goes back the way the sale was paid: cash from the drawer, card
-    // to the card, a mixed sale in proportion to the cash it was paid with.
-    const cashShare =
-      sale.payment_method === 'cash'
-        ? 1
-        : sale.payment_method === 'mixed' && sale.total > 0
-          ? Math.min(
-              Math.max(((sale.cash_received ?? 0) - (sale.change_given ?? 0)) / sale.total, 0),
-              1
-            )
-          : 0
-    const cashRefunded = round2(refundAmount * cashShare)
+    // Validated and priced by the same function the Sales screen previews with,
+    // so the amount shown before the button is pressed is the amount booked.
+    // The caller's items were once trusted verbatim, so a sale could be refunded
+    // repeatedly and for more than was ever bought; and the price is the line's
+    // own total less its share of the sale discount (the ledger), never the
+    // caller's line_total. The refund goes back the way the sale was paid: cash
+    // from the drawer, card to the card, a mixed sale in proportion.
+    const quote = quoteRefund(rawDb, saleId, items)
+    const { sold, alreadyRefunded } = quote
+    const refundAmount = quote.amount
+    const taxRefunded = quote.tax
+    const cashRefunded = quote.cash
 
     rawDb
       .prepare(
@@ -1045,11 +984,7 @@ export function createRefund(
     // Mark the sale refunded once nothing remains refundable, so it stops being
     // counted as a completed sale. Previously the status was never updated, so
     // the same sale could be refunded without limit.
-    const totalSoldQty = sold.reduce((s, l) => s + l.quantity, 0)
-    const totalRefundedQty =
-      [...alreadyRefunded.values()].reduce((s, q) => s + q, 0) +
-      items.reduce((s, i) => s + i.quantity, 0)
-    if (totalRefundedQty >= totalSoldQty) {
+    if (quote.fully_refunded) {
       rawDb.prepare(`UPDATE sales SET status = 'refunded' WHERE id = ?`).run(saleId)
     }
 
@@ -1069,7 +1004,7 @@ export function createRefund(
         cash_refunded: cashRefunded,
         shift_id: activeShift.id,
         restocked: restock,
-        fully_refunded: totalRefundedQty >= totalSoldQty,
+        fully_refunded: quote.fully_refunded,
         reason: reason.trim() || null
       }
     })
