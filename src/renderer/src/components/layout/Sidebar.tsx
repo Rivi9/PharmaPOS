@@ -1,45 +1,11 @@
 import { cn } from '@renderer/lib/utils'
-import {
-  ShoppingCart,
-  Package,
-  BarChart3,
-  Users,
-  Settings,
-  UserCog,
-  ClipboardList
-} from 'lucide-react'
 import { usePermission } from '@renderer/hooks/usePermission'
-import type { Permission } from '../../../../shared/permissions'
+import { NAV_ITEMS } from './nav-items'
 
 interface SidebarProps {
   currentPage: string
   onNavigate: (page: string) => void
 }
-
-const NAV_ITEMS = [
-  { id: 'pos', label: 'POS', icon: ShoppingCart, permission: 'sales:create' as Permission },
-  {
-    id: 'inventory',
-    label: 'Inventory',
-    icon: Package,
-    permission: 'inventory:view' as Permission
-  },
-  {
-    id: 'analytics',
-    label: 'Analytics',
-    icon: BarChart3,
-    permission: 'reports:view' as Permission
-  },
-  { id: 'customers', label: 'Customers', icon: Users, permission: 'sales:create' as Permission },
-  { id: 'users', label: 'Users', icon: UserCog, permission: 'users:view' as Permission },
-  {
-    id: 'audit',
-    label: 'Audit',
-    icon: ClipboardList,
-    permission: 'reports:view' as Permission
-  },
-  { id: 'settings', label: 'Settings', icon: Settings, permission: 'settings:view' as Permission }
-]
 
 interface NavButtonProps {
   item: (typeof NAV_ITEMS)[0]

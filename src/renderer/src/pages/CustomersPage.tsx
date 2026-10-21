@@ -254,7 +254,7 @@ export function CustomersPage(): React.JSX.Element {
   return (
     <div className="flex h-full gap-4 overflow-hidden bg-canvas p-4">
       {/* Customer List */}
-      <div className="flex w-96 shrink-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-xs">
+      <div className="flex w-80 shrink-0 flex-col overflow-hidden rounded-2xl border bg-card shadow-xs xl:w-96">
         <div className="flex flex-col gap-3 border-b p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -334,10 +334,14 @@ export function CustomersPage(): React.JSX.Element {
         </div>
       </div>
 
-      {/* Customer Detail */}
-      <div className="min-w-0 flex-1 overflow-y-auto overscroll-contain">
+      {/* Customer Detail. Fills the rest of the screen: on a wide (maximised)
+          till the contact card and the purchase history sit side by side, below
+          that they stack; either way the history list scrolls inside its own
+          card. The column itself only scrolls as a fallback, when a short window
+          leaves the history less than its minimum height. */}
+      <div className="@container flex min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain">
         {!selected ? (
-          <div className="flex h-full items-center justify-center rounded-2xl border bg-card shadow-xs">
+          <div className="flex flex-1 items-center justify-center rounded-2xl border bg-card shadow-xs">
             <Empty>
               <EmptyHeader>
                 <EmptyMedia variant="icon">
@@ -351,9 +355,9 @@ export function CustomersPage(): React.JSX.Element {
             </Empty>
           </div>
         ) : (
-          <div className="flex max-w-3xl flex-col gap-4">
+          <div className="flex flex-1 flex-col gap-4 @4xl:flex-row">
             {/* Customer Info */}
-            <section className="rounded-2xl border bg-card p-6 shadow-xs">
+            <section className="@container/info shrink-0 rounded-2xl border bg-card p-6 shadow-xs @4xl:w-[28rem] @4xl:self-start">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
                   <h2 className="truncate text-2xl font-semibold">{selected.name}</h2>
@@ -380,27 +384,27 @@ export function CustomersPage(): React.JSX.Element {
                 </div>
               </div>
 
-              <dl className="mt-6 grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+              <dl className="mt-6 grid grid-cols-1 gap-x-6 gap-y-4 @md/info:grid-cols-2">
                 <DetailItem icon={Phone} label="Phone" value={selected.phone} />
                 <DetailItem icon={Mail} label="Email" value={selected.email} />
                 <DetailItem
                   icon={MapPin}
                   label="Address"
                   value={selected.address}
-                  className="sm:col-span-2"
+                  className="@md/info:col-span-2"
                 />
                 <DetailItem
                   icon={StickyNote}
                   label="Notes"
                   value={selected.notes}
-                  className="sm:col-span-2"
+                  className="@md/info:col-span-2"
                 />
               </dl>
             </section>
 
             {/* Purchase History */}
-            <section className="rounded-2xl border bg-card shadow-xs">
-              <div className="flex flex-wrap items-center gap-3 border-b px-6 py-4">
+            <section className="flex min-h-64 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border bg-card shadow-xs">
+              <div className="flex shrink-0 flex-wrap items-center gap-3 border-b px-6 py-4">
                 <History className="size-5 text-muted-foreground" />
                 <h3 className="text-lg font-semibold">Purchase History</h3>
                 {history && history.length > 0 && (
@@ -412,7 +416,7 @@ export function CustomersPage(): React.JSX.Element {
                   </span>
                 )}
               </div>
-              <div className="p-2">
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">
                 {!history ? (
                   <div className="flex flex-col gap-2 p-2">
                     {Array.from({ length: 3 }).map((_, i) => (
