@@ -1,6 +1,6 @@
 {
   "name": "pharma-pos",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Pharmacy POS Desktop Application",
   "main": ".vite/build/index.cjs",
   "author": "Rivi9",
@@ -22,7 +22,8 @@
     "test:dates": "node tests/unit/dates.test.mjs",
     "test:search": "node tests/unit/product-search.test.mjs",
     "test:checkout-customer": "node tests/unit/checkout-customer.test.mjs",
-    "test:unit": "npm run test:import && npm run test:pole && npm run test:escpos && npm run test:dates && npm run test:search && npm run test:checkout-customer",
+    "test:pdf": "node tests/unit/pdf-reports.test.mjs",
+    "test:unit": "npm run test:import && npm run test:pole && npm run test:escpos && npm run test:dates && npm run test:search && npm run test:pdf && npm run test:checkout-customer",
     "pretest:e2e": "electron-forge package",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",

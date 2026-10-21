@@ -22,7 +22,6 @@ const config: ForgeConfig = {
     },
     icon: './build/icon',
     name: 'PharmaPOS',
-    appVersion: '1.0.0',
     extraResource: ['./resources'],
     win32metadata: {
       CompanyName: 'PharmaPOS',

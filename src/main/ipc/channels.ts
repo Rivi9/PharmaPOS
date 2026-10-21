@@ -33,7 +33,6 @@ export const IPC_CHANNELS = {
 
   // Stock
   STOCK_CHECK_AVAILABILITY: 'stock:checkAvailability',
-  STOCK_DEDUCT: 'stock:deduct',
 
   // Inventory - Products
   PRODUCT_LIST: 'product:list',
@@ -111,8 +110,6 @@ export const IPC_CHANNELS = {
   USER_UPDATE: 'user:update',
   USER_DELETE: 'user:delete',
   USER_CHANGE_PASSWORD: 'user:change-password',
-  USER_VERIFY_PASSWORD: 'user:verify-password',
-  USER_VERIFY_PIN: 'user:verify-pin',
   USER_STATS: 'user:stats',
 
   // Users - Permissions

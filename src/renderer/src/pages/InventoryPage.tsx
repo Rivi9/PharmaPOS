@@ -589,8 +589,11 @@ export function InventoryPage(): React.JSX.Element {
         </TabsList>
 
         <TabsContent value="products" className="flex min-h-0 flex-1 flex-col gap-4">
+          {/* min-w on the search side: without it, on a 1024px screen the action
+              buttons squeezed the search box to nothing and the count and the
+              switch drew over it. Now the buttons wrap to a second row instead. */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-4">
+            <div className="flex min-w-[26rem] flex-1 items-center gap-4">
               <SearchInput
                 aria-label="Search products"
                 placeholder="Search products by name, SKU, barcode..."
@@ -656,7 +659,7 @@ export function InventoryPage(): React.JSX.Element {
 
         <TabsContent value="categories" className="flex min-h-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-4">
+            <div className="flex min-w-[26rem] flex-1 items-center gap-4">
               <SearchInput
                 aria-label="Search categories"
                 placeholder="Search categories by name..."
@@ -690,7 +693,7 @@ export function InventoryPage(): React.JSX.Element {
 
         <TabsContent value="suppliers" className="flex min-h-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-4">
+            <div className="flex min-w-[26rem] flex-1 items-center gap-4">
               <SearchInput
                 aria-label="Search suppliers"
                 placeholder="Search suppliers by name, contact..."
@@ -724,7 +727,7 @@ export function InventoryPage(): React.JSX.Element {
 
         <TabsContent value="stock" className="flex min-h-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-4">
+            <div className="flex min-w-[26rem] flex-1 items-center gap-4">
               <SearchInput
                 aria-label="Search batches"
                 placeholder="Search batches by product, batch number..."

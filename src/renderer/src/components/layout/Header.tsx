@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@renderer/components/ui
 import { useShiftStore } from '@renderer/stores/shiftStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { formatCurrency } from '@renderer/lib/calculations'
+import { usePermission } from '@renderer/hooks/usePermission'
 
 interface HeaderProps {
   user: { full_name: string; role: string } | null
@@ -29,6 +30,8 @@ export function Header({ user, onEndShift, onSettings }: HeaderProps): React.JSX
   const currentShift = useShiftStore((s) => s.currentShift)
   const todaySalesTotal = useShiftStore((s) => s.todaySalesTotal)
   const currencySymbol = useSettingsStore((s) => s.settings.currency_symbol)
+  // The sidebar hid Settings from cashiers but this shortcut did not.
+  const canViewSettings = usePermission('settings:view')
 
   const initials = (user?.full_name ?? '?')
     .split(/\s+/)
@@ -78,14 +81,16 @@ export function Header({ user, onEndShift, onSettings }: HeaderProps): React.JSX
           </div>
         )}
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon" onClick={onSettings} aria-label="Settings">
-              <Settings />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Settings</TooltipContent>
-        </Tooltip>
+        {canViewSettings && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" onClick={onSettings} aria-label="Settings">
+                <Settings />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Settings</TooltipContent>
+          </Tooltip>
+        )}
 
         {currentShift && (
           <Button variant="destructive" onClick={onEndShift}>

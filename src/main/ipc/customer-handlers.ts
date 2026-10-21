@@ -50,29 +50,41 @@ function mapCustomer(c: Customer, stats?: CustomerStats): CustomerDto {
 }
 
 export function registerCustomerHandlers(): void {
-  // Read-only handlers — no permission gate (cashiers need these during checkout)
+  // Read-only handlers. Cashiers need these during checkout, so the gate is
+  // being signed in to sell — but they return names, phone numbers and
+  // addresses, and used to answer any renderer with no session at all.
   // With visits / spend / last visit, so the list and the detail panel show
   // what the linked sales add up to.
-  ipcMain.handle(IPC_CHANNELS.CUSTOMER_LIST, (_event, search?: string) => {
-    const stats = getAllCustomerStats()
-    return listCustomers(search).map((c) => mapCustomer(c, customerStatsFor(stats, c.id)))
+  ipcMain.handle(IPC_CHANNELS.CUSTOMER_LIST, (event, search?: string) => {
+    return withPermission(event, 'sales:create', () => {
+      const stats = getAllCustomerStats()
+      return listCustomers(search).map((c) => mapCustomer(c, customerStatsFor(stats, c.id)))
+    })
   })
 
-  ipcMain.handle(IPC_CHANNELS.CUSTOMER_GET, (_event, id: string) => {
-    const c = getCustomer(id)
-    return c ? mapCustomer(c) : null
+  ipcMain.handle(IPC_CHANNELS.CUSTOMER_GET, (event, id: string) => {
+    return withPermission(event, 'sales:create', () => {
+      const c = getCustomer(id)
+      return c ? mapCustomer(c) : null
+    })
   })
 
-  ipcMain.handle(IPC_CHANNELS.CUSTOMER_GET_BY_PHONE, (_event, phone: string) => {
-    const c = getCustomerByPhone(phone)
-    return c ? mapCustomer(c) : null
+  ipcMain.handle(IPC_CHANNELS.CUSTOMER_GET_BY_PHONE, (event, phone: string) => {
+    return withPermission(event, 'sales:create', () => {
+      const c = getCustomerByPhone(phone)
+      return c ? mapCustomer(c) : null
+    })
   })
 
   // What the till needs to tell the cashier what Complete Sale will do with the
   // number typed (planCheckoutCustomer runs on both sides with the same input).
-  ipcMain.handle(IPC_CHANNELS.CUSTOMER_CHECKOUT_LOOKUP, (_event, phone: string) => {
-    const { active, heldByRemoved } = findCheckoutCustomer(phone)
-    return { active: active ? mapCustomer(active) : null, heldByRemoved }
+  // Gated like the other customer reads: it answers whether a number belongs to
+  // a customer and returns their details.
+  ipcMain.handle(IPC_CHANNELS.CUSTOMER_CHECKOUT_LOOKUP, (event, phone: string) => {
+    return withPermission(event, 'sales:create', () => {
+      const { active, heldByRemoved } = findCheckoutCustomer(phone)
+      return { active: active ? mapCustomer(active) : null, heldByRemoved }
+    })
   })
 
   // Mutating handlers — require userId and appropriate permission

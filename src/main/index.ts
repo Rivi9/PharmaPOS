@@ -28,6 +28,7 @@ import { logInfo, logError } from './services/logging/logger'
 import { initializeAutoUpdater } from './services/updates/auto-updater'
 import { IPC_CHANNELS } from './ipc/channels'
 import { pruneDeadSessions } from './ipc/session'
+import { withPermission } from './ipc/middleware'
 import * as poleDisplay from './services/pole-display'
 import { getDatabase } from './services/database'
 
@@ -283,30 +284,38 @@ app.whenReady().then(() => {
     return await poleDisplay.listPorts()
   })
 
-  // Connect to a COM port
-  ipcMain.handle(IPC_CHANNELS.DISPLAY_CONNECT, async (_event, { port, baudRate }) => {
-    await poleDisplay.openDisplay(port, baudRate ?? 2400)
-    // Persist to settings
-    const db = getDatabase()
-    db.prepare(
-      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('display_port', ?, datetime('now'))"
-    ).run(port)
-    db.prepare(
-      "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('display_baud_rate', ?, datetime('now'))"
-    ).run(String(baudRate ?? 2400))
-    return { success: true }
+  // Connect to a COM port.
+  // Configuring the pole is a Settings action and writes settings, so it carries
+  // the same gate as SETTINGS_SET — it used to need no login at all.
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_CONNECT, async (event, { port, baudRate }) => {
+    return withPermission(event, 'settings:update', async () => {
+      await poleDisplay.openDisplay(port, baudRate ?? 2400)
+      // Persist to settings
+      const db = getDatabase()
+      db.prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('display_port', ?, datetime('now'))"
+      ).run(port)
+      db.prepare(
+        "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('display_baud_rate', ?, datetime('now'))"
+      ).run(String(baudRate ?? 2400))
+      return { success: true }
+    })
   })
 
   // Disconnect
-  ipcMain.handle(IPC_CHANNELS.DISPLAY_DISCONNECT, async () => {
-    await poleDisplay.closeDisplay()
-    return { success: true }
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_DISCONNECT, async (event) => {
+    return withPermission(event, 'settings:update', async () => {
+      await poleDisplay.closeDisplay()
+      return { success: true }
+    })
   })
 
   // Test — send a test message
-  ipcMain.handle(IPC_CHANNELS.DISPLAY_TEST, () => {
-    poleDisplay.sendTestMessage()
-    return { success: true }
+  ipcMain.handle(IPC_CHANNELS.DISPLAY_TEST, (event) => {
+    return withPermission(event, 'settings:update', () => {
+      poleDisplay.sendTestMessage()
+      return { success: true }
+    })
   })
 
   // Get current connection status

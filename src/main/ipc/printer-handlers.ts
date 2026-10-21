@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from './channels'
+import { withPermission } from './middleware'
 import {
   initializePrinter,
   getPrinterConfig,
@@ -17,14 +18,25 @@ import {
   resetUnsupportedCharacters
 } from '../services/printer/escpos-builder'
 
+/**
+ * None of these channels had a session or permission check. Saving or
+ * re-initialising the config with a renderer-chosen network address redirects
+ * every receipt — customer names, phones, what they were dispensed — to another
+ * machine; opening the drawer needed no login at all. Configuration is now
+ * admin-only (as the Settings screen that drives it already is), and the
+ * till-side channels need someone signed in to sell.
+ *
+ * Refusals come back through the same `{ success: false, error }` envelope as a
+ * printer fault, because that is what every caller already handles.
+ */
 export function registerPrinterHandlers(): void {
-  ipcMain.handle(IPC_CHANNELS.PRINTER_GET_CONFIG, () => {
-    return getPrinterConfig()
+  ipcMain.handle(IPC_CHANNELS.PRINTER_GET_CONFIG, (event) => {
+    return withPermission(event, 'settings:view', () => getPrinterConfig())
   })
 
-  ipcMain.handle(IPC_CHANNELS.PRINTER_INITIALIZE, (_event, config?: PrinterConfig) => {
+  ipcMain.handle(IPC_CHANNELS.PRINTER_INITIALIZE, async (event, config?: PrinterConfig) => {
     try {
-      initializePrinter(config)
+      await withPermission(event, 'settings:update', () => initializePrinter(config))
       return { success: true }
     } catch (error) {
       console.warn('Printer initialize failed:', (error as Error).message)
@@ -32,9 +44,9 @@ export function registerPrinterHandlers(): void {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.PRINTER_TEST, async () => {
+  ipcMain.handle(IPC_CHANNELS.PRINTER_TEST, async (event) => {
     try {
-      await testPrinter()
+      await withPermission(event, 'settings:update', () => testPrinter())
       return { success: true }
     } catch (error) {
       console.warn('Printer test failed:', (error as Error).message)
@@ -42,9 +54,9 @@ export function registerPrinterHandlers(): void {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.PRINTER_SAVE_CONFIG, (_event, config: PrinterConfig) => {
+  ipcMain.handle(IPC_CHANNELS.PRINTER_SAVE_CONFIG, async (event, config: PrinterConfig) => {
     try {
-      savePrinterConfig(config)
+      await withPermission(event, 'settings:update', () => savePrinterConfig(config))
       return { success: true }
     } catch (error) {
       console.warn('Printer save config failed:', (error as Error).message)
@@ -56,8 +68,9 @@ export function registerPrinterHandlers(): void {
     return await listUSBPrinters()
   })
 
-  ipcMain.handle(IPC_CHANNELS.PRINTER_PRINT_RECEIPT, async (_event, data) => {
+  ipcMain.handle(IPC_CHANNELS.PRINTER_PRINT_RECEIPT, async (event, data) => {
     try {
+      await withPermission(event, 'sales:create', () => undefined)
       const printer = getPrinter()
       const { reprint, ...receipt } = data as { reprint?: boolean }
       resetUnsupportedCharacters()
@@ -82,8 +95,9 @@ export function registerPrinterHandlers(): void {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.PRINTER_PRINT_SHIFT_REPORT, async (_event, data) => {
+  ipcMain.handle(IPC_CHANNELS.PRINTER_PRINT_SHIFT_REPORT, async (event, data) => {
     try {
+      await withPermission(event, 'shifts:manage', () => undefined)
       const printer = getPrinter()
       await printShiftReport(printer, data)
       return { success: true }
@@ -93,9 +107,9 @@ export function registerPrinterHandlers(): void {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.PRINTER_OPEN_DRAWER, async () => {
+  ipcMain.handle(IPC_CHANNELS.PRINTER_OPEN_DRAWER, async (event) => {
     try {
-      await openCashDrawer()
+      await withPermission(event, 'sales:create', () => openCashDrawer())
       return { success: true }
     } catch (error) {
       console.warn('Open cash drawer failed:', (error as Error).message)
