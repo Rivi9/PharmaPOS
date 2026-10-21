@@ -18,6 +18,13 @@ import {
   createRefund
 } from '../services/sales'
 import { getCustomerPurchaseHistory } from '../services/customers'
+import {
+  listSalesPage,
+  getSaleDetail,
+  quoteRefund,
+  type SalesPageQuery,
+  type RefundRequestLine
+} from '../services/sales-history'
 import { getActiveShiftForUser } from '../services/shifts'
 import { getDatabase } from '../services/database'
 import { getUserById } from '../services/users/user-management'
@@ -108,6 +115,44 @@ export function registerPOSHandlers(): void {
       createRefund(saleId, actingUserId(_event), items, reason ?? '', restock ?? false)
     )
   })
+
+  // Sales screen. The list and one sale in full need `sales:view_all` — every
+  // role holds it, so a cashier can find a sale and reprint its receipt — while
+  // void and refund stay behind their own permissions above.
+  ipcMain.handle(IPC_CHANNELS.SALE_LIST_PAGE, async (event, query: SalesPageQuery) => {
+    return withPermission(event, 'sales:view_all', () => listSalesPage(getDatabase(), query ?? {}))
+  })
+
+  ipcMain.handle(IPC_CHANNELS.SALE_DETAIL, async (event, saleId: string) => {
+    return withPermission(event, 'sales:view_all', () =>
+      getSaleDetail(getDatabase(), String(saleId ?? ''))
+    )
+  })
+
+  // What a refund would pay back, priced by the function createRefund itself
+  // uses, and whether the caller has the open shift it must be paid from.
+  // Nothing is written.
+  ipcMain.handle(
+    IPC_CHANNELS.SALE_REFUND_PREVIEW,
+    async (event, { saleId, items }: { saleId: string; items: RefundRequestLine[] }) => {
+      return withPermission(event, 'sales:refund', () => {
+        const q = quoteRefund(
+          getDatabase(),
+          String(saleId ?? ''),
+          Array.isArray(items) ? items : []
+        )
+        return {
+          lines: q.lines,
+          amount: q.amount,
+          tax: q.tax,
+          cash: q.cash,
+          card: q.card,
+          fully_refunded: q.fully_refunded,
+          shift_open: !!getActiveShiftForUser(actingUserId(event))
+        }
+      })
+    }
+  )
 
   // Customer purchase history. Cashiers need it at checkout, so the gate is
   // being signed in to sell — but it is a customer's dispensing record, and it
