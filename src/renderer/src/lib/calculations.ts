@@ -1,5 +1,5 @@
 import type { CartItem, SaleDiscount } from './types'
-import { round2, extractIncludedTax } from '../../../shared/money'
+import { round2, extractIncludedTax, basketLineTax } from '../../../shared/money'
 
 export function calculateLineTotal(unitPrice: number, quantity: number): number {
   return round2(unitPrice * quantity)
@@ -43,6 +43,11 @@ export function calculateTax(taxableAmount: number, ratePercent: number): number
  * each `sale_items` row and the sale header is their sum, so extracting from the
  * subtotal here would leave the cart and the receipt disagreeing by a cent or two
  * (770.00 at 18% gives 117.46 on the subtotal but 117.45 line by line).
+ *
+ * A sale-level discount is split across the lines first (`basketLineTax`, the
+ * same function `createSale` uses), so the VAT shown here is exactly the VAT the
+ * main process stores. Scaling the summed line VAT by the discount ratio instead
+ * was right in total but could differ from the stored figure by a cent.
  */
 export function calculateItemsTax(
   items: CartItem[],
@@ -50,17 +55,11 @@ export function calculateItemsTax(
   discountAmount = 0
 ): number {
   if (!(ratePercent > 0) || items.length === 0) return 0
-
-  const lineTax = items.reduce(
-    (sum, item) => sum + extractIncludedTax(item.line_total, ratePercent),
-    0
-  )
-  if (discountAmount <= 0) return round2(lineTax)
-
-  // A sale-level discount reduces the consideration, so it reduces the VAT in it.
-  const subtotal = calculateSubtotal(items)
-  if (subtotal <= 0) return 0
-  return round2(lineTax * ((subtotal - discountAmount) / subtotal))
+  return basketLineTax(
+    items.map((item) => item.line_total),
+    discountAmount,
+    ratePercent
+  ).tax
 }
 
 /**

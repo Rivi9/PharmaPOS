@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@renderer/components/u
 import { Button } from '@renderer/components/ui/button'
 import { Bell, FileText, LayoutDashboard, RefreshCw } from 'lucide-react'
 import { cn } from '@renderer/lib/utils'
+import { localDateString, localDateOffset } from '../../../shared/dates'
 import { useAnalyticsStore } from '@renderer/stores/analyticsStore'
 import { useAuthStore } from '@renderer/stores/authStore'
 import { KPICards } from '@renderer/components/analytics/KPICards'
@@ -37,14 +38,15 @@ export function AnalyticsPage(): React.JSX.Element {
   const loadDashboardData = async (): Promise<void> => {
     setIsLoading(true)
     try {
-      // Run aggregation first
+      // Run aggregation first. It rebuilds the past week of product_sales_daily
+      // from the sales ledger, refunds included, so it repairs rather than
+      // overwrites what createSale and createRefund maintained live.
       await window.electron.analytics.runAggregation(userId)
 
-      // Get today's date
-      const today = new Date().toISOString().split('T')[0]
-
-      // Get last 7 days
-      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      // Local dates, the way product_sales_daily is keyed. The UTC "today" showed
+      // yesterday's figures until 05:30 every morning.
+      const today = localDateString()
+      const weekAgo = localDateOffset(-7)
 
       // Load all dashboard data in parallel
       const [todayData, weekData, topProds, categoryData, lowStock, expiring] = await Promise.all([

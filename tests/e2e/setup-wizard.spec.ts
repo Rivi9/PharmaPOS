@@ -73,14 +73,23 @@ test.describe('first-run setup wizard', () => {
     expect(ctx.errors).toEqual([])
   })
 
-  test('a duplicate admin username is reported, not swallowed', async () => {
-    // `INSERT OR IGNORE` used to absorb the collision, so the wizard reported
-    // success and then nobody could sign in with the credentials just chosen.
+  test('the wizard cannot be run a second time', async () => {
+    // This used to report "already taken" for a re-used username — and to
+    // succeed, creating a second administrator and renaming the pharmacy, for
+    // any other. Once setup is done the channel refuses outright.
     await completeSetup(ctx.page)
-    const again = await ipc(
-      ctx.page,
-      `window.electron.setup.initialize({ businessName: 'Y', adminUsername: '${ADMIN.username}', adminPassword: 'anotherpass123', adminFullName: 'Someone Else' })`
+    for (const username of [ADMIN.username, 'secondadmin']) {
+      const again = await ipc(
+        ctx.page,
+        `window.electron.setup.initialize({ businessName: 'Y', adminUsername: '${username}', adminPassword: 'anotherpass123', adminFullName: 'Someone Else' })`
+      )
+      expect(String(again)).toMatch(/already been completed/i)
+    }
+    expect(query(ctx.dbPath, 'SELECT id FROM users')).toHaveLength(1)
+    const [setting] = query<{ value: string }>(
+      ctx.dbPath,
+      "SELECT value FROM settings WHERE key = 'business_name'"
     )
-    expect(String(again)).toMatch(/already taken/i)
+    expect(setting.value).toBe('E2E Test Pharmacy')
   })
 })

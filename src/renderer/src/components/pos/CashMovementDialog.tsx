@@ -68,9 +68,8 @@ export function CashMovementDialog({
     setSaving(true)
     setError('')
     try {
+      // Who and which shift are resolved from the session in the main process.
       const result = await window.electron.shifts.recordCashMovement({
-        userId: user.id,
-        shiftId: currentShift.id,
         type,
         amount: value,
         reason: reason.trim()

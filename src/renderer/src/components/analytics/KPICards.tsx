@@ -162,10 +162,12 @@ export function KPICards({ metrics, isLoading, history = [] }: KPICardsProps): R
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <KpiTile
-        title="Total Sales"
+        // Net: excluding VAT, after discounts and refunds — what the Sales Report
+        // and the P&L call net sales, read from the same rollup.
+        title="Net Sales"
         icon={DollarSign}
         value={formatCurrency(sales, sym)}
-        footnote={`${txCount} transactions`}
+        footnote={`excl. VAT · ${txCount} transactions`}
         current={sales}
         baseline={baseline?.sales}
       />

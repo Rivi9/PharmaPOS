@@ -53,6 +53,16 @@ import { localDateString } from '../../../shared/dates'
  */
 const PAGE_SIZE = 50
 
+/** An imported row skipped because the product already exists (see inventory-import.ts). */
+interface SkippedImportRow {
+  row: number
+  name: string
+  matchedBy: 'barcode' | 'sku'
+  code: string
+  existingName: string
+  existingDiscontinued: boolean
+}
+
 /**
  * Server-side pager. The tables carry their own client-side pagination, but that
  * can only page what has been fetched — with the fetch now capped at one page,
@@ -138,6 +148,9 @@ export function InventoryPage(): React.JSX.Element {
   // confirmation promises they can be restored "from the Discontinued filter",
   // and this is that filter (it went missing when the search moved into SQL).
   const [showDiscontinued, setShowDiscontinued] = useState(false)
+  // Batches sold down to zero are hidden by default but never unreachable: they
+  // still carry what the stock cost, and their history is the recall trail.
+  const [showSoldOut, setShowSoldOut] = useState(false)
 
   // Server-side paging for the two tables that can hold thousands of rows.
   const [productPage, setProductPage] = useState(0)
@@ -176,7 +189,7 @@ export function InventoryPage(): React.JSX.Element {
   }, [productSearch, showDiscontinued])
   useEffect(() => {
     setBatchPage(0)
-  }, [batchSearch])
+  }, [batchSearch, showSoldOut])
 
   useEffect(() => {
     const timer = setTimeout(loadProducts, productSearch ? 250 : 0)
@@ -188,7 +201,7 @@ export function InventoryPage(): React.JSX.Element {
     const timer = setTimeout(loadStockBatches, batchSearch ? 250 : 0)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batchSearch, batchPage])
+  }, [batchSearch, batchPage, showSoldOut])
 
   const loadAllData = async (): Promise<void> => {
     await Promise.all([
@@ -263,7 +276,8 @@ export function InventoryPage(): React.JSX.Element {
       const result = await window.electron.listStockBatchesPage(userId, {
         search: batchSearch || undefined,
         limit: PAGE_SIZE,
-        offset: batchPage * PAGE_SIZE
+        offset: batchPage * PAGE_SIZE,
+        includeSoldOut: showSoldOut || undefined
       })
       if (result.success) {
         setStockBatches(result.data.rows)
@@ -484,6 +498,8 @@ export function InventoryPage(): React.JSX.Element {
   const [importResult, setImportResult] = useState<{
     imported: number
     batchesCreated?: number
+    skipped: SkippedImportRow[]
+    skippedCount: number
     errors: string[]
     errorsTruncated?: number
     totalRows?: number
@@ -502,6 +518,8 @@ export function InventoryPage(): React.JSX.Element {
         setImportResult({
           imported: result.imported,
           batchesCreated: result.batchesCreated,
+          skipped: result.skipped ?? [],
+          skippedCount: result.skippedCount ?? 0,
           errors: result.errors ?? [],
           errorsTruncated: result.errorsTruncated,
           totalRows: result.totalRows
@@ -589,8 +607,11 @@ export function InventoryPage(): React.JSX.Element {
         </TabsList>
 
         <TabsContent value="products" className="flex min-h-0 flex-1 flex-col gap-4">
+          {/* min-w on the search side: without it, on a 1024px screen the action
+              buttons squeezed the search box to nothing and the count and the
+              switch drew over it. Now the buttons wrap to a second row instead. */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-4">
+            <div className="flex min-w-[26rem] flex-1 items-center gap-4">
               <SearchInput
                 aria-label="Search products"
                 placeholder="Search products by name, SKU, barcode..."
@@ -656,7 +677,7 @@ export function InventoryPage(): React.JSX.Element {
 
         <TabsContent value="categories" className="flex min-h-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-4">
+            <div className="flex min-w-[26rem] flex-1 items-center gap-4">
               <SearchInput
                 aria-label="Search categories"
                 placeholder="Search categories by name..."
@@ -690,7 +711,7 @@ export function InventoryPage(): React.JSX.Element {
 
         <TabsContent value="suppliers" className="flex min-h-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-4">
+            <div className="flex min-w-[26rem] flex-1 items-center gap-4">
               <SearchInput
                 aria-label="Search suppliers"
                 placeholder="Search suppliers by name, contact..."
@@ -724,7 +745,7 @@ export function InventoryPage(): React.JSX.Element {
 
         <TabsContent value="stock" className="flex min-h-0 flex-1 flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex min-w-0 flex-1 items-center gap-4">
+            <div className="flex min-w-[26rem] flex-1 items-center gap-4">
               <SearchInput
                 aria-label="Search batches"
                 placeholder="Search batches by product, batch number..."
@@ -743,15 +764,24 @@ export function InventoryPage(): React.JSX.Element {
                     : `Showing ${batchPage * PAGE_SIZE + 1}–${Math.min((batchPage + 1) * PAGE_SIZE, batchTotal)} of ${batchTotal}${batchSearch ? ' matching' : ''} batches`}
               </div>
             </div>
-            <Button
-              onClick={() => {
-                setSelectedBatch(null)
-                setBatchDialogOpen(true)
-              }}
-            >
-              <Plus className="size-5" />
-              Receive Stock
-            </Button>
+            <div className="flex items-center gap-2">
+              <Label
+                htmlFor="show-sold-out"
+                className="h-12 cursor-pointer gap-3 rounded-lg px-3 text-base font-normal"
+              >
+                <Switch id="show-sold-out" checked={showSoldOut} onCheckedChange={setShowSoldOut} />
+                Show sold out
+              </Label>
+              <Button
+                onClick={() => {
+                  setSelectedBatch(null)
+                  setBatchDialogOpen(true)
+                }}
+              >
+                <Plus className="size-5" />
+                Receive Stock
+              </Button>
+            </div>
           </div>
           <TablePanel
             footer={<ServerPager page={batchPage} total={batchTotal} onPage={setBatchPage} />}
@@ -829,7 +859,14 @@ export function InventoryPage(): React.JSX.Element {
           </DialogHeader>
           {importResult && (
             <div className="space-y-4">
-              {importResult.imported > 0 ? (
+              {importResult.imported === 0 &&
+              importResult.errors.length === 0 &&
+              importResult.skippedCount > 0 ? (
+                <p className="flex items-center gap-2 text-base font-medium">
+                  <CircleCheck className="size-5 shrink-0 text-muted-foreground" />
+                  Nothing new to import — every product in the sheet already exists.
+                </p>
+              ) : importResult.imported > 0 ? (
                 <p className="flex items-center gap-2 text-base font-medium text-success">
                   <CircleCheck className="size-5 shrink-0" />
                   <span>
@@ -855,6 +892,32 @@ export function InventoryPage(): React.JSX.Element {
                     import the sheet again.
                   </p>
                 </>
+              )}
+              {importResult.skippedCount > 0 && (
+                <div>
+                  <p className="mb-2 text-base font-medium">
+                    {importResult.skippedCount} row{importResult.skippedCount !== 1 ? 's' : ''}{' '}
+                    skipped — already in the catalogue, left unchanged and no stock added:
+                  </p>
+                  <ul
+                    aria-label="Skipped rows"
+                    className="max-h-48 space-y-1 overflow-y-auto overscroll-contain rounded-xl border bg-muted/40 p-3 text-sm text-muted-foreground"
+                  >
+                    {importResult.skipped.map((s) => (
+                      <li key={s.row}>
+                        Skipped — already exists (row {s.row}, {s.name},{' '}
+                        {s.matchedBy === 'barcode' ? 'barcode' : 'SKU'} {s.code}
+                        {s.existingName !== s.name ? ` — matches "${s.existingName}"` : ''}
+                        {s.existingDiscontinued ? ', discontinued' : ''})
+                      </li>
+                    ))}
+                  </ul>
+                  {importResult.skippedCount > importResult.skipped.length && (
+                    <p className="mt-2 text-sm font-medium text-muted-foreground">
+                      …and {importResult.skippedCount - importResult.skipped.length} more not shown.
+                    </p>
+                  )}
+                </div>
               )}
               {importResult.errors.length > 0 && (
                 <div>

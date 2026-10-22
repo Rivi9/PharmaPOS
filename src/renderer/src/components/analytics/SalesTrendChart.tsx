@@ -33,7 +33,7 @@ interface SalesTrendChartProps {
 }
 
 const chartConfig = {
-  sales: { label: 'Sales', color: 'var(--chart-1)' },
+  sales: { label: 'Net sales', color: 'var(--chart-1)' },
   profit: { label: 'Profit', color: 'var(--chart-2)' }
 } satisfies ChartConfig
 
@@ -55,7 +55,7 @@ export function SalesTrendChart({ data, isLoading }: SalesTrendChartProps): Reac
     <Card>
       <CardHeader>
         <CardTitle className="text-lg font-semibold">Sales Trend</CardTitle>
-        <CardDescription>Daily sales and profit over the past week</CardDescription>
+        <CardDescription>Daily net sales (excl. VAT) and profit over the past week</CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? (

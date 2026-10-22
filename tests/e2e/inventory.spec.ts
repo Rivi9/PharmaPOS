@@ -53,8 +53,13 @@ test.describe('inventory validation', () => {
     expect(query(ctx.dbPath, 'SELECT id FROM products')).toHaveLength(0)
   })
 
-  test('a tax rate above 100% is refused', async () => {
-    expect(ipcError(await ipc(ctx.page, product({ tax_rate: 150 })))).toMatch(/exceed 100/i)
+  // VAT is one shop-wide rate (Settings), so a per-product rate sent by a
+  // caller is ignored rather than validated or stored.
+  test('a per-product tax rate is ignored', async () => {
+    const made = await ipc(ctx.page, product({ tax_rate: 150 }))
+    expect(made).toMatchObject({ success: true })
+    const [row] = query<{ tax_rate: number }>(ctx.dbPath, 'SELECT tax_rate FROM products')
+    expect(row.tax_rate).toBe(0)
   })
 
   test('a valid product is stored with amounts rounded to cents', async () => {

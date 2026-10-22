@@ -32,7 +32,9 @@ export function TopProductsList({ products, isLoading }: TopProductsListProps): 
     <Card>
       <CardHeader>
         <CardTitle className="text-lg font-semibold">Top Products</CardTitle>
-        <CardDescription>Best sellers by revenue over the past week</CardDescription>
+        <CardDescription>
+          Best sellers by net revenue (excl. VAT) over the past week
+        </CardDescription>
       </CardHeader>
       <CardContent>
         {isLoading ? (

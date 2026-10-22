@@ -1,8 +1,10 @@
-import { eq, and, like, or, desc } from 'drizzle-orm'
+import { eq, and, like, or, sql } from 'drizzle-orm'
 import { getDb } from '../db/index'
 import { getDatabase } from './database'
 import { customers, sales, saleItems, products } from '../db/schema'
 import type { Customer } from '../db/schema'
+import { round2 } from '../../shared/money'
+import { normalisePhone, isValidCustomerPhone, CUSTOMER_NAME_MAX } from '../../shared/customers'
 
 export type { Customer }
 
@@ -21,6 +23,9 @@ export interface PurchaseHistoryEntry {
   total: number
   paymentMethod: string
   createdAt: string
+  status: 'completed' | 'refunded'
+  /** Total refunded against this sale so far; 0 when nothing went back. */
+  refunded: number
   items: { productName: string; quantity: number; lineTotal: number }[]
 }
 
@@ -56,23 +61,27 @@ export function getCustomerByPhone(phone: string): Customer | null {
 }
 
 /**
- * Sri Lankan mobile/landline numbers, reduced to a single canonical form.
- *
- * Numbers were stored exactly as typed, so `0771234567`, `+94771234567` and
- * `077 123 4567` were three distinct customers as far as the UNIQUE index was
- * concerned — and `createSale` links by exact equality, so a differently
- * formatted entry silently failed to attach the sale to the customer's history.
+ * Everything `planCheckoutCustomer` needs to know about a number: the active
+ * customer holding it, and whether a Removed one still does. Erased customers
+ * have no phone left, so they are invisible here by construction.
  */
-export function normalisePhone(input: string | null | undefined): string | null {
-  if (!input) return null
-  let digits = input.replace(/[^\d+]/g, '')
-  if (digits.startsWith('+94')) digits = '0' + digits.slice(3)
-  else if (digits.startsWith('0094')) digits = '0' + digits.slice(4)
-  else if (digits.startsWith('94') && digits.length === 11) digits = '0' + digits.slice(2)
-  digits = digits.replace(/\D/g, '')
-  if (digits.length === 9 && !digits.startsWith('0')) digits = '0' + digits
-  return digits || null
+export function findCheckoutCustomer(phone: string | null | undefined): {
+  active: Customer | null
+  heldByRemoved: boolean
+} {
+  const normalised = normalisePhone(phone)
+  if (!normalised) return { active: null, heldByRemoved: false }
+  const holder =
+    getDb().select().from(customers).where(eq(customers.phone, normalised)).get() ?? null
+  if (!holder) return { active: null, heldByRemoved: false }
+  return holder.isActive === 1
+    ? { active: holder, heldByRemoved: false }
+    : { active: null, heldByRemoved: true }
 }
+
+// Moved to src/shared so the till can apply the same rules before the sale is
+// sent; re-exported because the services and IPC handlers import it from here.
+export { normalisePhone }
 
 /**
  * Strip LIKE wildcards from a user's search term.
@@ -120,11 +129,11 @@ function validateCustomer(data: CustomerData): {
 } {
   const name = (data.name ?? '').trim()
   if (!name) throw new Error('Customer name is required')
-  if (name.length > 120) throw new Error('Customer name is too long')
+  if (name.length > CUSTOMER_NAME_MAX) throw new Error('Customer name is too long')
 
   const phone = normalisePhone(data.phone)
   if (data.phone && !phone) throw new Error('Enter a valid phone number')
-  if (phone && !/^0\d{9}$/.test(phone)) {
+  if (phone && !isValidCustomerPhone(phone)) {
     throw new Error('Phone number should be 10 digits starting with 0')
   }
 
@@ -136,10 +145,57 @@ function validateCustomer(data: CustomerData): {
   return { name, phone, email }
 }
 
+/**
+ * Attach earlier, unlinked sales rung up under this number to the customer.
+ *
+ * Every sale keeps the number typed at the till, but `customer_id` was only set
+ * when the customer already existed — so registering someone (or correcting
+ * their number) started their history from zero while their earlier purchases
+ * sat in the sales table under the same phone. Only sales with no customer are
+ * touched: one already linked to someone else stays theirs. Erased customers
+ * cannot be reached this way, because erasure clears the phone on their old
+ * sales as well as on the record.
+ *
+ * Compared after normalising, because sales from before `normalisePhone`
+ * existed hold the number exactly as it was typed.
+ */
+export function linkEarlierSales(customerId: string, phone: string | null): number {
+  const normalised = normalisePhone(phone)
+  if (!normalised) return 0
+  const raw = getDatabase()
+  const candidates = raw
+    .prepare(
+      `SELECT id, customer_phone FROM sales
+       WHERE customer_id IS NULL AND customer_phone IS NOT NULL AND customer_phone != ''`
+    )
+    .all() as { id: string; customer_phone: string }[]
+  const link = raw.prepare('UPDATE sales SET customer_id = ? WHERE id = ? AND customer_id IS NULL')
+  let linked = 0
+  for (const sale of candidates) {
+    if (normalisePhone(sale.customer_phone) === normalised) {
+      linked += link.run(customerId, sale.id).changes
+    }
+  }
+  return linked
+}
+
 export function createCustomer(data: CustomerData): Customer {
   const clean = validateCustomer(data)
   const id = crypto.randomUUID()
   const now = new Date().toISOString()
+  getDatabase().transaction(() => {
+    insertCustomer(id, clean, data, now)
+    linkEarlierSales(id, clean.phone)
+  })()
+  return getCustomerById(id)!
+}
+
+function insertCustomer(
+  id: string,
+  clean: ReturnType<typeof validateCustomer>,
+  data: CustomerData,
+  now: string
+): void {
   getDb()
     .insert(customers)
     .values({
@@ -155,7 +211,6 @@ export function createCustomer(data: CustomerData): Customer {
       updatedAt: now
     })
     .run()
-  return getCustomerById(id)!
 }
 
 export function updateCustomer(id: string, data: Partial<CustomerData>): Customer | null {
@@ -194,7 +249,12 @@ export function updateCustomer(id: string, data: Partial<CustomerData>): Custome
 
   updateObj.updatedAt = new Date().toISOString()
 
-  getDb().update(customers).set(updateObj).where(eq(customers.id, id)).run()
+  getDatabase().transaction(() => {
+    getDb().update(customers).set(updateObj).where(eq(customers.id, id)).run()
+    // A corrected number brings that number's earlier sales with it. A Removed
+    // customer is not collecting history, so their edits link nothing.
+    if (updateObj.phone && existing.isActive === 1) linkEarlierSales(id, updateObj.phone)
+  })()
   return getCustomerById(id)
 }
 
@@ -263,37 +323,100 @@ export function deactivateCustomer(id: string): void {
     .run()
 }
 
+/**
+ * The most recent visits, newest first. Refunded sales are listed (with what
+ * went back) so the history matches the totals in `getCustomerStats`; voided
+ * sales are not — a void is a mis-ring, not something the customer bought.
+ */
 export function getCustomerPurchaseHistory(customerId: string, limit = 10): PurchaseHistoryEntry[] {
   const db = getDb()
 
-  const recentSales = db
-    .select({
-      id: sales.id,
-      receiptNumber: sales.receiptNumber,
-      total: sales.total,
-      paymentMethod: sales.paymentMethod,
-      createdAt: sales.createdAt
-    })
-    .from(sales)
-    .where(and(eq(sales.customerId, customerId), eq(sales.status, 'completed')))
-    .orderBy(desc(sales.createdAt))
-    .limit(limit)
-    .all()
+  const recentSales = getDatabase()
+    .prepare(
+      `SELECT s.id, s.receipt_number AS receiptNumber, s.total, s.payment_method AS paymentMethod,
+              s.created_at AS createdAt, s.status,
+              COALESCE((SELECT SUM(r.total_refunded) FROM sale_refunds r WHERE r.sale_id = s.id), 0)
+                AS refunded
+       FROM sales s
+       WHERE s.customer_id = ? AND s.status IN ('completed', 'refunded')
+       ORDER BY s.created_at DESC
+       LIMIT ?`
+    )
+    .all(customerId, limit) as Omit<PurchaseHistoryEntry, 'items'>[]
 
   return recentSales.map((sale) => {
     const items = db
       .select({
-        productName: products.name,
+        // The name as dispensed (M9), the catalogue only for rows that predate it.
+        productName: sql<string>`COALESCE(${saleItems.productName}, ${products.name}, '(deleted product)')`,
         quantity: saleItems.quantity,
         lineTotal: saleItems.lineTotal
       })
       .from(saleItems)
-      .innerJoin(products, eq(saleItems.productId, products.id))
+      .leftJoin(products, eq(saleItems.productId, products.id))
       .where(eq(saleItems.saleId, sale.id))
       .all()
 
-    return { ...sale, items }
+    return { ...sale, refunded: round2(sale.refunded), items }
   })
+}
+
+export interface CustomerStats {
+  visits: number
+  /** What the customer actually paid and kept: sale totals less refunds. */
+  totalSpent: number
+  lastVisit: string | null
+}
+
+/**
+ * Visits, spend and last visit for one customer, or for everyone when no id is
+ * given (the list view), computed from the linked sales rather than the
+ * ten-row history the detail panel used to sum.
+ *
+ * - Voided sales count for nothing: a void reverses the whole sale.
+ * - Refunds come off the spend, partial or full. A fully refunded sale (status
+ *   `refunded`) still counts as a visit — they came in — but adds nothing.
+ * - Refunds are summed per sale first, then joined, so a sale with several
+ *   partial refunds is not counted once per refund.
+ */
+function customerStatsRows(customerId?: string): Array<CustomerStats & { customerId: string }> {
+  return getDatabase()
+    .prepare(
+      `SELECT s.customer_id AS customerId,
+              COUNT(*) AS visits,
+              COALESCE(SUM(s.total), 0) - COALESCE(SUM(r.refunded), 0) AS totalSpent,
+              MAX(s.created_at) AS lastVisit
+       FROM sales s
+       LEFT JOIN (SELECT sale_id, SUM(total_refunded) AS refunded FROM sale_refunds GROUP BY sale_id) r
+         ON r.sale_id = s.id
+       WHERE s.customer_id IS NOT NULL
+         AND s.status IN ('completed', 'refunded')
+         ${customerId ? 'AND s.customer_id = ?' : ''}
+       GROUP BY s.customer_id`
+    )
+    .all(...(customerId ? [customerId] : [])) as Array<CustomerStats & { customerId: string }>
+}
+
+const NO_VISITS: CustomerStats = { visits: 0, totalSpent: 0, lastVisit: null }
+
+export function getCustomerStats(customerId: string): CustomerStats {
+  const [row] = customerStatsRows(customerId)
+  return row
+    ? { visits: row.visits, totalSpent: round2(row.totalSpent), lastVisit: row.lastVisit }
+    : NO_VISITS
+}
+
+export function getAllCustomerStats(): Map<string, CustomerStats> {
+  return new Map(
+    customerStatsRows().map((r) => [
+      r.customerId,
+      { visits: r.visits, totalSpent: round2(r.totalSpent), lastVisit: r.lastVisit }
+    ])
+  )
+}
+
+export function customerStatsFor(stats: Map<string, CustomerStats>, id: string): CustomerStats {
+  return stats.get(id) ?? NO_VISITS
 }
 
 // Backwards-compatible aliases for IPC handlers that reference old function names

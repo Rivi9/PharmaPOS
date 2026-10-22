@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { LogOut, Clock, ShoppingBag, Banknote, Receipt, Printer } from 'lucide-react'
 import {
   Dialog,
@@ -20,6 +20,9 @@ import { useAuthStore } from '@renderer/stores/authStore'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
 import { formatCurrency } from '@renderer/lib/calculations'
 import { ipcErrorMessage } from '@renderer/lib/ipc-error'
+
+/** How long the 'press Enter again' confirmation stays armed. */
+const CONFIRM_ZERO_MS = 5000
 
 interface EndShiftModalProps {
   open: boolean
@@ -80,6 +83,9 @@ export function EndShiftModal({
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(false)
   const [countError, setCountError] = useState('')
+  /** Shown after a bare Enter on an empty count; a second Enter confirms Rs. 0.00. */
+  const [confirmZeroHint, setConfirmZeroHint] = useState(false)
+  const confirmZeroUntil = useRef(0)
   /** Set when the shift closed but its report did not print; sign-out waits for an OK. */
   const [printWarning, setPrintWarning] = useState('')
   const [computedExpectedCash, setComputedExpectedCash] = useState<number | null>(null)
@@ -98,12 +104,21 @@ export function EndShiftModal({
 
   const openingCash = (currentShift as WithOpeningCash | null)?.opening_cash ?? 0
 
+  // The "press Enter again" prompt lapses with the confirmation window.
+  useEffect(() => {
+    if (!confirmZeroHint) return
+    const timer = setTimeout(() => setConfirmZeroHint(false), CONFIRM_ZERO_MS)
+    return () => clearTimeout(timer)
+  }, [confirmZeroHint])
+
   // Reset the entry fields each time the dialog opens so a previous (cancelled)
   // count can never be submitted against a later shift.
   useEffect(() => {
     if (!open) return
     setClosingCash('')
     setNotes('')
+    confirmZeroUntil.current = 0
+    setConfirmZeroHint(false)
     setCountError('')
     setPrintWarning('')
   }, [open])
@@ -121,7 +136,7 @@ export function EndShiftModal({
 
     setLoadingExpectedCash(true)
     window.electron.shifts
-      .computeExpectedCash(currentShift.id, (currentShift as WithOpeningCash).opening_cash ?? 0)
+      .computeExpectedCash(currentShift.id)
       .then((cash: number) => {
         setComputedExpectedCash(cash)
       })
@@ -150,10 +165,18 @@ export function EndShiftModal({
     // — a scanner suffix, a leaning elbow — closed the shift with a Rs. 0 count
     // and logged the whole drawer as a shortage. Only Enter is guarded: tapping
     // End Shift is deliberate, and an empty count is the Rs. 0.00 on screen.
+    // A second Enter within CONFIRM_ZERO_MS is the confirmation; one stray
+    // Enter only arms it, so the protection stays but the keyboard is not a dead
+    // end for a drawer that really is empty.
     if (fromKeyboard && closingCash.trim() === '') {
-      setCountError('Enter the closing cash count before ending the shift')
-      return
+      if (Date.now() > confirmZeroUntil.current) {
+        confirmZeroUntil.current = Date.now() + CONFIRM_ZERO_MS
+        setConfirmZeroHint(true)
+        return
+      }
     }
+    confirmZeroUntil.current = 0
+    setConfirmZeroHint(false)
     setCountError('')
     setLoading(true)
     try {
@@ -347,9 +370,17 @@ export function EndShiftModal({
               onChange={(v) => {
                 setClosingCash(v)
                 if (countError) setCountError('')
+                confirmZeroUntil.current = 0
+                setConfirmZeroHint(false)
               }}
               onSubmit={() => handleEndShift(true)}
             />
+            {confirmZeroHint && !countError && (
+              <p role="status" className="rounded-lg bg-warning-muted px-3 py-2 text-base text-warning">
+                No count entered. Press <kbd className="font-semibold">Enter</kbd> again to end with{' '}
+                {currencySymbol}&nbsp;0.00, or type the amount counted.
+              </p>
+            )}
             <FieldError className="text-base font-medium">{countError || null}</FieldError>
           </div>
         </div>

@@ -205,8 +205,10 @@ export function buildReceipt(input: ReceiptInput): ReceiptLine[] {
     // labelled its historical VAT amount with today's rate — a receipt reprinted
     // after a rate change stated a percentage that never applied to it. Derived
     // from the sale's own figures instead: VAT was extracted from the gross, so
-    // rate = tax / (gross - tax).
-    const net = sale.subtotal - sale.tax_amount
+    // rate = tax / (gross - tax). The gross is the TOTAL, after the sale
+    // discount: VAT is extracted from what was paid, so measuring it against the
+    // pre-discount subtotal printed 15.9% for an 18% sale with 10% off.
+    const net = sale.total - sale.tax_amount
     const derived = net > 0 ? (sale.tax_amount / net) * 100 : null
     const shown =
       derived !== null && Number.isFinite(derived)

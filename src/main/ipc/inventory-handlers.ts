@@ -47,7 +47,6 @@ const PRODUCT_AUDIT_KEYS = [
   'sku',
   'cost_price',
   'unit_price',
-  'tax_rate',
   'reorder_level',
   'reorder_qty',
   'unit',
@@ -518,6 +517,7 @@ export function registerInventoryHandlers(): void {
           rows: outcome.totalRows,
           imported: outcome.imported,
           batches: outcome.batchesCreated,
+          skipped_existing: outcome.skippedCount,
           errors: outcome.errors.length + outcome.errorsTruncated
         }
       })
